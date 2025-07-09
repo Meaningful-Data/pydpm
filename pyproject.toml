@@ -1,0 +1,27 @@
+[project]
+name = "py-dpm"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Andrés Solé",email = "andres.sole@meaningfuldata.eu"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "rich (>=14.0.0,<15.0.0)",
+    "sqlalchemy (>=2.0.41,<3.0.0)",
+    "pandas (>=2.3.0,<3.0.0)",
+    "antlr4-python3-runtime (>=4.13.2,<5.0.0)",
+    "pyodbc (>=5.2.0,<6.0.0)",
+    "click (>=8.2.1,<9.0.0)",
+    "alembic (>=1.16.2,<2.0.0)",
+    "python-dotenv (>=1.1.1,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+pydpm = "py_dpm.client:main"
