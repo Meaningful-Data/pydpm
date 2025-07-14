@@ -6,7 +6,7 @@ import pandas as pd
 from py_dpm.AST.ASTObjects import VarID, WithExpression
 from py_dpm.AST.ASTTemplate import ASTTemplate
 from py_dpm.Exceptions import exceptions
-from py_dpm.Models.models import ModuleVersionComposition, TableGroup, TableGroupComposition, TableVersion, ViewDatapoints
+from py_dpm.models import ModuleVersionComposition, TableGroup, TableGroupComposition, TableVersion, ViewDatapoints
 from py_dpm.Utils.tokens import EXPRESSION, STATUS, STATUS_CORRECT, STATUS_INCOMPLETE, STATUS_INCORRECT, VALIDATION_CODE
 from py_dpm.data_handlers import filter_all_data
 

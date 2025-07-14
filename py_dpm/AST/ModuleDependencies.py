@@ -4,7 +4,7 @@ from py_dpm.AST.ASTObjects import *
 from py_dpm.AST.ASTTemplate import ASTTemplate
 from py_dpm.AST.WhereClauseChecker import WhereClauseChecker
 from py_dpm.Exceptions import exceptions
-from py_dpm.Models.models import TableVersion, VariableVersion, ViewDatapoints, ViewModules, ItemCategory
+from py_dpm.models import TableVersion, VariableVersion, ViewDatapoints, ViewModules, ItemCategory
 
 operand_elements = ['table', 'rows', 'cols', 'sheets', 'default', 'interval']
 

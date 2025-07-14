@@ -1,6 +1,6 @@
 from py_dpm.AST.ASTObjects import Start, VarID, WithExpression
 from py_dpm.AST.ASTTemplate import ASTTemplate
-from py_dpm.Models.models import ViewModules
+from py_dpm.models import ViewModules
 from py_dpm.Utils.operands_mapping import LabelHandler
 from py_dpm.Utils.tokens import CROSS_MODULE, INTRA_MODULE, REPEATED_INTRA_MODULE
 

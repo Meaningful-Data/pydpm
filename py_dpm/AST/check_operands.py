@@ -9,7 +9,7 @@ from py_dpm.AST.WhereClauseChecker import WhereClauseChecker
 from py_dpm.DataTypes.ScalarTypes import Integer, Mixed, Number, ScalarFactory
 from py_dpm.Exceptions import exceptions
 from py_dpm.Exceptions.exceptions import SemanticError
-from py_dpm.Models.models import ItemCategory, Operation, VariableVersion, ViewDatapoints, \
+from py_dpm.models import ItemCategory, Operation, VariableVersion, ViewDatapoints, \
     ViewKeyComponents, ViewOpenKeys
 from py_dpm.Utils.operands_mapping import generate_new_label, set_operand_label
 from py_dpm.data_handlers import filter_all_data
@@ -146,8 +146,10 @@ class OperandsChecking(ASTTemplate, ABC):
         for table, value in self.tables.items():
             # Extract all data and filter to get only necessary data
             table_info = value
-            df_table = ViewDatapoints.get_table_data(self.session, table, table_info['rows'], table_info['cols'], table_info['sheets'],
-                                                     self.release_id)
+            df_table = pd.DataFrame(
+                ViewDatapoints.get_table_data(self.session, table, table_info['rows'],
+                                                table_info['cols'], table_info['sheets'], self.release_id)
+            )
             if df_table.empty:
                 cell_expression = f'table: {table}'
                 for k, v in table_info.items():

@@ -2,5 +2,5 @@
 
 ## Usage
 
-`poetry run pydpm syntax "expression`
+`poetry run pydpm syntax "expression"`
 

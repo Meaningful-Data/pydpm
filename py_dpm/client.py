@@ -2,8 +2,17 @@ import click
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+import os
+import sys
 
 from py_dpm.api import API
+from py_dpm.migration import run_migration
+from py_dpm.Utils.tokens import CODE, ERROR, ERROR_CODE, EXPRESSION, OP_VERSION_ID, STATUS, \
+    STATUS_CORRECT, STATUS_UNKNOWN, VALIDATIONS, \
+    VALIDATION_TYPE, \
+    VARIABLES
+from py_dpm.Exceptions.exceptions import SemanticError
+
 
 console = Console()
 
@@ -12,6 +21,25 @@ console = Console()
 def main():
     """pyDPM CLI - A command line interface for pyDPM"""
     pass
+
+@main.command()
+@click.argument('access_file', type=click.Path(exists=True))
+def migrate_access(access_file: str):
+    """
+    Migrates data from an Access database to a SQLite database.
+
+    ACCESS_FILE: Path to the Access database file (.mdb or .accdb).
+    """
+
+    sqlite_db = os.getenv("SQLITE_DB_PATH", "database.db")
+    console.print(f"Starting migration from '{access_file}' to '{sqlite_db}'...")
+    try:
+        run_migration(access_file, sqlite_db)
+        console.print("Migration completed successfully.", style="bold green")
+    except Exception as e:
+        console.print(f"An error occurred during migration: {e}", style="bold red")
+        sys.exit(1)
+
 
 @main.command()
 @click.argument('expression', type=str)
@@ -25,6 +53,45 @@ def semantic(expression: str):
     :return if Return_data is False, any Symbol, else data extracted from DB based on operands cell references
     """
 
+    error_code = ""
+    validation_type = STATUS_UNKNOWN
+
+    api = API()
+    try:
+        if api._check_variants(expression):
+            validation_type = "VARIANTS"
+            validations = api.generate_validations_from_variants(validation_code="TEST", expression=expression)
+            correct_validations = [validation for validation in validations if validation[STATUS] == STATUS_CORRECT]
+            if len(correct_validations) == 0:
+                raise SemanticError("5-0-1")
+        elif api._check_property_constraints_from_expression(expression=expression):
+            validation_type = "PROPERTIES_CONSTRAINTS"
+            validations = api.generate_validation_from_properties_constraints(expression=expression, validation_code="TEST")
+            correct_validations = [validation for validation in validations if validation[STATUS] == STATUS_CORRECT]
+            if len(correct_validations) == 0:
+                raise SemanticError("5-0-1")
+        else:
+            validation_type = "OTHER"
+            api.semantic_validation(expression)
+        status = 200
+        message_error = ''
+    except Exception as error:
+        status = 500
+        message_error = str(error)
+        error_code = 1
+    message_response = {
+        ERROR: message_error,
+        ERROR_CODE: error_code,
+        VALIDATION_TYPE: validation_type,
+        # 'labels': LabelHandler().operands_labels  # TODO: remove this
+    }
+    api.session.close()
+    if error_code and status == 500:
+        console.log(f"Unhandled Exception on Semantic Validation. Error code: {error_code}. Error message: {message_error}.")
+    else:
+        console.log(f"Semantic validation completed for expression: {expression}.")
+    console.print(message_response, style="bold blue")
+    return status
 
 @main.command()
 @click.argument('expression', type=str)

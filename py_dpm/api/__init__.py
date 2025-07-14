@@ -17,11 +17,16 @@ from py_dpm.ValidationsGeneration.VariantsProcessor import VariantsProcessor, \
 from py_dpm.ValidationsGeneration.PropertiesConstraintsProcessor import \
     PropertiesConstraintsChecker, PropertiesConstraintsProcessor
 
+from py_dpm.db_utils import get_session, get_engine
+
 class API:
     error_listener = DPMErrorListener()
     visitor = ASTVisitor()
+
     def __init__(self):
-        pass
+        get_engine()
+        self.session = get_session()
+
 
 
     @classmethod
