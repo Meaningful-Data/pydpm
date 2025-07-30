@@ -75,11 +75,6 @@ class API:
     def semantic_validation(self, expression):
         self.create_ast(expression=expression)
 
-        if self._check_property_constraints(ast=self.AST):
-            self.generate_validation_from_properties_constraints(expression=expression,
-                                                                 validation_code="TEST",
-                                                                 release_id=1)
-
         oc = OperandsChecking(self.session, expression, self.AST, 1)
         semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
@@ -90,7 +85,6 @@ class API:
         semanticAnalysis.preconditions = oc.preconditions
 
         results = semanticAnalysis.visit(self.AST)
-
         return results
 
 

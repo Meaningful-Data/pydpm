@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, 
+    Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text,
     SmallInteger, and_, or_, select, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -12,31 +12,31 @@ Base = declarative_base()
 
 class AuxCellmapping(Base):
     __tablename__ = "Aux_CellMapping"
-    
+
     newcellid = Column("NewCellID", Integer, primary_key=True)
     newtablevid = Column("NewTableVID", Integer, primary_key=True)
     oldcellid = Column("OldCellID", Integer)
     oldtablevid = Column("OldTableVID", Integer)
-    
+
     __table_args__ = (
         UniqueConstraint('NewCellID', 'NewTableVID'),
     )
 
 class AuxCellstatus(Base):
     __tablename__ = "Aux_CellStatus"
-    
+
     tablevid = Column("TableVID", Integer, primary_key=True)
     cellid = Column("CellID", Integer, primary_key=True)
     status = Column("Status", String(100))
     isnewcell = Column("IsNewCell", Boolean)
-    
+
     __table_args__ = (
         UniqueConstraint('TableVID', 'CellID'),
     )
 
 class Category(Base):
     __tablename__ = "Category"
-    
+
     categoryid = Column("CategoryID", Integer, primary_key=True)
     code = Column("Code", String(20))
     name = Column("Name", String(50))
@@ -47,15 +47,15 @@ class Category(Base):
     isexternalrefdata = Column("IsExternalRefData", Boolean)
     refdatasource = Column("RefDataSource", String(255))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Use string references instead of direct class references
     concept = relationship("Concept", foreign_keys=[rowguid])
     subcategories = relationship("SubCategory", back_populates="category")  # Note: SubCategory not Subcategory
     property_categories = relationship("PropertyCategory", back_populates="category")
-    supercategory_compositions = relationship("SupercategoryComposition", 
+    supercategory_compositions = relationship("SupercategoryComposition",
                                             foreign_keys="SupercategoryComposition.supercategoryid",
                                             back_populates="supercategory")
-    category_compositions = relationship("SupercategoryComposition", 
+    category_compositions = relationship("SupercategoryComposition",
                                        foreign_keys="SupercategoryComposition.categoryid",
                                        back_populates="category")
 
@@ -76,14 +76,14 @@ class SubCategory(Base):
     operand_references = relationship("OperandReference", back_populates="subcategory")
 class Cell(Base):
     __tablename__ = "Cell"
-    
+
     cellid = Column("CellID", Integer, primary_key=True)
     tableid = Column("TableID", Integer, ForeignKey("Table.TableID"))
     columnid = Column("ColumnID", Integer, ForeignKey("Header.HeaderID"))
     rowid = Column("RowID", Integer, ForeignKey("Header.HeaderID"))
     sheetid = Column("SheetID", Integer, ForeignKey("Header.HeaderID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     table = relationship("Table", foreign_keys=[tableid])
     column_header = relationship("Header", foreign_keys=[columnid])
@@ -92,14 +92,14 @@ class Cell(Base):
     concept = relationship("Concept", foreign_keys=[rowguid])
     table_version_cells = relationship("TableVersionCell", back_populates="cell")
     operand_reference_locations = relationship("OperandReferenceLocation", back_populates="cell")
-    
+
     __table_args__ = (
         UniqueConstraint('ColumnID', 'RowID', 'SheetID'),
     )
 
 class Changelog(Base):
     __tablename__ = "ChangeLog"
-    
+
     rowguid = Column("RowGUID", String(36), primary_key=True)
     classid = Column("ClassID", Integer, ForeignKey("DPMClass.ClassID"), primary_key=True)
     attributeid = Column("AttributeID", Integer, ForeignKey("DPMAttribute.AttributeID"), primary_key=True)
@@ -110,7 +110,7 @@ class Changelog(Base):
     status = Column("Status", String(1))
     userid = Column("UserID", Integer, ForeignKey("User.UserID"))
     releaseid = Column("ReleaseID", Integer, ForeignKey("Release.ReleaseID"))
-    
+
     # Relationships
     dpm_class = relationship("DpmClass", foreign_keys=[classid])
     dpm_attribute = relationship("DpmAttribute", foreign_keys=[attributeid])
@@ -119,13 +119,13 @@ class Changelog(Base):
 
 class CompoundItemContext(Base):
     __tablename__ = "CompoundItemContext"
-    
+
     itemid = Column("ItemID", Integer, ForeignKey("Item.ItemID"), primary_key=True)
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"), primary_key=True)
     contextid = Column("ContextID", Integer, ForeignKey("Context.ContextID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     item = relationship("Item", foreign_keys=[itemid])
     start_release = relationship("Release", foreign_keys=[startreleaseid])
@@ -134,11 +134,11 @@ class CompoundItemContext(Base):
 
 class CompoundKey(Base):
     __tablename__ = "CompoundKey"
-    
+
     keyid = Column("KeyID", Integer, primary_key=True)
     signature = Column("Signature", String(255), unique=True)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     key_compositions = relationship("KeyComposition", back_populates="compound_key")
@@ -147,11 +147,11 @@ class CompoundKey(Base):
 
 class Concept(Base):
     __tablename__ = "Concept"
-    
+
     conceptguid = Column("ConceptGUID", String(36), primary_key=True)
     classid = Column("ClassID", Integer, ForeignKey("DPMClass.ClassID"))
     ownerid = Column("OwnerID", Integer, ForeignKey("Organisation.OrgID"))
-    
+
     # Relationships
     dpm_class = relationship("DpmClass", foreign_keys=[classid])
     owner = relationship("Organisation", foreign_keys=[ownerid])
@@ -160,21 +160,21 @@ class Concept(Base):
 
 class ConceptRelation(Base):
     __tablename__ = "ConceptRelation"
-    
+
     conceptrelationid = Column("ConceptRelationID", Integer, primary_key=True)
     type = Column("Type", String(50))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     related_concepts = relationship("RelatedConcept", back_populates="concept_relation")
 
 class Context(Base):
     __tablename__ = "Context"
-    
+
     contextid = Column("ContextID", Integer, primary_key=True)
     signature = Column("Signature", String(2000), unique=True)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     context_compositions = relationship("ContextComposition", back_populates="context")
@@ -185,12 +185,12 @@ class Context(Base):
 
 class ContextComposition(Base):
     __tablename__ = "ContextComposition"
-    
+
     contextid = Column("ContextID", Integer, ForeignKey("Context.ContextID"), primary_key=True)
     propertyid = Column("PropertyID", Integer, ForeignKey("Property.PropertyID"), primary_key=True)
     itemid = Column("ItemID", Integer, ForeignKey("Item.ItemID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     context = relationship("Context", back_populates="context_compositions")
     property = relationship("Property", back_populates="context_compositions")
@@ -200,12 +200,12 @@ class ContextComposition(Base):
 
 class DpmAttribute(Base):
     __tablename__ = "DPMAttribute"
-    
+
     attributeid = Column("AttributeID", Integer, primary_key=True)
     classid = Column("ClassID", Integer, ForeignKey("DPMClass.ClassID"))
     name = Column("Name", String(20))
     hastranslations = Column("HasTranslations", Boolean)
-    
+
     # Relationships
     dpm_class = relationship("DpmClass", back_populates="dpm_attributes")
     changelogs = relationship("Changelog", back_populates="dpm_attribute")
@@ -213,13 +213,13 @@ class DpmAttribute(Base):
 
 class DpmClass(Base):
     __tablename__ = "DPMClass"
-    
+
     classid = Column("ClassID", Integer, primary_key=True)
     name = Column("Name", String(50))
     type = Column("Type", String(20))
     ownerclassid = Column("OwnerClassID", Integer, ForeignKey("DPMClass.ClassID"))
     hasreferences = Column("HasReferences", Boolean)
-    
+
     # Relationships
     owner_class = relationship("DpmClass", remote_side=[classid], back_populates="owned_classes")
     owned_classes = relationship("DpmClass", back_populates="owner_class")
@@ -229,13 +229,13 @@ class DpmClass(Base):
 
 class DataType(Base):
     __tablename__ = "DataType"
-    
+
     datatypeid = Column("DataTypeID", Integer, primary_key=True)
     code = Column("Code", String(20), unique=True)
     name = Column("Name", String(50), unique=True)
     parentdatatypeid = Column("ParentDataTypeID", Integer, ForeignKey("DataType.DataTypeID"))
     isactive = Column("IsActive", Boolean)
-    
+
     # Relationships
     parent_datatype = relationship("DataType", remote_side=[datatypeid], back_populates="child_datatypes")
     child_datatypes = relationship("DataType", back_populates="parent_datatype")
@@ -243,14 +243,14 @@ class DataType(Base):
 
 class Document(Base):
     __tablename__ = "Document"
-    
+
     documentid = Column("DocumentID", Integer, primary_key=True)
     name = Column("Name", String(50))
     code = Column("Code", String(20))
     type = Column("Type", String(255))
     orgid = Column("OrgID", Integer, ForeignKey("Organisation.OrgID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     organisation = relationship("Organisation", foreign_keys=[orgid])
     concept = relationship("Concept", foreign_keys=[rowguid])
@@ -258,32 +258,32 @@ class Document(Base):
 
 class DocumentVersion(Base):
     __tablename__ = "DocumentVersion"
-    
+
     documentvid = Column("DocumentVID", Integer, primary_key=True)
     documentid = Column("DocumentID", Integer, ForeignKey("Document.DocumentID"))
     code = Column("Code", String(20))
     version = Column("Version", String(20))
     publicationdate = Column("PublicationDate", Date)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     document = relationship("Document", back_populates="document_versions")
     concept = relationship("Concept", foreign_keys=[rowguid])
     subdivisions = relationship("Subdivision", back_populates="document_version")
-    
+
     __table_args__ = (
         UniqueConstraint('DocumentID', 'PublicationDate'),
     )
 
 class Framework(Base):
     __tablename__ = "Framework"
-    
+
     frameworkid = Column("FrameworkID", Integer, primary_key=True)
     code = Column("Code", String(255))
     name = Column("Name", String(255))
     description = Column("Description", String(255))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     modules = relationship("Module", back_populates="framework")
@@ -291,13 +291,13 @@ class Framework(Base):
 
 class Header(Base):
     __tablename__ = "Header"
-    
+
     headerid = Column("HeaderID", Integer, primary_key=True)
     tableid = Column("TableID", Integer, ForeignKey("Table.TableID"))
     direction = Column("Direction", String(1))
     iskey = Column("IsKey", Boolean)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     table = relationship("Table", back_populates="headers")
     concept = relationship("Concept", foreign_keys=[rowguid])
@@ -308,7 +308,7 @@ class Header(Base):
 
 class HeaderVersion(Base):
     __tablename__ = "HeaderVersion"
-    
+
     headervid = Column("HeaderVID", Integer, primary_key=True)
     headerid = Column("HeaderID", Integer, ForeignKey("Header.HeaderID"))
     code = Column("Code", String(10))
@@ -320,7 +320,7 @@ class HeaderVersion(Base):
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     header = relationship("Header", back_populates="header_versions")
     property = relationship("Property", foreign_keys=[propertyid])
@@ -330,14 +330,14 @@ class HeaderVersion(Base):
     start_release = relationship("Release", foreign_keys=[startreleaseid])
     end_release = relationship("Release", foreign_keys=[endreleaseid])
     concept = relationship("Concept", foreign_keys=[rowguid])
-    
+
     __table_args__ = (
         UniqueConstraint('HeaderID', 'StartReleaseID'),
     )
 
 class Item(Base):
     __tablename__ = "Item"
-    
+
     itemid = Column("ItemID", Integer, primary_key=True)
     name = Column("Name", String(500))
     description = Column("Description", String(2000))
@@ -345,7 +345,7 @@ class Item(Base):
     isproperty = Column("IsProperty", Boolean)
     isactive = Column("IsActive", Boolean)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships - specify foreign_keys to resolve ambiguity
     concept = relationship("Concept", foreign_keys=[rowguid])
     item_categories = relationship("ItemCategory", back_populates="item")
@@ -358,7 +358,7 @@ class Item(Base):
 
 class ItemCategory(Base):
     __tablename__ = "ItemCategory"
-    
+
     itemid = Column("ItemID", Integer, ForeignKey("Item.ItemID"), primary_key=True)
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"), primary_key=True)
     categoryid = Column("CategoryID", Integer, ForeignKey("Category.CategoryID"))
@@ -367,7 +367,7 @@ class ItemCategory(Base):
     signature = Column("Signature", String(255))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     item = relationship("Item", back_populates="item_categories")
     start_release = relationship("Release", foreign_keys=[startreleaseid])
@@ -376,23 +376,23 @@ class ItemCategory(Base):
 
 class KeyComposition(Base):
     __tablename__ = "KeyComposition"
-    
+
     keyid = Column("KeyID", Integer, ForeignKey("CompoundKey.KeyID"), primary_key=True)
     variablevid = Column("VariableVID", Integer, ForeignKey("VariableVersion.VariableVID"), primary_key=True)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     compound_key = relationship("CompoundKey", back_populates="key_compositions")
     variable_version = relationship("VariableVersion", back_populates="key_compositions")
 
 class KeyHeaderMapping(Base):
     __tablename__ = "KeyHeaderMapping"
-    
+
     associationid = Column("AssociationID", Integer, ForeignKey("TableAssociation.AssociationID"), primary_key=True)
     foreignkeyheaderid = Column("ForeignKeyHeaderID", Integer, ForeignKey("Header.HeaderID"), primary_key=True)
     primarykeyheaderid = Column("PrimaryKeyHeaderID", Integer, ForeignKey("Header.HeaderID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     table_association = relationship("TableAssociation", foreign_keys=[associationid])
     foreign_key_header = relationship("Header", foreign_keys=[foreignkeyheaderid])
@@ -400,10 +400,10 @@ class KeyHeaderMapping(Base):
 
 class Language(Base):
     __tablename__ = "Language"
-    
+
     languagecode = Column("LanguageCode", Integer, primary_key=True)
     name = Column("Name", String(20))
-    
+
     # Relationships
     translations = relationship("Translation", back_populates="language")
 
@@ -441,11 +441,11 @@ class ModelViolations(Base):
 
 class Module(Base):
     __tablename__ = "Module"
-    
+
     moduleid = Column("ModuleID", Integer, primary_key=True)
     frameworkid = Column("FrameworkID", Integer, ForeignKey("Framework.FrameworkID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     framework = relationship("Framework", back_populates="modules")
     concept = relationship("Concept", foreign_keys=[rowguid])
@@ -454,18 +454,18 @@ class Module(Base):
 
 class ModuleParameters(Base):
     __tablename__ = "ModuleParameters"
-    
+
     modulevid = Column("ModuleVID", Integer, ForeignKey("ModuleVersion.ModuleVID"), primary_key=True)
     variablevid = Column("VariableVID", Integer, ForeignKey("VariableVersion.VariableVID"), primary_key=True)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     module_version = relationship("ModuleVersion", back_populates="module_parameters")
     variable_version = relationship("VariableVersion", back_populates="module_parameters")
 
 class ModuleVersion(Base):
     __tablename__ = "ModuleVersion"
-    
+
     modulevid = Column("ModuleVID", Integer, primary_key=True)
     moduleid = Column("ModuleID", Integer, ForeignKey("Module.ModuleID"))
     globalkeyid = Column("GlobalKeyID", Integer, ForeignKey("CompoundKey.KeyID"))
@@ -478,7 +478,7 @@ class ModuleVersion(Base):
     fromreferencedate = Column("FromReferenceDate", Date)
     toreferencedate = Column("ToReferenceDate", Date)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     module = relationship("Module", back_populates="module_versions")
     global_key = relationship("CompoundKey", foreign_keys=[globalkeyid])
@@ -488,20 +488,20 @@ class ModuleVersion(Base):
     module_version_compositions = relationship("ModuleVersionComposition", back_populates="module_version")
     operation_scope_compositions = relationship("OperationScopeComposition", back_populates="module_version")
     module_parameters = relationship("ModuleParameters", back_populates="module_version")
-    
+
     __table_args__ = (
         UniqueConstraint('ModuleID', 'StartReleaseID'),
     )
 
 class ModuleVersionComposition(Base):
     __tablename__ = "ModuleVersionComposition"
-    
+
     modulevid = Column("ModuleVID", Integer, ForeignKey("ModuleVersion.ModuleVID"), primary_key=True)
     tableid = Column("TableID", Integer, ForeignKey("Table.TableID"), primary_key=True)
     tablevid = Column("TableVID", Integer, ForeignKey("TableVersion.TableVID"))
     order = Column("Order", Integer)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     module_version = relationship("ModuleVersion", back_populates="module_version_compositions")
     table = relationship("Table", back_populates="module_version_compositions")
@@ -509,7 +509,7 @@ class ModuleVersionComposition(Base):
 
 class OperandReference(Base):
     __tablename__ = "OperandReference"
-    
+
     operandreferenceid = Column("OperandReferenceID", Integer, primary_key=True)
     nodeid = Column("NodeID", Integer, ForeignKey("OperationNode.NodeID"))
     x = Column("x", Integer)
@@ -520,7 +520,7 @@ class OperandReference(Base):
     propertyid = Column("PropertyID", Integer, ForeignKey("Property.PropertyID"))
     variableid = Column("VariableID", Integer, ForeignKey("Variable.VariableID"))
     subcategoryid = Column("SubCategoryID", Integer, ForeignKey("SubCategory.SubCategoryID"))
-    
+
     # Relationships
     operation_node = relationship("OperationNode", back_populates="operand_references")
     item = relationship("Item", back_populates="operand_references")
@@ -531,28 +531,28 @@ class OperandReference(Base):
 
 class OperandReferenceLocation(Base):
     __tablename__ = "OperandReferenceLocation"
-    
+
     operandreferenceid = Column("OperandReferenceID", Integer, ForeignKey("OperandReference.OperandReferenceID"), primary_key=True)
     cellid = Column("CellID", Integer, ForeignKey("Cell.CellID"))
     table = Column("Table", String(255))
     row = Column("Row", String(255))
     column = Column("Column", String(255))
     sheet = Column("Sheet", String(255))
-    
+
     # Relationships
     operand_reference = relationship("OperandReference", back_populates="operand_reference_locations")
     cell = relationship("Cell", back_populates="operand_reference_locations")
 
 class Operation(Base):
     __tablename__ = "Operation"
-    
+
     operationid = Column("OperationID", Integer, primary_key=True)
     code = Column("Code", String(20))
     type = Column("Type", String(20))
     source = Column("Source", String(20))
     groupoperid = Column("GroupOperID", Integer, ForeignKey("Operation.OperationID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     group_operation = relationship("Operation", remote_side=[operationid], back_populates="grouped_operations")
     grouped_operations = relationship("Operation", back_populates="group_operation")
@@ -561,18 +561,18 @@ class Operation(Base):
 
 class OperationCodePrefix(Base):
     __tablename__ = "OperationCodePrefix"
-    
+
     operationcodeprefixid = Column("OperationCodePrefixID", Integer, primary_key=True)
     code = Column("Code", String(20), unique=True)
     listname = Column("ListName", String(20))
     frameworkid = Column("FrameworkID", Integer, ForeignKey("Framework.FrameworkID"))
-    
+
     # Relationships
     framework = relationship("Framework", back_populates="operation_code_prefixes")
 
 class OperationNode(Base):
     __tablename__ = "OperationNode"
-    
+
     nodeid = Column("NodeID", Integer, primary_key=True)
     operationvid = Column("OperationVID", Integer, ForeignKey("OperationVersion.OperationVID"))
     parentnodeid = Column("ParentNodeID", Integer, ForeignKey("OperationNode.NodeID"))
@@ -585,7 +585,7 @@ class OperationNode(Base):
     operandtype = Column("OperandType", String(20))
     isleaf = Column("IsLeaf", Boolean)
     scalar = Column("Scalar", Text)
-    
+
     # Relationships
     operation_version = relationship("OperationVersion", back_populates="operation_nodes")
     parent = relationship("OperationNode", remote_side=[nodeid], back_populates="children")
@@ -596,32 +596,32 @@ class OperationNode(Base):
 
 class OperationScope(Base):
     __tablename__ = "OperationScope"
-    
+
     operationscopeid = Column("OperationScopeID", Integer, primary_key=True)
     operationvid = Column("OperationVID", Integer, ForeignKey("OperationVersion.OperationVID"))
     isactive = Column("IsActive", Boolean)
     severity = Column("Severity", String(20))
     fromsubmissiondate = Column("FromSubmissionDate", Date)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     operation_version = relationship("OperationVersion", back_populates="operation_scopes")
     operation_scope_compositions = relationship("OperationScopeComposition", back_populates="operation_scope")
 
 class OperationScopeComposition(Base):
     __tablename__ = "OperationScopeComposition"
-    
+
     operationscopeid = Column("OperationScopeID", Integer, ForeignKey("OperationScope.OperationScopeID"), primary_key=True)
     modulevid = Column("ModuleVID", Integer, ForeignKey("ModuleVersion.ModuleVID"), primary_key=True)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     operation_scope = relationship("OperationScope", back_populates="operation_scope_compositions")
     module_version = relationship("ModuleVersion", back_populates="operation_scope_compositions")
 
 class OperationVersion(Base):
     __tablename__ = "OperationVersion"
-    
+
     operationvid = Column("OperationVID", Integer, primary_key=True)
     operationid = Column("OperationID", Integer, ForeignKey("Operation.OperationID"))
     preconditionoperationvid = Column("PreconditionOperationVID", Integer, ForeignKey("OperationVersion.OperationVID"))
@@ -633,21 +633,21 @@ class OperationVersion(Base):
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
     endorsement = Column("Endorsement", String(25))
     isvariantapproved = Column("IsVariantApproved", Boolean)
-    
+
     # Relationships
     operation = relationship("Operation", back_populates="operation_versions")
-    precondition_operation = relationship("OperationVersion", 
-                                        remote_side=[operationvid], 
+    precondition_operation = relationship("OperationVersion",
+                                        remote_side=[operationvid],
                                         foreign_keys=[preconditionoperationvid],
                                         back_populates="precondition_dependent_operations")
-    severity_operation = relationship("OperationVersion", 
-                                    remote_side=[operationvid], 
+    severity_operation = relationship("OperationVersion",
+                                    remote_side=[operationvid],
                                     foreign_keys=[severityoperationvid],
                                     back_populates="severity_dependent_operations")
-    precondition_dependent_operations = relationship("OperationVersion", 
+    precondition_dependent_operations = relationship("OperationVersion",
                                                    foreign_keys=[preconditionoperationvid],
                                                    back_populates="precondition_operation")
-    severity_dependent_operations = relationship("OperationVersion", 
+    severity_dependent_operations = relationship("OperationVersion",
                                                 foreign_keys=[severityoperationvid],
                                                 back_populates="severity_operation")
     start_release = relationship("Release", foreign_keys=[startreleaseid])
@@ -657,63 +657,63 @@ class OperationVersion(Base):
     operation_scopes = relationship("OperationScope", back_populates="operation_version")
     operation_version_data = relationship("OperationVersionData", back_populates="operation_version", uselist=False)
     variable_calculations = relationship("VariableCalculation", back_populates="operation_version")
-    
+
     __table_args__ = (
         UniqueConstraint('OperationID', 'StartReleaseID'),
     )
 
 class OperationVersionData(Base):
     __tablename__ = "OperationVersionData"
-    
+
     operationvid = Column("OperationVID", Integer, ForeignKey("OperationVersion.OperationVID"), primary_key=True)
     error = Column("Error", String(2000))
     errorcode = Column("ErrorCode", String(50))
     isapplying = Column("IsApplying", Boolean)
     proposingstatus = Column("ProposingStatus", String(50))
-    
+
     # Relationships
     operation_version = relationship("OperationVersion", back_populates="operation_version_data")
 
 class Operator(Base):
     __tablename__ = "Operator"
-    
+
     operatorid = Column("OperatorID", Integer, primary_key=True)
     name = Column("Name", String(50))
     symbol = Column("Symbol", String(20))
     type = Column("Type", String(20))
-    
+
     # Relationships
     operator_arguments = relationship("OperatorArgument", back_populates="operator")
     operation_nodes = relationship("OperationNode", back_populates="operator")
-    comparison_subcategory_items = relationship("SubCategoryItem", 
+    comparison_subcategory_items = relationship("SubCategoryItem",
                                               foreign_keys="SubCategoryItem.comparisonoperatorid",
                                               back_populates="comparison_operator")
-    arithmetic_subcategory_items = relationship("SubCategoryItem", 
+    arithmetic_subcategory_items = relationship("SubCategoryItem",
                                                foreign_keys="SubCategoryItem.arithmeticoperatorid",
                                                back_populates="arithmetic_operator")
 
 class OperatorArgument(Base):
     __tablename__ = "OperatorArgument"
-    
+
     argumentid = Column("ArgumentID", Integer, primary_key=True)
     operatorid = Column("OperatorID", Integer, ForeignKey("Operator.OperatorID"))
     order = Column("Order", SmallInteger)
     ismandatory = Column("IsMandatory", Boolean)
     name = Column("Name", String(50))
-    
+
     # Relationships
     operator = relationship("Operator", back_populates="operator_arguments")
     operation_nodes = relationship("OperationNode", back_populates="operator_argument")
 
 class Organisation(Base):
     __tablename__ = "Organisation"
-    
+
     orgid = Column("OrgID", Integer, primary_key=True)
     name = Column("Name", String(200), unique=True)
     acronym = Column("Acronym", String(20))
     idprefix = Column("IDPrefix", Integer, unique=True)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     concepts_owned = relationship("Concept", foreign_keys="Concept.ownerid", back_populates="owner")
@@ -723,7 +723,7 @@ class Organisation(Base):
 
 class Property(Base):
     __tablename__ = "Property"
-    
+
     propertyid = Column("PropertyID", Integer, ForeignKey("Item.ItemID"), primary_key=True)
     iscomposite = Column("IsComposite", Boolean)
     ismetric = Column("IsMetric", Boolean)
@@ -731,7 +731,7 @@ class Property(Base):
     valuelength = Column("ValueLength", Integer)
     periodtype = Column("PeriodType", String(20))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     item = relationship("Item", back_populates="property")
     datatype = relationship("DataType", back_populates="properties")
@@ -744,13 +744,13 @@ class Property(Base):
 
 class PropertyCategory(Base):
     __tablename__ = "PropertyCategory"
-    
+
     propertyid = Column("PropertyID", Integer, ForeignKey("Property.PropertyID"), primary_key=True)
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"), primary_key=True)
     categoryid = Column("CategoryID", Integer, ForeignKey("Category.CategoryID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     property = relationship("Property", back_populates="property_categories")
     start_release = relationship("Release", foreign_keys=[startreleaseid])
@@ -759,30 +759,30 @@ class PropertyCategory(Base):
 
 class Reference(Base):
     __tablename__ = "Reference"
-    
+
     subdivisionid = Column("SubdivisionID", Integer, ForeignKey("Subdivision.SubdivisionID"), primary_key=True)
     conceptguid = Column("ConceptGUID", String(36), ForeignKey("Concept.ConceptGUID"), primary_key=True)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     subdivision = relationship("Subdivision", back_populates="references")
     concept = relationship("Concept", foreign_keys=[conceptguid])
 
 class RelatedConcept(Base):
     __tablename__ = "RelatedConcept"
-    
+
     conceptguid = Column("ConceptGUID", String(36), ForeignKey("Concept.ConceptGUID"), primary_key=True)
     conceptrelationid = Column("ConceptRelationID", Integer, ForeignKey("ConceptRelation.ConceptRelationID"), primary_key=True)
     isrelatedconcept = Column("IsRelatedConcept", Boolean)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     concept = relationship("Concept", back_populates="related_concepts")
     concept_relation = relationship("ConceptRelation", back_populates="related_concepts")
 
 class Release(Base):
     __tablename__ = "Release"
-    
+
     releaseid = Column("ReleaseID", Integer, primary_key=True)
     code = Column("Code", String(20))
     date = Column("Date", Date)
@@ -792,7 +792,7 @@ class Release(Base):
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
     latestvariablegentime = Column("LatestVariableGenTime", DateTime)
     name = Column("Name", String(50))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     changelogs = relationship("Changelog", back_populates="release")
@@ -800,16 +800,16 @@ class Release(Base):
 
 class Role(Base):
     __tablename__ = "Role"
-    
+
     roleid = Column("RoleID", Integer, primary_key=True)
     name = Column("Name", String(50))
-    
+
     # Relationships
     user_roles = relationship("UserRole", back_populates="role")
 
 class SubCategoryItem(Base):
     __tablename__ = "SubCategoryItem"
-    
+
     itemid = Column("ItemID", Integer, ForeignKey("Item.ItemID"), primary_key=True)
     subcategoryvid = Column("SubCategoryVID", Integer, ForeignKey("SubCategoryVersion.SubCategoryVID"), primary_key=True)
     order = Column("Order", Integer)
@@ -818,7 +818,7 @@ class SubCategoryItem(Base):
     comparisonoperatorid = Column("ComparisonOperatorID", Integer, ForeignKey("Operator.OperatorID"))
     arithmeticoperatorid = Column("ArithmeticOperatorID", Integer, ForeignKey("Operator.OperatorID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships - specify foreign_keys to resolve ambiguity
     item = relationship("Item", foreign_keys=[itemid], back_populates="subcategory_items")
     subcategory_version = relationship("SubCategoryVersion", back_populates="subcategory_items")
@@ -830,13 +830,13 @@ class SubCategoryItem(Base):
 
 class SubCategoryVersion(Base):
     __tablename__ = "SubCategoryVersion"
-    
+
     subcategoryvid = Column("SubCategoryVID", Integer, primary_key=True)
     subcategoryid = Column("SubCategoryID", Integer, ForeignKey("SubCategory.SubCategoryID"))
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     subcategory = relationship("SubCategory", back_populates="subcategory_versions")
     start_release = relationship("Release", foreign_keys=[startreleaseid])
@@ -845,14 +845,14 @@ class SubCategoryVersion(Base):
     subcategory_items = relationship("SubCategoryItem", back_populates="subcategory_version")
     header_versions = relationship("HeaderVersion", back_populates="subcategory_version")
     variable_versions = relationship("VariableVersion", back_populates="subcategory_version")
-    
+
     __table_args__ = (
         UniqueConstraint('SubCategoryID', 'StartReleaseID'),
     )
 
 class Subdivision(Base):
     __tablename__ = "Subdivision"
-    
+
     subdivisionid = Column("SubdivisionID", Integer, primary_key=True)
     documentvid = Column("DocumentVID", Integer, ForeignKey("DocumentVersion.DocumentVID"))
     subdivisiontypeid = Column("SubdivisionTypeID", Integer, ForeignKey("SubdivisionType.SubdivisionTypeID"))
@@ -861,7 +861,7 @@ class Subdivision(Base):
     structurepath = Column("StructurePath", String(255))
     textexcerpt = Column("TextExcerpt", Text)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     document_version = relationship("DocumentVersion", back_populates="subdivisions")
     subdivision_type = relationship("SubdivisionType", back_populates="subdivisions")
@@ -872,23 +872,23 @@ class Subdivision(Base):
 
 class SubdivisionType(Base):
     __tablename__ = "SubdivisionType"
-    
+
     subdivisiontypeid = Column("SubdivisionTypeID", Integer, primary_key=True)
     name = Column("Name", String(50))
     description = Column("Description", String(255))
-    
+
     # Relationships
     subdivisions = relationship("Subdivision", back_populates="subdivision_type")
 
 class SupercategoryComposition(Base):
     __tablename__ = "SuperCategoryComposition"
-    
+
     supercategoryid = Column("SuperCategoryID", Integer, ForeignKey("Category.CategoryID"), primary_key=True)
     categoryid = Column("CategoryID", Integer, ForeignKey("Category.CategoryID"), primary_key=True)
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     supercategory = relationship("Category", foreign_keys=[supercategoryid], back_populates="supercategory_compositions")
     category = relationship("Category", foreign_keys=[categoryid], back_populates="category_compositions")
@@ -897,7 +897,7 @@ class SupercategoryComposition(Base):
 
 class Table(Base):
     __tablename__ = "Table"
-    
+
     tableid = Column("TableID", Integer, primary_key=True)
     isabstract = Column("IsAbstract", Boolean)
     hasopencolumns = Column("HasOpenColumns", Boolean)
@@ -906,7 +906,7 @@ class Table(Base):
     isnormalised = Column("IsNormalised", Boolean)
     isflat = Column("IsFlat", Boolean)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships - specify foreign_keys to resolve ambiguity
     concept = relationship("Concept", foreign_keys=[rowguid])
     headers = relationship("Header", back_populates="table")
@@ -918,7 +918,7 @@ class Table(Base):
 
 class TableAssociation(Base):
     __tablename__ = "TableAssociation"
-    
+
     associationid = Column("AssociationID", Integer, primary_key=True)
     childtablevid = Column("ChildTableVID", Integer, ForeignKey("TableVersion.TableVID"))
     parenttablevid = Column("ParentTableVID", Integer, ForeignKey("TableVersion.TableVID"))
@@ -930,7 +930,7 @@ class TableAssociation(Base):
     parentcardinalityandoptionality = Column("ParentCardinalityAndOptionality", String(3))
     childcardinalityandoptionality = Column("ChildCardinalityAndOptionality", String(3))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     child_table_version = relationship("TableVersion", foreign_keys=[childtablevid], back_populates="table_associations_as_child")
     parent_table_version = relationship("TableVersion", foreign_keys=[parenttablevid], back_populates="table_associations_as_parent")
@@ -940,7 +940,7 @@ class TableAssociation(Base):
 
 class TableGroup(Base):
     __tablename__ = "TableGroup"
-    
+
     tablegroupid = Column("TableGroupID", Integer, primary_key=True)
     code = Column("Code", String(255))
     name = Column("Name", String(255))
@@ -950,7 +950,7 @@ class TableGroup(Base):
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     parenttablegroupid = Column("ParentTableGroupID", Integer, ForeignKey("TableGroup.TableGroupID"))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     start_release = relationship("Release", foreign_keys=[startreleaseid])
@@ -961,14 +961,14 @@ class TableGroup(Base):
 
 class TableGroupComposition(Base):
     __tablename__ = "TableGroupComposition"
-    
+
     tablegroupid = Column("TableGroupID", Integer, ForeignKey("TableGroup.TableGroupID"), primary_key=True)
     tableid = Column("TableID", Integer, ForeignKey("Table.TableID"), primary_key=True)
     order = Column("Order", Integer)
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     table_group = relationship("TableGroup", back_populates="table_group_compositions")
     table = relationship("Table", back_populates="table_group_compositions")
@@ -976,7 +976,7 @@ class TableGroupComposition(Base):
     end_release = relationship("Release", foreign_keys=[endreleaseid])
 class TableVersion(Base):
     __tablename__ = "TableVersion"
-    
+
     tablevid = Column("TableVID", Integer, primary_key=True)
     code = Column("Code", String(30))
     name = Column("Name", String(255))
@@ -989,7 +989,7 @@ class TableVersion(Base):
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships - specify foreign_keys to resolve ambiguity
     table = relationship("Table", foreign_keys=[tableid], back_populates="table_versions")
     abstract_table = relationship("Table", foreign_keys=[abstracttableid], back_populates="abstract_table_versions")
@@ -1004,14 +1004,14 @@ class TableVersion(Base):
     table_associations_as_child = relationship("TableAssociation", foreign_keys="TableAssociation.childtablevid", back_populates="child_table_version")
     table_associations_as_parent = relationship("TableAssociation", foreign_keys="TableAssociation.parenttablevid", back_populates="parent_table_version")
     module_version_compositions = relationship("ModuleVersionComposition", back_populates="table_version")
-    
+
     __table_args__ = (
         UniqueConstraint('TableID', 'StartReleaseID'),
     )
 
 class TableVersionCell(Base):
     __tablename__ = "TableVersionCell"
-    
+
     tablevid = Column("TableVID", Integer, ForeignKey("TableVersion.TableVID"), primary_key=True)
     cellid = Column("CellID", Integer, ForeignKey("Cell.CellID"), primary_key=True)
     cellcode = Column("CellCode", String(100))
@@ -1021,7 +1021,7 @@ class TableVersionCell(Base):
     sign = Column("Sign", String(8))
     variablevid = Column("VariableVID", Integer, ForeignKey("VariableVersion.VariableVID"))
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     table_version = relationship("TableVersion", back_populates="table_version_cells")
     cell = relationship("Cell", back_populates="table_version_cells")
@@ -1029,7 +1029,7 @@ class TableVersionCell(Base):
 
 class TableVersionHeader(Base):
     __tablename__ = "TableVersionHeader"
-    
+
     tablevid = Column("TableVID", Integer, ForeignKey("TableVersion.TableVID"), primary_key=True)
     headerid = Column("HeaderID", Integer, ForeignKey("Header.HeaderID"), primary_key=True)
     headervid = Column("HeaderVID", Integer, ForeignKey("HeaderVersion.HeaderVID"))
@@ -1039,7 +1039,7 @@ class TableVersionHeader(Base):
     isabstract = Column("IsAbstract", Boolean)
     isunique = Column("IsUnique", Boolean)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     table_version = relationship("TableVersion", back_populates="table_version_headers")
     header = relationship("Header", foreign_keys=[headerid])
@@ -1048,14 +1048,14 @@ class TableVersionHeader(Base):
 
 class Translation(Base):
     __tablename__ = "Translation"
-    
+
     conceptguid = Column("ConceptGUID", String(36), ForeignKey("Concept.ConceptGUID"), primary_key=True)
     attributeid = Column("AttributeID", Integer, ForeignKey("DPMAttribute.AttributeID"), primary_key=True)
     translatorid = Column("TranslatorID", Integer, ForeignKey("Organisation.OrgID"), primary_key=True)
     languagecode = Column("LanguageCode", Integer, ForeignKey("Language.LanguageCode"), primary_key=True)
     translation = Column("Translation", Text)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[conceptguid])
     dpm_attribute = relationship("DpmAttribute", back_populates="translations")
@@ -1064,11 +1064,11 @@ class Translation(Base):
 
 class User(Base):
     __tablename__ = "User"
-    
+
     userid = Column("UserID", Integer, primary_key=True)
     orgid = Column("OrgID", Integer, ForeignKey("Organisation.OrgID"))
     name = Column("Name", String(50))
-    
+
     # Relationships
     organisation = relationship("Organisation", back_populates="users")
     user_roles = relationship("UserRole", back_populates="user")
@@ -1076,21 +1076,21 @@ class User(Base):
 
 class UserRole(Base):
     __tablename__ = "UserRole"
-    
+
     userid = Column("UserID", Integer, ForeignKey("User.UserID"), primary_key=True)
     roleid = Column("RoleID", Integer, ForeignKey("Role.RoleID"), primary_key=True)
-    
+
     # Relationships
     user = relationship("User", back_populates="user_roles")
     role = relationship("Role", back_populates="user_roles")
 
 class Variable(Base):
     __tablename__ = "Variable"
-    
+
     variableid = Column("VariableID", Integer, primary_key=True)
     type = Column("Type", String(20))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     variable_versions = relationship("VariableVersion", back_populates="variable")
@@ -1099,14 +1099,14 @@ class Variable(Base):
 
 class VariableCalculation(Base):
     __tablename__ = "VariableCalculation"
-    
+
     moduleid = Column("ModuleID", Integer, ForeignKey("Module.ModuleID"), primary_key=True)
     variableid = Column("VariableID", Integer, ForeignKey("Variable.VariableID"), primary_key=True)
     operationvid = Column("OperationVID", Integer, ForeignKey("OperationVersion.OperationVID"), primary_key=True)
     fromreferencedate = Column("FromReferenceDate", Date)
     toreferencedate = Column("ToReferenceDate", Date)
     rowguid = Column("RowGUID", String(36))
-    
+
     # Relationships
     module = relationship("Module", back_populates="variable_calculations")
     variable = relationship("Variable", back_populates="variable_calculations")
@@ -1114,20 +1114,20 @@ class VariableCalculation(Base):
 
 class VariableGeneration(Base):
     __tablename__ = "VariableGeneration"
-    
+
     variablegenerationid = Column("VariableGenerationID", Integer, primary_key=True)
     startdate = Column("StartDate", DateTime)
     enddate = Column("EndDate", DateTime)
     status = Column("Status", String(50))
     releaseid = Column("ReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     error = Column("Error", String(4000))
-    
+
     # Relationships
     release = relationship("Release", back_populates="variable_generations")
 
 class VariableVersion(Base):
     __tablename__ = "VariableVersion"
-    
+
     variablevid = Column("VariableVID", Integer, primary_key=True)
     variableid = Column("VariableID", Integer, ForeignKey("Variable.VariableID"))
     propertyid = Column("PropertyID", Integer, ForeignKey("Property.PropertyID"))
@@ -1140,7 +1140,7 @@ class VariableVersion(Base):
     startreleaseid = Column("StartReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     endreleaseid = Column("EndReleaseID", Integer, ForeignKey("Release.ReleaseID"))
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    
+
     # Relationships
     variable = relationship("Variable", back_populates="variable_versions")
     property = relationship("Property", back_populates="variable_versions")
@@ -1154,7 +1154,7 @@ class VariableVersion(Base):
     module_parameters = relationship("ModuleParameters", back_populates="variable_version")
     table_version_cells = relationship("TableVersionCell", back_populates="variable_version")
     header_versions = relationship("HeaderVersion", back_populates="key_variable_version")
-    
+
     __table_args__ = (
         UniqueConstraint('VariableID', 'StartReleaseID'),
     )
@@ -1208,7 +1208,7 @@ def _check_ranges_values_are_present(data: pd.DataFrame, data_column, values):
     return data
 
 class ViewDatapoints(Base):
-    __tablename__ = "Datapoints"
+    __tablename__ = "datapoints"
 
     cell_code = Column(String, primary_key=True)
     table_code = Column(String)
@@ -1362,7 +1362,7 @@ class ViewDatapoints(Base):
         return data
 
 class ViewKeyComponents(Base):
-    __tablename__ = "drr_key_components"
+    __tablename__ = "key_components"
 
     table_code = Column(String, primary_key=True)
     property_code = Column(String, primary_key=True)
@@ -1398,7 +1398,7 @@ class ViewKeyComponents(Base):
         return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
 
 class ViewOpenKeys(Base):
-    __tablename__ = "drr_open_keys"
+    __tablename__ = "open_keys"
 
     property_code = Column(String, primary_key=True)
     data_type = Column(String, primary_key=True)
@@ -1421,7 +1421,7 @@ class ViewOpenKeys(Base):
         return data
 
 class ViewDataTypes(Base):
-    __tablename__ = "drr_data_types"
+    __tablename__ = "data_types"
 
     datapoint = Column(String, primary_key=True)
     data_type = Column(String, primary_key=True)
@@ -1447,7 +1447,7 @@ class ViewDataTypes(Base):
         return data
 
 class ViewSubcategoryItemInfo(Base):
-    __tablename__ = "drr_subcategory_item_info"
+    __tablename__ = "subcategory_info"
 
     subcategory_id = Column(Integer, primary_key=True)
     item_code = Column(String, primary_key=True)
@@ -1471,7 +1471,7 @@ class ViewSubcategoryItemInfo(Base):
         return data
 
 class ViewHierarchyVariables(Base):
-    __tablename__ = "drr_hierarchy_variables"
+    __tablename__ = "hierarchy_variables"
 
     subcategory_id = Column(Integer, primary_key=True)
     variable_vid = Column(Integer, primary_key=True)
@@ -1493,7 +1493,7 @@ class ViewHierarchyVariables(Base):
         return data
 
 class ViewHierarchyVariablesContext(Base):
-    __tablename__ = "drr_hierarchy_variables_context"
+    __tablename__ = "hierarchy_variables_context"
 
     variable_vid = Column(Integer, primary_key=True)
     context_property_code = Column(String, primary_key=True)
@@ -1519,7 +1519,7 @@ class ViewHierarchyVariablesContext(Base):
         return data
 
 class ViewHierarchyPreconditions(Base):
-    __tablename__ = "drr_hierarchy_preconditions"
+    __tablename__ = "hierarchy_preconditions"
 
     expression = Column(String, primary_key=True)
     operation_code = Column(String, primary_key=True)
@@ -1531,7 +1531,7 @@ class ViewHierarchyPreconditions(Base):
         return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
 
 class ViewOperations(Base):
-    __tablename__ = "drr_operations"
+    __tablename__ = "operation_list"
 
     operation_version_id = Column(Integer, primary_key=True)
     operation_code = Column(String)
@@ -1566,7 +1566,7 @@ class ViewOperations(Base):
         return preconditions.to_dict(orient="records")
 
 class ViewModules(Base):
-    __tablename__ = "drr_module_from_table"
+    __tablename__ = "module_from_table"
 
     module_code = Column(String, primary_key=True)
     table_code = Column(String, primary_key=True)
@@ -1589,7 +1589,7 @@ class ViewModules(Base):
         return list(set(module_list))
 
 class ViewOperationFromModule(Base):
-    __tablename__ = "drr_operation_versions_from_module_version"
+    __tablename__ = "operations_versions_from_module_version"
 
     module_version_id = Column(Integer, primary_key=True)
     operation_version_id = Column(Integer, primary_key=True)
@@ -1640,7 +1640,7 @@ class ViewOperationFromModule(Base):
         return reference.to_dict(orient="records")
 
 class ViewOperationInfo(Base):
-    __tablename__ = "drr_operation_info"
+    __tablename__ = "operation_info"
 
     operation_node_id = Column(Integer, primary_key=True)
     operation_version_id = Column(Integer)
@@ -1693,7 +1693,7 @@ class ViewOperationInfo(Base):
         return df
 
 class ViewTableInfo(Base):
-    __tablename__ = "drr_table_info"
+    __tablename__ = "table_info"
 
     table_code = Column(String, primary_key=True)
     table_version_id = Column(Integer, primary_key=True)
@@ -1757,7 +1757,7 @@ class ViewTableInfo(Base):
         return len(intersect_set) > 0
 
 class ViewPreconditionInfo(Base):
-    __tablename__ = "drr_precondition_info"
+    __tablename__ = "precondition_info"
 
     operation_node_id = Column(Integer, primary_key=True)
     operation_version_id = Column(Integer)
@@ -1778,7 +1778,7 @@ class ViewPreconditionInfo(Base):
         return query.one()
 
 class ViewHierarchyOperandReferenceInfo(Base):
-    __tablename__ = "drr_hierarchy_operand_reference_info"
+    __tablename__ = "hierarchy_operand_reference"
 
     operation_code = Column(String, primary_key=True)
     operation_node_id = Column(Integer, primary_key=True)
@@ -1804,7 +1804,7 @@ class ViewHierarchyOperandReferenceInfo(Base):
         return possible_op_codes
 
 class ViewReportTypeOperandReferenceInfo(Base):
-    __tablename__ = "drr_report_type_operand_reference_info"
+    __tablename__ = "report_type_operand_reference_info"
 
     operation_code = Column(String, primary_key=True)
     operation_node_id = Column(Integer, primary_key=True)

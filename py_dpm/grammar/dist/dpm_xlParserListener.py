@@ -1,4 +1,4 @@
-# Generated from C:/Users/Javier/Documents/MeaningfulData/Programacion/DRR_operations/py_dpm/grammar/dpm_xlParser.g4 by ANTLR 4.13.1
+# Generated from C:/Users/Javier/Documents/MeaningfulData/Programacion/operations/py_dpm/grammar/dpm_xlParser.g4 by ANTLR 4.13.1
 from antlr4 import *
 
 if "." in __name__:

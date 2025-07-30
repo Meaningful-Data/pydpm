@@ -58,27 +58,15 @@ def semantic(expression: str):
 
     api = API()
     try:
-        if api._check_variants(expression):
-            validation_type = "VARIANTS"
-            validations = api.generate_validations_from_variants(validation_code="TEST", expression=expression)
-            correct_validations = [validation for validation in validations if validation[STATUS] == STATUS_CORRECT]
-            if len(correct_validations) == 0:
-                raise SemanticError("5-0-1")
-        elif api._check_property_constraints_from_expression(expression=expression):
-            validation_type = "PROPERTIES_CONSTRAINTS"
-            validations = api.generate_validation_from_properties_constraints(expression=expression, validation_code="TEST")
-            correct_validations = [validation for validation in validations if validation[STATUS] == STATUS_CORRECT]
-            if len(correct_validations) == 0:
-                raise SemanticError("5-0-1")
-        else:
-            validation_type = "OTHER"
-            api.semantic_validation(expression)
+        validation_type = "OTHER"
+        api.semantic_validation(expression)
         status = 200
         message_error = ''
     except Exception as error:
         status = 500
         message_error = str(error)
         error_code = 1
+        raise error
     message_response = {
         ERROR: message_error,
         ERROR_CODE: error_code,

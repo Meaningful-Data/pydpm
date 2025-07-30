@@ -32,7 +32,7 @@ class InputAnalyzer(ASTTemplate, ABC):
         self.key_components = {}
         self.open_keys = None
         self.result: bool = False
-        self._expression: expression  # For debugging purposes only
+        self._expression: str = expression  # For debugging purposes only
         self.preconditions: bool = False
 
         self.calculations_outputs = {}
