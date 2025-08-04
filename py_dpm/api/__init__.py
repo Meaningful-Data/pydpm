@@ -12,17 +12,25 @@ from py_dpm.AST.ModuleDependencies import ModuleDependencies
 from py_dpm.AST.check_operands import OperandsChecking
 from py_dpm.semantics import SemanticAnalyzer
 
-from py_dpm.ValidationsGeneration.VariantsProcessor import VariantsProcessor, \
-    VariantsProcessorChecker
-from py_dpm.ValidationsGeneration.PropertiesConstraintsProcessor import \
-    PropertiesConstraintsChecker, PropertiesConstraintsProcessor
+from py_dpm.ValidationsGeneration.VariantsProcessor import (
+    VariantsProcessor,
+    VariantsProcessorChecker,
+)
+from py_dpm.ValidationsGeneration.PropertiesConstraintsProcessor import (
+    PropertiesConstraintsChecker,
+    PropertiesConstraintsProcessor,
+)
+
+from py_dpm.db_utils import get_session, get_engine
+
 
 class API:
     error_listener = DPMErrorListener()
     visitor = ASTVisitor()
-    def __init__(self):
-        pass
 
+    def __init__(self):
+        get_engine()
+        self.session = get_session()
 
     @classmethod
     def lexer(cls, text: str):
@@ -66,16 +74,10 @@ class API:
             cls.visitor = ASTVisitor()
             cls.AST = cls.visitor.visit(cls.CST)
 
-
     def semantic_validation(self, expression):
         self.create_ast(expression=expression)
 
-        if self._check_property_constraints(ast=self.AST):
-            self.generate_validation_from_properties_constraints(expression=expression,
-                                                                 validation_code="TEST",
-                                                                 release_id=1)
-
-        oc = OperandsChecking(self.session, expression, self.AST, 1)
+        oc = OperandsChecking(session=self.session, expression=expression, ast=self.AST, release_id=None)
         semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
         semanticAnalysis.data = oc.data
@@ -85,10 +87,7 @@ class API:
         semanticAnalysis.preconditions = oc.preconditions
 
         results = semanticAnalysis.visit(self.AST)
-
         return results
-
-
 
     def _check_property_constraints(self, ast):
         """

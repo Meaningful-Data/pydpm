@@ -6,7 +6,7 @@ import numpy
 import pandas as pd
 
 from py_dpm.Exceptions import exceptions
-from py_dpm.Models.models import ModuleVersion, OperationScope, OperationScopeComposition
+from py_dpm.models import ModuleVersion, OperationScope, OperationScopeComposition
 from py_dpm.Utils.tokens import VARIABLE_VID, WARNING_SEVERITY
 from py_dpm.db_utils import get_session
 

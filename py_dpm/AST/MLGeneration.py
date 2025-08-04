@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from py_dpm.AST.ASTObjects import *
 from py_dpm.AST.ASTTemplate import ASTTemplate
 from py_dpm.Exceptions.exceptions import SemanticError
-from py_dpm.Models.models import ItemCategory, OperandReference, OperandReferenceLocation, OperationNode, Operator, \
+from py_dpm.models import ItemCategory, OperandReference, OperandReferenceLocation, OperationNode, Operator, \
     OperatorArgument, \
     VariableVersion
 from py_dpm.OperationScopes.OperationScopeService import OperationScopeService

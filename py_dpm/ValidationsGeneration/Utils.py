@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from py_dpm.Exceptions.exceptions import ScriptingError, SemanticError
-from py_dpm.Models.models import OperationVersion, SubCategory, TableVersionCell, ViewReportTypeOperandReferenceInfo
+from py_dpm.models import OperationVersion, SubCategory, TableVersionCell, ViewReportTypeOperandReferenceInfo
 from py_dpm.db_utils import get_session
 
 

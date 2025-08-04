@@ -4,7 +4,7 @@ from py_dpm.AST.ASTObjects import AggregationOp, BinOp, ComplexNumericOp, CondEx
     TimeShiftOp, UnaryOp, VarID, WhereClauseOp
 from py_dpm.AST.ASTTemplate import ASTTemplate
 from py_dpm.Exceptions import exceptions
-from py_dpm.Models.models import ItemCategory, ViewDatapoints
+from py_dpm.models import ItemCategory, ViewDatapoints
 from py_dpm.Utils.ValidationsGenerationUtils import ValidationsGenerationUtils
 from py_dpm.Utils.tokens import *
 
