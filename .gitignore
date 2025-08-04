@@ -1,1 +1,4 @@
 **/__pycache__
+database.db
+database.db-journal
+**/*.accdb

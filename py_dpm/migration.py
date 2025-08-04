@@ -1,10 +1,12 @@
 import subprocess
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 import os
 import sys
 from pathlib import Path
 import re
+from .models import Base, ViewDatapoints
 
 def extract_access_tables(access_file):
     """Extract tables from Access database using mdbtools"""
@@ -17,7 +19,6 @@ def extract_access_tables(access_file):
     except subprocess.CalledProcessError as e:
         print(f"Error getting tables from {access_file}: {e}", file=sys.stderr)
         sys.exit(1)
-
 
     data = {}
     for table in tables:
@@ -33,7 +34,6 @@ def extract_access_tables(access_file):
         except Exception as e:
             print(f"An unexpected error occurred during export of table {table}: {e}", file=sys.stderr)
             continue
-
 
         # Read CSV into pandas DataFrame with specific dtype settings
         STRING_COLUMNS = ["row", "column", "sheet"]
@@ -58,7 +58,11 @@ def extract_access_tables(access_file):
 
             # Convert only the identified numeric columns
             for col in numeric_columns:
-                df[col] = pd.to_numeric(df[col], errors='ignore')
+                try:
+                    df[col] = pd.to_numeric(df[col])
+                except (ValueError, TypeError):
+                    # Keep as string if conversion fails
+                    pass
 
             data[table] = df
 
@@ -75,6 +79,9 @@ def migrate_to_sqlite(data, sqlite_db_path):
     """Migrate data to SQLite"""
     engine = create_engine(f"sqlite:///{sqlite_db_path}")
 
+    # Create all tables defined in the models
+    Base.metadata.create_all(engine)
+
     for table_name, df in data.items():
         df.to_sql(
             table_name.replace(" ", "_"), # Sanitize table names
@@ -84,49 +91,76 @@ def migrate_to_sqlite(data, sqlite_db_path):
         )
     return engine
 
-def create_views(engine):
-    """Create views in the SQLite database"""
-    print("Creating views...")
-    views_dir = Path(__file__).parent / 'data' / 'views'
-    sql_files = sorted(list(views_dir.glob('*.sql')))
+def create_datapoints_view(engine):
+    """Create the datapoints view in the database"""
+    # Create a session
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
-    with engine.connect() as connection:
-        for sql_file in sql_files:
-            with open(sql_file, 'r') as f:
-                content = f.read()
-                
-                match = re.search(r'CREATE(?:\s+OR\s+ALTER)?\s+VIEW\s+([^\s(]+)', content, re.IGNORECASE)
-                
-                if match:
-                    view_name_raw = match.group(1)
-                    view_name = view_name_raw.replace('[','').replace(']','').replace('dbo.','')
-                    
-                    # Clean up SQL for SQLite compatibility
-                    sqlite_content = content.replace('[dbo].', '').replace('dbo.', '')
-                    # Use double quotes for identifiers in SQLite
-                    sqlite_content = sqlite_content.replace('[', '"').replace(']', '"')
-                    
-                    # Replace "CREATE OR ALTER VIEW" with "CREATE VIEW" using a case-insensitive regex
-                    sqlite_content = re.sub(r'CREATE\s+OR\s+ALTER\s+VIEW', 'CREATE VIEW', sqlite_content, flags=re.IGNORECASE | re.DOTALL)
-                    
-                    try:
-                        connection.execute(text(f"DROP VIEW IF EXISTS {view_name}"))
-                        connection.execute(text(sqlite_content))
-                        print(f"View {view_name} created.")
-                    except Exception as e:
-                        print(f"Error creating view {view_name} from {sql_file.name}: {e}", file=sys.stderr)
-        
-def run_migration(file_name, sqlite_db_path):
+    try:
+        # Get the view query
+        view_query = ViewDatapoints.create_view_query(session)
 
-    # Extract data from Access
-    print("Extracting data from Access database...")
-    data = extract_access_tables(file_name)
+        # Convert the SQLAlchemy query to SQL
+        compiled_query = view_query.statement.compile(
+            dialect=engine.dialect,
+            compile_kwargs={"literal_binds": True}
+        )
 
-    # Migrate to SQLite
-    print("Migrating data to SQLite...")
-    engine = migrate_to_sqlite(data, sqlite_db_path)
-    
-    # Create views
-    create_views(engine)
+        # Create the view in the database
+        create_view_sql = f"CREATE VIEW IF NOT EXISTS datapoints AS {compiled_query}"
 
-    print("Migration complete")
+        with engine.connect() as conn:
+            conn.execute(text(create_view_sql))
+            conn.commit()
+
+        print("Datapoints view created successfully")
+
+    except Exception as e:
+        print(f"Error creating datapoints view: {e}")
+        raise
+    finally:
+        session.close()
+
+def run_migration(file_name, sqlite_db_path, export_csv=True, csv_path="datapoints.csv"):
+    try:
+        # Extract data from Access
+        print("Extracting data from Access database...")
+        data = extract_access_tables(file_name)
+
+        # Migrate to SQLite
+        print("Migrating data to SQLite...")
+        engine = migrate_to_sqlite(data, sqlite_db_path)
+
+        # Create the datapoints view
+        print("Creating datapoints view...")
+        create_datapoints_view(engine)
+
+        print("Migration complete")
+        return engine
+
+    except Exception as e:
+        print(f"An error occurred during migration: {e}")
+        raise
+
+# CLI functionality for standalone CSV export
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Migrate Access database or dump datapoints view to CSV"
+    )
+    parser.add_argument(
+        "database",
+        help="Path to the SQLite database file (or Access file for migration)"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        default="datapoints.csv",
+        help="Output CSV file path (default: datapoints.csv)"
+    )
+
+    args = parser.parse_args()
+
+    sqlite_path = args.database.replace('.mdb', '.db')
+    run_migration(args.database, sqlite_path, export_csv=True, csv_path=args.output)

@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import List
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text,
+    Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, and_,
     SmallInteger, and_, or_, select, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import aliased, declarative_base, relationship
+from sqlalchemy import func
 import pandas as pd
 
 Base = declarative_base()
@@ -1226,46 +1227,261 @@ class ViewDatapoints(Base):
     variable_vid = Column(String)
 
     @classmethod
+    def _create_base_query_with_aliases(cls, session):
+        """
+        Create the base query with all aliases and joins.
+        Returns query and the aliases for reuse in other methods.
+        """
+        # Create aliases for the header version subqueries
+        hvr_subq = aliased(HeaderVersion)
+        hvc_subq = aliased(HeaderVersion)
+        hvs_subq = aliased(HeaderVersion)
+
+        tvh_row = aliased(TableVersionHeader)
+        tvh_col = aliased(TableVersionHeader)
+        tvh_sheet = aliased(TableVersionHeader)
+
+        # Build the base query with all joins
+        query = session.query().select_from(TableVersionCell)
+
+        # Join with TableVersion
+        query = query.join(
+            TableVersion,
+            and_(
+                TableVersionCell.tablevid == TableVersion.tablevid,
+                TableVersionCell.isvoid == False
+            )
+        )
+
+        # Join with ModuleVersionComposition and ModuleVersion
+        query = query.join(
+            ModuleVersionComposition,
+            TableVersion.tablevid == ModuleVersionComposition.tablevid
+        )
+
+        query = query.join(
+            ModuleVersion,
+            ModuleVersionComposition.modulevid == ModuleVersion.modulevid
+        )
+
+        # Left join with VariableVersion
+        query = query.outerjoin(
+            VariableVersion,
+            TableVersionCell.variablevid == VariableVersion.variablevid
+        )
+
+        # Left join with Property
+        query = query.outerjoin(
+            Property,
+            VariableVersion.propertyid == Property.propertyid
+        )
+
+        # Left join with DataType
+        query = query.outerjoin(
+            DataType,
+            Property.datatypeid == DataType.datatypeid
+        )
+
+        # Join with Cell
+        query = query.join(
+            Cell,
+            TableVersionCell.cellid == Cell.cellid
+        )
+
+        # Left join for Row headers (hvr)
+        query = query.outerjoin(
+            tvh_row,
+            tvh_row.tablevid == TableVersion.tablevid
+        )
+
+        query = query.outerjoin(
+            hvr_subq,
+            and_(
+                tvh_row.headervid == hvr_subq.headervid,
+                hvr_subq.headerid == Cell.rowid,
+                hvr_subq.endreleaseid.is_(None)
+            )
+        )
+
+        # Left join for Column headers (hvc)
+        query = query.outerjoin(
+            tvh_col,
+            tvh_col.tablevid == TableVersion.tablevid
+        )
+
+        query = query.outerjoin(
+            hvc_subq,
+            and_(
+                tvh_col.headervid == hvc_subq.headervid,
+                hvc_subq.headerid == Cell.columnid,
+                hvc_subq.endreleaseid.is_(None)
+            )
+        )
+
+        # Left join for Sheet headers (hvs)
+        query = query.outerjoin(
+            tvh_sheet,
+            tvh_sheet.tablevid == TableVersion.tablevid
+        )
+
+        query = query.outerjoin(
+            hvs_subq,
+            and_(
+                tvh_sheet.headervid == hvs_subq.headervid,
+                hvs_subq.headerid == Cell.sheetid,
+                hvs_subq.endreleaseid.is_(None)
+            )
+        )
+
+        # Return query and aliases for reuse
+        aliases = {
+            'hvr': hvr_subq,
+            'hvc': hvc_subq,
+            'hvs': hvs_subq,
+            'tvh_row': tvh_row,
+            'tvh_col': tvh_col,
+            'tvh_sheet': tvh_sheet
+        }
+
+        return query, aliases
+
+    @classmethod
+    def create_view_query(cls, session):
+        """Create the full datapoints view query with all columns."""
+        query, aliases = cls._create_base_query_with_aliases(session)
+
+        # Add the column selections
+        query = query.add_columns(
+            TableVersionCell.cellcode.label('cell_code'),
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            VariableVersion.variableid.label('variable_id'),
+            DataType.code.label('data_type'),
+            TableVersion.tablevid.label('table_vid'),
+            Property.propertyid.label('property_id'),
+            ModuleVersion.startreleaseid.label('start_release'),
+            ModuleVersion.endreleaseid.label('end_release'),
+            TableVersionCell.cellid.label('cell_id'),
+            VariableVersion.contextid.label('context_id'),
+            VariableVersion.variablevid.label('variable_vid')
+        )
+
+        # Make it distinct
+        query = query.distinct()
+
+        return query
+
+    @classmethod
+    def count_all(cls, session):
+        return cls.create_view_query(session).count()
+
+    @classmethod
     def get_filtered_datapoints(cls, session, table: str, table_info: dict, release_id: int = None):
-        mapping_dictionary = {'rows': 'row_code', 'cols': 'column_code', 'sheets': 'sheet_code'}
-        conditions = [cls.table_code == table]
+        query, aliases = cls._create_base_query_with_aliases(session)
+
+        # Add the column selections
+        query = query.add_columns(
+            TableVersionCell.cellcode.label('cell_code'),
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            VariableVersion.variableid.label('variable_id'),
+            DataType.code.label('data_type'),
+            TableVersion.tablevid.label('table_vid'),
+            Property.propertyid.label('property_id'),
+            ModuleVersion.startreleaseid.label('start_release'),
+            ModuleVersion.endreleaseid.label('end_release'),
+            TableVersionCell.cellid.label('cell_id'),
+            VariableVersion.contextid.label('context_id'),
+            VariableVersion.variablevid.label('variable_vid')
+        ).distinct()
+
+        # Apply table filter
+        query = query.filter(TableVersion.code == table)
+
+        # Apply dimension filters
+        mapping_dictionary = {
+            'rows': aliases['hvr'].code,
+            'cols': aliases['hvc'].code,
+            'sheets': aliases['hvs'].code
+        }
 
         for key, values in table_info.items():
-            column = getattr(cls, mapping_dictionary[key])
-            if values is not None:
+            if values is not None and key in mapping_dictionary:
+                column = mapping_dictionary[key]
                 if '-' in values[0]:
                     low_limit, high_limit = values[0].split('-')
-                    conditions.append(column.between(low_limit, high_limit))
+                    query = query.filter(column.between(low_limit, high_limit))
                 elif values[0] == '*':
                     continue
                 else:
-                    conditions.append(column.in_(values))
+                    query = query.filter(column.in_(values))
 
         if release_id:
-            conditions.append(cls.release_id == release_id)
+            query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
 
-        query = session.query(cls).filter(and_(*conditions))
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        return pd.read_sql_query(query.statement, session.connection())
+
 
     @classmethod
+    def get_datapoints_count(cls, session):
+        """Get count of datapoints using the view query"""
+        query = cls.create_view_query(session)
+        return query.count()
+
+    @classmethod
+    def get_datapoints_sample(cls, session, limit=1000):
+        """Get a sample of datapoints"""
+        query = cls.create_view_query(session)
+        return pd.read_sql_query(
+            query.limit(limit).statement,
+            session.connection()
+        )
+
+    @classmethod
+    def export_datapoints_query(cls, session):
+        """Get the compiled SQL query for the datapoints view"""
+        query = cls.create_view_query(session)
+        return str(query.statement.compile(
+            dialect=session.bind.dialect,
+            compile_kwargs={"literal_binds": True}
+        ))
+    @classmethod
     def get_all_datapoints(cls, session):
-        query = session.query(cls)
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        query = cls.create_view_query(session)
+        return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def get_table_data(cls, session, table, rows=None, columns=None, sheets=None, release_id=None):
-        query = session.query(cls.cell_code, cls.table_code,
-                              cls.row_code, cls.column_code,
-                              cls.sheet_code, cls.variable_id,
-                              cls.data_type, cls.table_vid, cls.cell_id)
-        query = query.filter_by(table_code=table)
+        query, aliases = cls._create_base_query_with_aliases(session)
+
+        # Select only needed columns
+        query = query.add_columns(
+            TableVersionCell.cellcode.label('cell_code'),
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            VariableVersion.variableid.label('variable_id'),
+            DataType.code.label('data_type'),
+            TableVersion.tablevid.label('table_vid'),
+            TableVersionCell.cellid.label('cell_id')
+        ).distinct()
+
+        query = query.filter(TableVersion.code == table)
+
         if rows is not None:
-            query = filter_elements(query, cls.row_code, rows)
+            query = filter_elements(query, aliases['hvr'].code, rows)
         if columns is not None:
-            query = filter_elements(query, cls.column_code, columns)
+            query = filter_elements(query, aliases['hvc'].code, columns)
         if sheets is not None:
-            query = filter_elements(query, cls.sheet_code, sheets)
-        query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
+            query = filter_elements(query, aliases['hvs'].code, sheets)
+
+        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
+
         data = pd.read_sql_query(query.statement, session.connection())
 
         data = _check_ranges_values_are_present(data, 'row_code', rows)
@@ -1276,91 +1492,114 @@ class ViewDatapoints(Base):
 
     @classmethod
     def get_from_property(cls, session, property_id, release_id=None):
-        query = session.query(cls.cell_code, cls.table_code,
-                              cls.row_code, cls.column_code,
-                              cls.sheet_code, cls.variable_id,
-                              cls.data_type, cls.table_vid)
-        query = query.filter_by(property_id=property_id)
+        query, aliases = cls._create_base_query_with_aliases(session)
 
-        query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
-        return data
+        query = query.add_columns(
+            TableVersionCell.cellcode.label('cell_code'),
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            VariableVersion.variableid.label('variable_id'),
+            DataType.code.label('data_type'),
+            TableVersion.tablevid.label('table_vid')
+        ).distinct()
+
+        query = query.filter(Property.propertyid == property_id)
+        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
+
+        return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def get_from_table_vid(cls, session, table_version_id):
-        query = session.query(cls)
-        query = query.filter(cls.table_vid == table_version_id)
-        query = filter_by_release(query, cls.start_release, cls.end_release, release_id=None)
+        query = cls.create_view_query(session)
+        query = query.filter(TableVersion.tablevid == table_version_id)
+        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id=None)
         return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def get_from_table_code(cls, session, table_code, release_id=None):
-        query = session.query(cls)
-        query = query.filter(cls.table_code == table_code)
-        query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
+        query = cls.create_view_query(session)
+        query = query.filter(TableVersion.code == table_code)
+        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
         return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def get_from_table_vid_with_is_nullable(cls, session, table_version_id):
-        query = session.query(cls, TableVersionCell.isnullable).join(TableVersionCell, TableVersionCell.cellid == cls.cell_id)
-        query = query.filter(cls.table_vid == table_version_id)
+        query, aliases = cls._create_base_query_with_aliases(session)
+
+        query = query.add_columns(
+            TableVersionCell.cellcode.label('cell_code'),
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            VariableVersion.variableid.label('variable_id'),
+            DataType.code.label('data_type'),
+            TableVersion.tablevid.label('table_vid'),
+            Property.propertyid.label('property_id'),
+            ModuleVersion.startreleaseid.label('start_release'),
+            ModuleVersion.endreleaseid.label('end_release'),
+            TableVersionCell.cellid.label('cell_id'),
+            VariableVersion.contextid.label('context_id'),
+            VariableVersion.variablevid.label('variable_vid'),
+            TableVersionCell.isnullable  # Add the nullable column
+        ).distinct()
+
+        query = query.filter(TableVersion.tablevid == table_version_id)
         return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def get_from_subcategory_properties(cls, session, properties, release_id):
-        query = session.query(cls.table_code, cls.row_code, cls.column_code, cls.sheet_code, cls.property_id, cls.context_id,
-                              cls.variable_vid, ContextComposition.propertyid.label('subcategory_property'), cls.cell_id, cls.data_type)
-        query = query.join(ContextComposition,
-                           and_(ContextComposition.contextid == cls.context_id, ContextComposition.propertyid.in_(properties)))
-        query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
-        return data
+        query, aliases = cls._create_base_query_with_aliases(session)
+
+        # Add ContextComposition join
+        query = query.join(
+            ContextComposition,
+            and_(
+                ContextComposition.contextid == VariableVersion.contextid,
+                ContextComposition.propertyid.in_(properties)
+            )
+        )
+
+        query = query.add_columns(
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            Property.propertyid.label('property_id'),
+            VariableVersion.contextid.label('context_id'),
+            VariableVersion.variablevid.label('variable_vid'),
+            ContextComposition.propertyid.label('subcategory_property'),
+            TableVersionCell.cellid.label('cell_id'),
+            DataType.code.label('data_type')
+        ).distinct()
+
+        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
+        return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def filter_by_context_and_property(cls, session, context, property_key, release_id):
-        query = session.query(cls.table_code, cls.row_code, cls.column_code, cls.sheet_code, cls.property_id, cls.context_id,
-                              cls.variable_vid, cls.cell_id).filter(cls.context_id == context)
+        query, aliases = cls._create_base_query_with_aliases(session)
+
+        query = query.add_columns(
+            TableVersion.code.label('table_code'),
+            aliases['hvr'].code.label('row_code'),
+            aliases['hvc'].code.label('column_code'),
+            aliases['hvs'].code.label('sheet_code'),
+            Property.propertyid.label('property_id'),
+            VariableVersion.contextid.label('context_id'),
+            VariableVersion.variablevid.label('variable_vid'),
+            TableVersionCell.cellid.label('cell_id')
+        ).distinct()
+
+        query = query.filter(VariableVersion.contextid == context)
+
         if property_key:
-            query = query.filter(cls.property_id == property_key)
-        query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
-        return data
+            query = query.filter(Property.propertyid == property_key)
 
-    @classmethod
-    def get_Variable_info_from_cell_id(cls, session, cell_id):
-        query = session.query(cls).filter(cls.cell_id==cell_id)
-        variable = pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient='records')
-        return variable
-
-    @classmethod
-    def get_variables_info_from_cell_id_list(cls, session, cell_id_list):
-        query = session.query(cls.variable_id).filter(cls.cell_id.in_(cell_id_list))
-        variable = pd.read_sql_query(query.statement, session.connection(close_with_result=True))["variable_id"].tolist()
-        return variable
-
-    @classmethod
-    def get_datapoints_for_properties_validations(cls, session, items_list):
-        query = session.query(cls, VariableVersion.keyid).join(VariableVersion, VariableVersion.variablevid == cls.variable_vid)
-        query = query.filter(cls.property_id.in_(items_list))
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
-        return data
-
-    @classmethod
-    def get_from_variables(cls, session, variables, release_id=None):
-        # Make batches of 1000 variables
-        results = []
-        batch_size = 1000
-        for i in range(0, len(variables), batch_size):
-            batch_end = i + batch_size
-            variables_batch = variables[i:batch_end]
-            query = session.query(cls.variable_vid, cls.cell_code, cls.cell_id, cls.variable_id,
-                                  cls.table_code, cls.row_code, cls.column_code, cls.sheet_code)
-            query = query.filter(cls.variable_vid.in_(variables_batch))
-            query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
-            results.append(pd.read_sql_query(query.statement, session.connection(close_with_result=True)))
-        data = pd.concat(results, axis=0)
-        return data
-
+        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
+        return pd.read_sql_query(query.statement, session.connection())
 class ViewKeyComponents(Base):
     __tablename__ = "key_components"
 
@@ -1379,7 +1618,7 @@ class ViewKeyComponents(Base):
         query = query.filter_by(table_code=table)
         query = filter_by_release(query, cls.start_release_ic, cls.end_release_ic, release_id)
         query = filter_by_release(query, cls.start_release_mv, cls.end_release_mv, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         return data
 
     @classmethod
@@ -1388,14 +1627,14 @@ class ViewKeyComponents(Base):
         query = query.filter(cls.table_code.in_(tables))
         query = filter_by_release(query, cls.start_release_ic, cls.end_release_ic, release_id)
         query = filter_by_release(query, cls.start_release_mv, cls.end_release_mv, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         return data
 
     @classmethod
     def get_by_table_version_id(cls, session, table_version_id):
         query = session.query(cls.table_code, cls.property_code, cls.data_type)
         query = query.filter_by(table_version_id=table_version_id)
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        return pd.read_sql_query(query.statement, session.connection())
 
 class ViewOpenKeys(Base):
     __tablename__ = "open_keys"
@@ -1410,14 +1649,14 @@ class ViewOpenKeys(Base):
         query = session.query(cls.property_code, cls.data_type)
         query = query.filter(cls.property_code.in_(dimension_codes))
         query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         return data
 
     @classmethod
     def get_all_keys(cls, session, release_id):
         query = session.query(cls.property_code, cls.data_type)
         query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         return data
 
 class ViewDataTypes(Base):
@@ -1440,7 +1679,7 @@ class ViewDataTypes(Base):
             query = session.query(cls.datapoint, cls.data_type)
             query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
             query = query.filter(cls.datapoint.in_(datapoints_batch))
-            results.append(pd.read_sql_query(query.statement, session.connection(close_with_result=True)))
+            results.append(pd.read_sql_query(query.statement, session.connection()))
             batch_start += batch_size
 
         data = pd.concat(results, axis=0)
@@ -1467,7 +1706,7 @@ class ViewSubcategoryItemInfo(Base):
                               cls.comparison_symbol).filter(cls.subcategory_id == subcategory_id)
         query = filter_by_release(query, cls.start_release_id, cls.end_release_id, release_id)
         query = query.order_by(cls.ordering)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         return data
 
 class ViewHierarchyVariables(Base):
@@ -1489,7 +1728,7 @@ class ViewHierarchyVariables(Base):
                               cls.item_code).filter(
             cls.subcategory_id == subcategory_id)
         query = filter_by_release(query, cls.start_release_id, cls.end_release_id, release_id)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         return data
 
 class ViewHierarchyVariablesContext(Base):
@@ -1512,7 +1751,7 @@ class ViewHierarchyVariablesContext(Base):
             query = session.query(cls.variable_vid, cls.context_property_code, cls.item_code).filter(
                 cls.variable_vid.in_(variables_batch))
             query = filter_by_release(query, cls.start_release_id, cls.end_release_id, release_id)
-            results.append(pd.read_sql_query(query.statement, session.connection(close_with_result=True)))
+            results.append(pd.read_sql_query(query.statement, session.connection()))
         data = pd.concat(results, axis=0)
         # Removing duplicates to avoid issues later with default values
         data = data.drop_duplicates(keep='first').reset_index(drop=True)
@@ -1528,7 +1767,7 @@ class ViewHierarchyPreconditions(Base):
     @classmethod
     def get_preconditions(cls, session):
         query = session.query(cls)
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        return pd.read_sql_query(query.statement, session.connection())
 
 class ViewOperations(Base):
     __tablename__ = "operation_list"
@@ -1543,7 +1782,7 @@ class ViewOperations(Base):
     @classmethod
     def get_operations(cls, session):
         query = session.query(cls).distinct()
-        operations = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        operations = pd.read_sql_query(query.statement, session.connection())
         return operations.to_dict(orient="records")
 
     @classmethod
@@ -1561,7 +1800,7 @@ class ViewOperations(Base):
         query = session.query(cls)
 
         query = query.filter(cls.operation_version_id.in_(preconditions_ids)).distinct()
-        preconditions = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        preconditions = pd.read_sql_query(query.statement, session.connection())
 
         return preconditions.to_dict(orient="records")
 
@@ -1576,7 +1815,7 @@ class ViewModules(Base):
     @classmethod
     def get_all_modules(cls, session):
         query = session.query(cls.module_code, cls.table_code).distinct()
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        return pd.read_sql_query(query.statement, session.connection())
 
     @classmethod
     def get_modules(cls, session, tables, release_id=None):
@@ -1609,13 +1848,13 @@ class ViewOperationFromModule(Base):
             cls.module_code, cls.from_date, cls.to_date, cls.expression, cls.operation_code, cls.operation_version_id)
         query = query.filter(cls.module_code == module_code)
         query = filter_by_date(query, cls.from_date, cls.to_date, ref_date)
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_module_version_id_from_operation_vid(cls, session, operation_version_id):
         query = session.query(cls.module_version_id, cls.module_code, cls.from_date, cls.to_date)
         query = query.filter(cls.operation_version_id == operation_version_id).distinct()
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_operations_from_moduleversion_id(cls, session, module_version_id, with_preconditions=True, with_errors=False):
@@ -1623,17 +1862,17 @@ class ViewOperationFromModule(Base):
             cls.module_code, cls.from_date, cls.to_date, cls.expression, cls.operation_code, cls.operation_version_id,
             cls.precondition_operation_version_id, cls.is_active, cls.severity)
         query = query.filter(cls.module_version_id == module_version_id).distinct()
-        reference = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        reference = pd.read_sql_query(query.statement, session.connection())
         not_errors = []
         preconditions_to_remove = []
         if not with_errors:
             not_errors = session.query(OperationNode.nodeid.label('operation_version_id')).distinct()
-            not_errors = pd.read_sql_query(not_errors.statement, session.connection(close_with_result=True))
+            not_errors = pd.read_sql_query(not_errors.statement, session.connection())
             not_errors = list(not_errors['operation_version_id'])
             reference = reference[reference['operation_version_id'].isin(not_errors)]
         if not with_preconditions:
             preconditions = session.query(ViewPreconditionInfo.operation_version_id).distinct()
-            preconditions = pd.read_sql_query(preconditions.statement, session.connection(close_with_result=True))
+            preconditions = pd.read_sql_query(preconditions.statement, session.connection())
             preconditions_to_remove = list(preconditions['operation_version_id'])
             reference = reference[~reference['operation_version_id'].isin(preconditions_to_remove)]
 
@@ -1665,7 +1904,7 @@ class ViewOperationInfo(Base):
     @classmethod
     def get_operation_info(cls, session, operation_version_id):
         query = session.query(cls).filter(cls.operation_version_id == operation_version_id)
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_operation_info_df(cls, session, operation_version_ids):
@@ -1688,7 +1927,7 @@ class ViewOperationInfo(Base):
             "variable_id": "VariableID"
         }
         query = session.query(cls).filter(cls.operation_version_id.in_(operation_version_ids))
-        df = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        df = pd.read_sql_query(query.statement, session.connection())
         df = df.rename(columns=rename_dict)
         return df
 
@@ -1706,17 +1945,17 @@ class ViewTableInfo(Base):
     @classmethod
     def get_tables_from_module_code(cls, session, module_code):
         query = session.query(cls.table_code, cls.table_version_id).filter(cls.module_code == module_code).distinct()
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_tables_from_module_version(cls, session, module_version_id):
         query = session.query(cls.table_code, cls.table_version_id).filter(cls.module_version_id == module_version_id).distinct()
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_variables_from_table_code(cls, session, table_code, to_dict=True):
         query = session.query(cls.variable_id, cls.variable_version_id).filter(cls.table_code == table_code)
-        data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        data = pd.read_sql_query(query.statement, session.connection())
         if to_dict:
             return data.to_dict(orient="records")
         return data
@@ -1724,12 +1963,12 @@ class ViewTableInfo(Base):
     @classmethod
     def get_variables_from_table_version(cls, session, table_version_id):
         query = session.query(cls.variable_id, cls.variable_version_id).filter(cls.table_version_id == table_version_id)
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_intra_module_variables(cls, session):
         query = session.query(cls.variable_version_id, cls.module_code).distinct()
-        module_data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        module_data = pd.read_sql_query(query.statement, session.connection())
         intra_module_data = module_data.drop_duplicates(subset=["variable_version_id"], keep=False,
                                                         ignore_index=True)
         del module_data
@@ -1740,7 +1979,7 @@ class ViewTableInfo(Base):
     @classmethod
     def is_intra_module(cls, session, table_codes):
         query = session.query(cls.table_code, cls.module_code).distinct().filter(cls.table_code.in_(table_codes))
-        module_data = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        module_data = pd.read_sql_query(query.statement, session.connection())
 
         all_combinations = module_data.groupby("table_code")["module_code"].apply(list).reset_index(
             drop=False).to_dict(orient="records")
@@ -1770,7 +2009,7 @@ class ViewPreconditionInfo(Base):
     @classmethod
     def get_preconditions(cls, session):
         query = session.query(cls.operation_version_id, cls.operation_code, cls.variable_code).distinct()
-        return pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        return pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
 
     @classmethod
     def get_precondition_code(cls, session, variable_version_id):
@@ -1788,7 +2027,7 @@ class ViewHierarchyOperandReferenceInfo(Base):
     @classmethod
     def get_operations(cls, session, cell_id):
         query = session.query(cls.operation_code, cls.operation_node_id).filter(cls.cell_id == cell_id).distinct()
-        operations = pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        operations = pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
         return operations
 
     @classmethod
@@ -1796,7 +2035,7 @@ class ViewHierarchyOperandReferenceInfo(Base):
         query = session.query(cls).filter(cls.variable_id.in_(var_id_list))
         possible_op_codes = []
 
-        df = pd.read_sql_query(query.statement, session.connection(close_with_result=True))
+        df = pd.read_sql_query(query.statement, session.connection())
         grouped_code = df.groupby("operation_code")
         for elto_k, elto_v in grouped_code.groups.items():
             if len(grouped_code.groups[elto_k]) == len(var_id_list):
@@ -1818,5 +2057,5 @@ class ViewReportTypeOperandReferenceInfo(Base):
     @classmethod
     def get_operations(cls, session, cell_id):
         query = session.query(cls.operation_code, cls.operation_node_id).filter(cls.cell_id == cell_id).distinct()
-        operations = pd.read_sql_query(query.statement, session.connection(close_with_result=True)).to_dict(orient="records")
+        operations = pd.read_sql_query(query.statement, session.connection()).to_dict(orient="records")
         return operations

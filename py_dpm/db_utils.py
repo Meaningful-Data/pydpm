@@ -104,7 +104,7 @@ def get_connection(owner=None):
     global engine
     if engine is None:
         engine = get_engine(owner)
-    connection = engine.connect(close_with_result=False)
+    connection = engine.connect()
     return connection
 
 
@@ -115,42 +115,3 @@ def get_session():
         raise Exception("Not found Session Maker")
     session = sessionMakerObject()
     return session
-
-
-def create_views(owner):
-    """Creates the database tables in the DB connected to by the engine."""
-    path = os.path.dirname(__file__)
-    path = os.path.join(os.path.join(path, 'data'), 'views')
-
-    if not os.path.exists(path):
-        console.print(f"Views directory not found: {path}", style="bold red")
-        return
-
-    views = [f for f in os.listdir(path) if f.endswith('.sql')]
-
-    if not views:
-        console.print(f"No SQL files found in: {path}", style="bold yellow")
-        return
-
-    cnxn = get_connection(owner)
-
-    for query_file in views:
-        try:
-            with open(os.path.join(path, query_file), 'r') as f:
-                query = f.read()
-                # SQLite doesn't support some SQL Server specific syntax
-                # You might need to modify queries for SQLite compatibility
-                cnxn.execute(query)
-            console.print(f"Successfully executed: {query_file}", style="green")
-        except Exception as e:
-            console.print(f"Error executing {query_file}: {str(e)}", style="bold red")
-
-    cnxn.close()
-
-    # Reset global variables
-    global engine
-    engine = None
-    global connection
-    connection = None
-    global sessionMakerObject
-    sessionMakerObject = None

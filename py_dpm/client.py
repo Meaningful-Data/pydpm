@@ -66,19 +66,17 @@ def semantic(expression: str):
         status = 500
         message_error = str(error)
         error_code = 1
-        raise error
     message_response = {
         ERROR: message_error,
         ERROR_CODE: error_code,
         VALIDATION_TYPE: validation_type,
-        # 'labels': LabelHandler().operands_labels  # TODO: remove this
     }
     api.session.close()
     if error_code and status == 500:
-        console.log(f"Unhandled Exception on Semantic Validation. Error code: {error_code}. Error message: {message_error}.")
+        console.print(f"Semantic validation failed for expression: {expression}.", style="bold red")
     else:
         console.log(f"Semantic validation completed for expression: {expression}.")
-    console.print(message_response, style="bold blue")
+        console.print(f"Status: {status}", style="bold green")
     return status
 
 @main.command()
@@ -101,6 +99,7 @@ def syntax(expression: str):
         status = 1
 
     console.print(message_formatted)
+
     return status
 
 if __name__ == '__main__':

@@ -146,10 +146,8 @@ class OperandsChecking(ASTTemplate, ABC):
         for table, value in self.tables.items():
             # Extract all data and filter to get only necessary data
             table_info = value
-            df_table = pd.DataFrame(
-                ViewDatapoints.get_table_data(self.session, table, table_info['rows'],
+            df_table = ViewDatapoints.get_table_data(self.session, table, table_info['rows'],
                                                 table_info['cols'], table_info['sheets'], self.release_id)
-            )
             if df_table.empty:
                 cell_expression = f'table: {table}'
                 for k, v in table_info.items():
