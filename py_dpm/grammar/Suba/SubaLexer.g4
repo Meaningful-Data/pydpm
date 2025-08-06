@@ -53,9 +53,11 @@ ELSE:                   'ELSE';
 ENDIF:                  'ENDIF';
 NVL:                    'NVL';
 ISNULL:                 'ISNULL';
+LOGICAL:                'LOGICAL';
 
 // Time functions
 TIME_SHIFT:             'TIME_SHIFT';
+DATETIME:               'DATETIME';
 
 // Filter operations
 FILTER:                 'FILTER';
@@ -110,13 +112,12 @@ BOOLEAN_LITERAL:        'true' | 'false';
 NULL_LITERAL:           'null';
 STRING_LITERAL:         '"' (~["\r\n])* '"' | '\'' (~['\r\n])* '\'';
 
-// These must come AFTER keywords but BEFORE CODE
 // Code patterns (matches table codes, cell codes, identifiers)
-// Includes patterns like: C_01.00, 0130, 0010-0080, ABC, etc.
+// Includes patterns like: C_01.00, 0010, ABC, x1, etc.
 CODE:                   (LETTER | DIGIT) (LETTER | DIGIT | '_' | '.' | '-')*;
 
-// Numeric literals - must come AFTER CODE to avoid taking precedence
-INTEGER_LITERAL:        '-'? DIGIT+;
+// Numeric literals - must come AFTER CODE
+INTEGER_LITERAL:        '-'? DIGIT+ ;
 DECIMAL_LITERAL:        '-'? DIGIT+ '.' DIGIT+;
 PERCENT_LITERAL:        '-'? (DIGIT+ ('.' DIGIT+)?) '%';
 

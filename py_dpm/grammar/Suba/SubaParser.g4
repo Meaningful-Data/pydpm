@@ -20,6 +20,7 @@ expression:
     | dataPointReference                                               # dataPointExpr
     | sdwReference                                                     # sdwExpr
     | literal                                                          # literalExpr
+    | CODE                                                             # codeExpr
     | LPAREN expression RPAREN                                         # parenthesizedExpr
     | LBRACKET expressionList RBRACKET                                # listExpr
     ;
@@ -58,10 +59,14 @@ tableCode:
     ;
 
 cellSpecifier:
-    CODE                                                               # singleCell
-    | CODE MINUS CODE                                                 # rangeCell
+    cellCode                                                           # singleCell
+    | cellCode MINUS cellCode                                         # rangeCell
     | MULT                                                            # allCells
-    | CODE (COMMA CODE)+                                             # cellList
+    | cellCode (COMMA cellCode)+                                      # cellList
+    ;
+
+cellCode:
+    CODE | INTEGER_LITERAL
     ;
 
 variableIdNotation:
@@ -118,6 +123,7 @@ functionCall:
     | nullFunction
     | filterFunction
     | timeFunction
+    | logicalFunction
     ;
 
 aggregateFunction:
@@ -150,7 +156,12 @@ filterFunction:
 
 timeFunction:
     TIME_SHIFT LPAREN expression COMMA timePeriod COMMA
-    INTEGER_LITERAL (COMMA CODE)? RPAREN
+    INTEGER_LITERAL (COMMA CODE)? RPAREN                              # timeShiftFunction
+    | DATETIME LPAREN STRING_LITERAL RPAREN                           # datetimeFunction
+    ;
+
+logicalFunction:
+    LOGICAL LPAREN expression RPAREN                                  # logicalFunctionCall
     ;
 
 attributeFunction:

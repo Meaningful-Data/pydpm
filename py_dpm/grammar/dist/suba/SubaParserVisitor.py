@@ -94,6 +94,11 @@ class SubaParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SubaParser#codeExpr.
+    def visitCodeExpr(self, ctx:SubaParser.CodeExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SubaParser#comparisonOp.
     def visitComparisonOp(self, ctx:SubaParser.ComparisonOpContext):
         return self.visitChildren(ctx)
@@ -161,6 +166,11 @@ class SubaParserVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by SubaParser#cellList.
     def visitCellList(self, ctx:SubaParser.CellListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SubaParser#cellCode.
+    def visitCellCode(self, ctx:SubaParser.CellCodeContext):
         return self.visitChildren(ctx)
 
 
@@ -264,8 +274,18 @@ class SubaParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by SubaParser#timeFunction.
-    def visitTimeFunction(self, ctx:SubaParser.TimeFunctionContext):
+    # Visit a parse tree produced by SubaParser#timeShiftFunction.
+    def visitTimeShiftFunction(self, ctx:SubaParser.TimeShiftFunctionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SubaParser#datetimeFunction.
+    def visitDatetimeFunction(self, ctx:SubaParser.DatetimeFunctionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SubaParser#logicalFunctionCall.
+    def visitLogicalFunctionCall(self, ctx:SubaParser.LogicalFunctionCallContext):
         return self.visitChildren(ctx)
 
 
