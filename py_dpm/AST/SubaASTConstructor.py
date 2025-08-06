@@ -11,7 +11,6 @@ from py_dpm.grammar.dist.suba.SubaParserVisitor import SubaParserVisitor
 class SubaASTVisitor(SubaParserVisitor):
     """
     Class to walk the SUBA parse tree and generate an AST which nodes are defined at AST.ASTObjects
-    Compatible with the existing dmp_xl AST structure.
     """
 
     def visitFormula(self, ctx: SubaParser.FormulaContext):
@@ -168,7 +167,7 @@ class SubaASTVisitor(SubaParserVisitor):
         return FilterOp(selection=selection, condition=condition)
 
     # Time functions
-    def visitTimeFunction(self, ctx: SubaParser.TimeFunctionContext):
+    def visitTimeShiftFunction(self, ctx: SubaParser.TimeShiftFunctionContext):
         operand = self.visit(ctx.expression())
         period_indicator = ctx.timePeriod().getChild(0).symbol.text
         shift_number = ctx.INTEGER_LITERAL().symbol.text
@@ -183,6 +182,17 @@ class SubaASTVisitor(SubaParserVisitor):
         
         return TimeShiftOp(operand=operand, component=component, 
                           period_indicator=period_indicator, shift_number=shift_number)
+    
+    def visitDatetimeFunction(self, ctx: SubaParser.DatetimeFunctionContext):
+        """Handle DATETIME function - converts string to datetime constant"""
+        date_string = ctx.STRING_LITERAL().symbol.text[1:-1]  # Remove quotes
+        return Constant(type_='Date', value=date_string)
+    
+    # Logical functions
+    def visitLogicalFunctionCall(self, ctx: SubaParser.LogicalFunctionCallContext):
+        """Handle LOGICAL function calls"""
+        operand = self.visit(ctx.expression())
+        return UnaryOp(op='LOGICAL', operand=operand)
 
     # Data point references - map to VarID
     def visitDataPointExpr(self, ctx: SubaParser.DataPointExprContext):
@@ -245,11 +255,15 @@ class SubaASTVisitor(SubaParserVisitor):
         return ctx.getChild(0).symbol.text
 
     def visitSingleCell(self, ctx: SubaParser.SingleCellContext):
-        return [ctx.getChild(0).symbol.text]
+        return [self.visit(ctx.cellCode())]
+    
+    def visitCellCode(self, ctx: SubaParser.CellCodeContext):
+        """Handle cell codes that can be either CODE or INTEGER_LITERAL"""
+        return ctx.getChild(0).symbol.text
 
     def visitRangeCell(self, ctx: SubaParser.RangeCellContext):
-        start = ctx.getChild(0).symbol.text
-        end = ctx.getChild(2).symbol.text
+        start = self.visit(ctx.cellCode(0))
+        end = self.visit(ctx.cellCode(1))
         return [f"{start}-{end}"]
 
     def visitAllCells(self, ctx: SubaParser.AllCellsContext):
@@ -257,9 +271,12 @@ class SubaASTVisitor(SubaParserVisitor):
 
     def visitCellList(self, ctx: SubaParser.CellListContext):
         cells = []
-        for i in range(0, ctx.getChildCount(), 2):  # Skip commas
-            if ctx.getChild(i).symbol:
-                cells.append(ctx.getChild(i).symbol.text)
+        # Collect all cellCode children (skip commas)
+        for i in range(ctx.getChildCount()):
+            child = ctx.getChild(i)
+            # Check if this child is a cellCode context
+            if hasattr(child, 'getRuleIndex') and 'cellCode' in type(child).__name__:
+                cells.append(self.visit(child))
         return cells
 
     def visitVariableIdNotation(self, ctx: SubaParser.VariableIdNotationContext):
@@ -314,6 +331,17 @@ class SubaASTVisitor(SubaParserVisitor):
     # Literals
     def visitLiteralExpr(self, ctx: SubaParser.LiteralExprContext):
         return self.visit(ctx.literal())
+    
+    def visitCodeExpr(self, ctx: SubaParser.CodeExprContext):
+        """Handle CODE tokens used as expressions (e.g., '1' tokenized as CODE)"""
+        code_text = ctx.CODE().symbol.text
+        # Try to parse as integer first
+        try:
+            int_value = int(code_text)
+            return Constant(type_='Integer', value=int_value)
+        except ValueError:
+            # If not an integer, treat as string
+            return Constant(type_='String', value=code_text)
 
     def visitLiteral(self, ctx: SubaParser.LiteralContext):
         """Convert SUBA literals to Constants"""
