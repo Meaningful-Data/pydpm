@@ -1,4 +1,4 @@
-lexer grammar SUBALexer;
+lexer grammar SubaLexer;
 
 // ------------ Operators -----------
 
@@ -116,7 +116,7 @@ STRING_LITERAL:         '"' (~["\r\n])* '"' | '\'' (~['\r\n])* '\'';
 CODE:                   (LETTER | DIGIT) (LETTER | DIGIT | '_' | '.' | '-')*;
 
 // Numeric literals - must come AFTER CODE to avoid taking precedence
-INTEGER_LITERAL:        '-'? DIGIT+ { !Character.isLetter(_input.LA(1)) && _input.LA(1) != '_' && _input.LA(1) != '.' && _input.LA(1) != '-' }?;
+INTEGER_LITERAL:        '-'? DIGIT+;
 DECIMAL_LITERAL:        '-'? DIGIT+ '.' DIGIT+;
 PERCENT_LITERAL:        '-'? (DIGIT+ ('.' DIGIT+)?) '%';
 

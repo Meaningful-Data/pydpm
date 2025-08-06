@@ -1,6 +1,6 @@
-parser grammar SUBAParser;
+parser grammar SubaParser;
 
-options { tokenVocab=SUBALexer; }
+options { tokenVocab=SubaLexer; }
 
 // Entry point
 formula: expression (comparisonOp expression)? EOF;
