@@ -59,9 +59,19 @@ class DpmXlCodeGenerator:
             return f"{left_code} & {right_code}"
         elif node.op in ['=', '!=', '<', '<=', '>', '>=', 'and', 'or', 'xor']:
             return f"{left_code} {node.op} {right_code}"
+        elif node.op in ['AND', 'OR', 'XOR']:
+            # Map SUBA boolean operators to DPM-XL equivalents
+            op_mapping = {
+                'AND': 'and',
+                'OR': 'or', 
+                'XOR': 'xor'
+            }
+            return f"{left_code} {op_mapping[node.op]} {right_code}"
+        elif node.op == '^=':
+            return f"{left_code} != {right_code}"
         elif node.op in ['+', '-', '*', '/']:
             return f"{left_code} {node.op} {right_code}"
-        elif node.op == 'in':
+        elif node.op in ['in', 'IN']:
             return f"{left_code} in {right_code}"
         else:
             return f"{left_code} {node.op} {right_code}"
@@ -70,7 +80,7 @@ class DpmXlCodeGenerator:
         """Generate code for unary operations"""
         operand_code = self._visit(node.operand)
         
-        if node.op == 'not':
+        if node.op in ['not', 'NOT']:
             return f"not ({operand_code})"
         elif node.op in ['+', '-']:
             return f"{node.op}{operand_code}"
@@ -133,15 +143,15 @@ class DpmXlCodeGenerator:
                 args.append(f"default: {self._visit(node.default)}")
             else:
                 args.append(f"default: {node.default}")
-        
+
         if args:
             parts.extend(args)
-        
+
         # Store table reference for potential WITH optimization
         if node.table:
             table_key = f"t{node.table}" if not node.is_table_group else f"g{node.table}"
             self.table_refs[table_key].append(node)
-        
+
         return "{" + ", ".join(parts) + "}"
     
     def _visit_Constant(self, node):
@@ -226,29 +236,29 @@ class DpmXlCodeGenerator:
         operand_code = self._visit(node.operand)
         condition_code = self._visit(node.condition)
         return f"{operand_code}[where {condition_code}]"
-    
+
     def _visit_GetOp(self, node):
         """Generate code for GET operations"""
         operand_code = self._visit(node.operand)
         component_code = self._visit(node.component)
         return f"{operand_code}[get {component_code}]"
-    
+
     def _visit_RenameOp(self, node):
         """Generate code for RENAME operations"""
         operand_code = self._visit(node.operand)
         rename_codes = [self._visit(rename_node) for rename_node in node.rename_nodes]
         return f"{operand_code}[rename {', '.join(rename_codes)}]"
-    
+
     def _visit_RenameNode(self, node):
         """Generate code for individual rename nodes"""
         old_name_code = self._visit(node.old_name)
         new_name_code = self._visit(node.new_name)
         return f"{old_name_code} to {new_name_code}"
-    
+
     def _visit_Dimension(self, node):
         """Generate code for dimension references"""
         return node.dimension_code
-    
+
     def _visit_Set(self, node):
         """Generate code for set literals"""
         element_codes = [self._visit(child) for child in node.children]
@@ -302,16 +312,16 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
     def generate(self, ast_node):
         """
         Generate optimized DPM-XL code from an AST node.
-        
+
         Args:
             ast_node: The root AST node (typically Start)
-            
+
         Returns:
             str: Optimized DPM-XL source code
         """
         self.table_refs.clear()
         code = self._visit(ast_node)
-        
+
         # Try to optimize with WITH clauses
         return self._optimize_with_clauses(ast_node, code)
     
@@ -322,11 +332,11 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
         # For now, implement a simple optimization for the most common case
         if not isinstance(ast_node, Start) or not ast_node.children:
             return original_code
-        
+
         # Check if we have a single binary operation that could benefit from WITH
         if len(ast_node.children) == 1 and isinstance(ast_node.children[0], BinOp):
             return self._optimize_binary_expression(ast_node.children[0])
-        
+
         return original_code
     
     def _optimize_binary_expression(self, bin_op):
@@ -335,34 +345,34 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
         """
         # Find all VarID nodes in the expression
         var_ids = self._find_var_ids(bin_op)
-        
+
         if not var_ids:
             return self._visit(bin_op)
-        
+
         # Group by table and find common components
         table_groups = defaultdict(list)
         for var_id in var_ids:
             if var_id.table:
                 table_key = f"t{var_id.table}" if not var_id.is_table_group else f"g{var_id.table}"
                 table_groups[table_key].append(var_id)
-        
+
         # Check if we can extract a WITH clause
         for table_key, var_id_list in table_groups.items():
             if len(var_id_list) >= 2:  # At least 2 references to same table
                 # Find common columns
                 common_cols = self._find_common_columns(var_id_list)
-                
+
                 if common_cols:
                     # Generate optimized WITH expression
                     return self._generate_with_expression(bin_op, table_key, common_cols, var_id_list)
-        
+
         # No optimization possible
         return self._visit(bin_op)
     
     def _find_var_ids(self, node):
         """Recursively find all VarID nodes in an expression"""
         var_ids = []
-        
+
         if isinstance(node, VarID):
             var_ids.append(node)
         elif hasattr(node, 'left') and hasattr(node, 'right'):
@@ -372,26 +382,26 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
             var_ids.extend(self._find_var_ids(node.operand))
         elif hasattr(node, 'expression'):
             var_ids.extend(self._find_var_ids(node.expression))
-        
+
         return var_ids
-    
+
     def _find_common_columns(self, var_id_list):
         """Find common column specifications across VarID nodes"""
         if not var_id_list:
             return None
-        
+
         # For simplicity, check if all have the same columns
         first_cols = var_id_list[0].cols
         if all(var_id.cols == first_cols for var_id in var_id_list):
             return first_cols
-        
+
         return None
-    
+
     def _generate_with_expression(self, expression, table_key, common_cols, var_id_list):
         """Generate a WITH expression for common table/column references"""
         # Create partial selection
         partial_parts = [table_key]
-        
+
         if common_cols:
             if isinstance(common_cols, list):
                 if len(common_cols) == 1:
@@ -400,7 +410,7 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
                     partial_parts.append(f"c({','.join(common_cols)})")
             else:
                 partial_parts.append(f"c{common_cols}")
-        
+
         # Check for common default/interval settings
         first_var = var_id_list[0]
         if first_var.default is not None:
@@ -408,22 +418,22 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
                 partial_parts.append(f"default: {self._visit(first_var.default)}")
             else:
                 partial_parts.append(f"default: {first_var.default}")
-        
+
         if first_var.interval is not None:
             partial_parts.append(f"interval: {'true' if first_var.interval else 'false'}")
-        
+
         partial_selection = "{" + ", ".join(partial_parts) + "}"
-        
+
         # Generate simplified expression by removing common parts from VarIDs
         simplified_expression = self._simplify_expression_for_with(expression, table_key, common_cols)
-        
+
         return f"with {partial_selection}: {simplified_expression}"
-    
+
     def _simplify_expression_for_with(self, expression, table_key, common_cols):
         """Simplify expression by removing table and common column references"""
         # Create a simplified version by generating VarIDs without table/column info
         return self._visit_simplified(expression, table_key, common_cols)
-    
+
     def _visit_simplified(self, node, table_key, common_cols):
         """Visit node with simplified VarID generation for WITH expressions"""
         if isinstance(node, VarID) and node.table:
@@ -444,7 +454,7 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
             # Handle binary operations recursively
             left_code = self._visit_simplified(node.left, table_key, common_cols)
             right_code = self._visit_simplified(node.right, table_key, common_cols)
-            
+
             if node.op == '&':  # Concatenation
                 return f"{left_code} & {right_code}"
             elif node.op in ['=', '!=', '<', '<=', '>', '>=', 'and', 'or', 'xor']:
@@ -466,6 +476,6 @@ class OptimizedDpmXlCodeGenerator(DpmXlCodeGenerator):
                 return f"{node.op}({operand_code})"
             else:
                 return f"{node.op}({operand_code})"
-        
+
         # For other nodes, use normal generation
         return self._visit(node)

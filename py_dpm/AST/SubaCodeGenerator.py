@@ -27,7 +27,7 @@ class SubaCodeGenerator:
         """Visit an AST node and generate code"""
         if node is None:
             return ""
-        
+
         method_name = f'_visit_{type(node).__name__}'
         method = getattr(self, method_name, self._generic_visit)
         return method(node)
@@ -54,36 +54,41 @@ class SubaCodeGenerator:
         left_code = self._visit(node.left)
         right_code = self._visit(node.right)
         
+        # Define boolean operations that need LOGICAL wrapping in SUBA
+        boolean_ops = ['=', '!=', '^=', '<', '<=', '>', '>=', 'and', 'or', 'xor', 'AND', 'OR', 'XOR', 'in', 'IN']
+        
         # Handle different operators
         if node.op == '&':  # Concatenation
             return f"{left_code} & {right_code}"
-        elif node.op in ['=', '^=', '<', '<=', '>', '>=']:
-            return f"{left_code} {node.op} {right_code}"
         elif node.op in ['+', '-', '*', '/']:
             return f"{left_code} {node.op} {right_code}"
         elif node.op == '**':
             return f"{left_code} ** {right_code}"
-        elif node.op in ['AND', 'OR', 'XOR']:
-            return f"{left_code} {node.op} {right_code}"
-        elif node.op == 'in':
-            return f"{left_code} IN {right_code}"
-        else:
+        elif node.op in boolean_ops:
             # Map DPM-XL operators to SUBA equivalents
             op_mapping = {
                 '!=': '^=',
                 'and': 'AND',
                 'or': 'OR',
-                'xor': 'XOR'
+                'xor': 'XOR',
+                'in': 'IN'
             }
             suba_op = op_mapping.get(node.op, node.op)
-            return f"{left_code} {suba_op} {right_code}"
+            boolean_expr = f"{left_code} {suba_op} {right_code}"
+            
+            # Wrap boolean expressions in LOGICAL() function for SUBA
+            return f"LOGICAL({boolean_expr})"
+        else:
+            # For other operators, use as-is
+            return f"{left_code} {node.op} {right_code}"
     
     def _visit_UnaryOp(self, node):
         """Generate code for unary operations"""
         operand_code = self._visit(node.operand)
         
         if node.op == 'not':
-            return f"NOT {operand_code}"
+            # NOT is a boolean operation that should be wrapped in LOGICAL for SUBA
+            return f"LOGICAL(NOT {operand_code})"
         elif node.op in ['+', '-']:
             return f"{node.op}{operand_code}"
         elif node.op.upper() == 'LOGICAL':
@@ -107,7 +112,7 @@ class SubaCodeGenerator:
         
         if table:
             components.append(f"T({table})")
-        
+
         # Row component
         rows = node.rows
         if rows:
@@ -125,7 +130,7 @@ class SubaCodeGenerator:
             cols = self.with_context['cols']
         elif not cols and self.with_context and self.with_context.get('cols'):
             cols = self.with_context['cols']
-        
+
         if cols:
             if isinstance(cols, list):
                 if len(cols) == 1:
@@ -141,7 +146,7 @@ class SubaCodeGenerator:
             sheets = self.with_context['sheets']
         elif not sheets and self.with_context and self.with_context.get('sheets'):
             sheets = self.with_context['sheets']
-        
+
         if sheets:
             if isinstance(sheets, list):
                 if len(sheets) == 1:
@@ -255,11 +260,11 @@ class SubaCodeGenerator:
         """
         # Parse the partial selection to extract common components
         partial_context = self._parse_partial_selection(node.partial_selection)
-        
+
         # Set context for expanding simplified references
         old_context = self.with_context
         self.with_context = partial_context
-        
+
         try:
             # Generate the expression with expanded context
             expression_code = self._visit(node.expression)
@@ -274,7 +279,7 @@ class SubaCodeGenerator:
         Example: {tC_17.01.a, c0010-0080} -> {'table': 'C_17.01.a', 'cols': '0010-0080'}
         """
         context = {}
-        
+
         if isinstance(partial_selection, VarID):
             if partial_selection.table:
                 context['table'] = partial_selection.table
@@ -284,9 +289,9 @@ class SubaCodeGenerator:
                 context['cols'] = partial_selection.cols
             if partial_selection.sheets:
                 context['sheets'] = partial_selection.sheets
-        
+
         return context
-    
+
     def _visit_PersistentAssignment(self, node):
         """Generate code for persistent assignments - not typically in SUBA"""
         left_code = self._visit(node.left)
