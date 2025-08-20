@@ -7,7 +7,6 @@ from py_dpm.grammar.dist.dpm_xlLexer import dpm_xlLexer
 from py_dpm.grammar.dist.dpm_xlParser import dpm_xlParser
 from py_dpm.grammar.dist.listeners import DPMErrorListener
 from py_dpm.AST.ASTConstructor import ASTVisitor
-from py_dpm.AST.DpmXlParsingUtils import validate_dpm_xl_syntax, parse_dpm_xl_expression
 
 
 @dataclass
@@ -108,7 +107,19 @@ class SyntaxAPI:
             >>> syntax = SyntaxAPI()
             >>> ast = syntax.parse_expression("{tC_01.00, r0100, c0010}")
         """
-        return parse_dpm_xl_expression(expression)
+        # Parse directly using ANTLR and AST visitor
+        try:
+            input_stream = InputStream(expression)
+            lexer = dpm_xlLexer(input_stream)
+            token_stream = CommonTokenStream(lexer)
+            parser = dpm_xlParser(token_stream)
+            parse_tree = parser.start()
+            
+            # Create AST visitor and visit the parse tree
+            ast = self.visitor.visit(parse_tree)
+            return ast
+        except Exception as e:
+            raise Exception(f"Failed to parse DPM-XL expression '{expression}': {str(e)}")
     
     def is_valid_syntax(self, expression: str) -> bool:
         """
@@ -125,7 +136,9 @@ class SyntaxAPI:
             >>> syntax = SyntaxAPI()
             >>> is_valid = syntax.is_valid_syntax("{tC_01.00, r0100, c0010}")
         """
-        return validate_dpm_xl_syntax(expression)
+        # Use existing validate_expression method
+        result = self.validate_expression(expression)
+        return result.is_valid
     
     def __del__(self):
         """Clean up resources."""
