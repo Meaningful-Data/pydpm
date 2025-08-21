@@ -374,6 +374,53 @@ class ItemCategory(Base):
     start_release = relationship("Release", foreign_keys=[startreleaseid])
     end_release = relationship("Release", foreign_keys=[endreleaseid])
     category = relationship("Category", foreign_keys=[categoryid])
+    
+    @classmethod
+    def get_items(cls, session, items, release_id=None):
+        """
+        Get ItemCategory records for a list of item signatures.
+        
+        Args:
+            session: SQLAlchemy session
+            items: List of item signatures to look up
+            release_id: Release ID to filter by (optional)
+            
+        Returns:
+            DataFrame with ItemCategory data for the requested items
+        """
+        import pandas as pd
+        from sqlalchemy import or_
+        
+        query = session.query(cls.signature.label('Signature'), 
+                            cls.code.label('Code'),
+                            cls.categoryid.label('CategoryID'))
+        
+        # Filter by signatures
+        if items:
+            query = query.filter(cls.signature.in_(items))
+        
+        # Filter by release
+        if release_id is not None:
+            query = query.filter(
+                and_(
+                    cls.startreleaseid <= release_id,
+                    or_(cls.endreleaseid > release_id, cls.endreleaseid.is_(None))
+                )
+            )
+        else:
+            # Get current/active items (no end release)
+            query = query.filter(cls.endreleaseid.is_(None))
+        
+        # Execute query and convert to DataFrame
+        result = query.all()
+        if result:
+            return pd.DataFrame([{
+                'Signature': row.Signature,
+                'Code': row.Code, 
+                'CategoryID': row.CategoryID
+            } for row in result])
+        else:
+            return pd.DataFrame(columns=['Signature', 'Code', 'CategoryID'])
 
 class KeyComposition(Base):
     __tablename__ = "KeyComposition"
@@ -1159,6 +1206,37 @@ class VariableVersion(Base):
     __table_args__ = (
         UniqueConstraint('VariableID', 'StartReleaseID'),
     )
+    
+    @classmethod
+    def check_variable_exists(cls, session, variable_code, release_id=None):
+        """
+        Check if a variable exists in the database.
+        
+        Args:
+            session: SQLAlchemy session
+            variable_code: Variable code to check
+            release_id: Release ID to filter by (optional)
+            
+        Returns:
+            Boolean indicating if the variable exists
+        """
+        from sqlalchemy import or_
+        
+        query = session.query(cls).filter(cls.code == variable_code)
+        
+        # Filter by release
+        if release_id is not None:
+            query = query.filter(
+                and_(
+                    cls.startreleaseid <= release_id,
+                    or_(cls.endreleaseid > release_id, cls.endreleaseid.is_(None))
+                )
+            )
+        else:
+            # Check current/active variables (no end release)
+            query = query.filter(cls.endreleaseid.is_(None))
+        
+        return query.first() is not None
 
 # Utility functions (keep these from your original models)
 def filter_by_release(query, start_release, end_release, release_id):

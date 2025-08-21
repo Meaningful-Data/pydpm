@@ -25,19 +25,19 @@ Main Features:
 
 Quick Start:
     >>> import pydpm
-    >>> 
+    >>>
     >>> # Migration
     >>> migration = pydpm.api.MigrationAPI()
     >>> engine = migration.migrate_access_to_sqlite("data.mdb", "output.db")
-    >>> 
+    >>>
     >>> # Syntax validation
     >>> syntax = pydpm.api.SyntaxAPI()
     >>> result = syntax.validate_expression("{tC_01.00, r0100, c0010}")
-    >>> 
+    >>>
     >>> # Semantic analysis
     >>> semantic = pydpm.api.SemanticAPI()
     >>> result = semantic.validate_expression("{tC_01.00, r0100, c0010}")
-    >>> 
+    >>>
     >>> # Grammar access
     >>> from pydpm.language.grammar import get_grammar_files
     >>> grammar_files = get_grammar_files()
@@ -47,7 +47,7 @@ Available packages:
 - pydpm.language.grammar: Access to DPM-XL grammar and parsing utilities
 """
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __author__ = "MeaningfulData S.L."
 __email__ = "info@meaningfuldata.eu"
 __license__ = "GPL-3.0-or-later"
@@ -61,7 +61,7 @@ from py_dpm.api import MigrationAPI, SyntaxAPI, SemanticAPI
 
 __all__ = [
     'api',
-    'language', 
+    'language',
     'MigrationAPI',
     'SyntaxAPI',
     'SemanticAPI',
