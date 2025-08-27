@@ -47,7 +47,7 @@ Available packages:
 - pydpm.language.grammar: Access to DPM-XL grammar and parsing utilities
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 __author__ = "MeaningfulData S.L."
 __email__ = "info@meaningfuldata.eu"
 __license__ = "GPL-3.0-or-later"
