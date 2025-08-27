@@ -1259,7 +1259,7 @@ def filter_by_date(query, start_date, end_date, date):
 def filter_elements(query, column, values):
     if len(values) == 1:
         if values[0] == '*':
-            return query
+            return query.filter(column.is_not(None))
         elif '-' in values[0]:
             limits = values[0].split('-')
             return query.filter(column.between(limits[0], limits[1]))
