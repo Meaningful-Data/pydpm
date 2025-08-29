@@ -21,7 +21,6 @@ Main Features:
 - Database migration from Access to SQLite
 - DPM-XL syntax validation and parsing
 - DPM-XL semantic analysis
-- Access to DPM-XL grammar files
 
 Quick Start:
     >>> import pydpm
@@ -37,31 +36,24 @@ Quick Start:
     >>> # Semantic analysis
     >>> semantic = pydpm.api.SemanticAPI()
     >>> result = semantic.validate_expression("{tC_01.00, r0100, c0010}")
-    >>>
-    >>> # Grammar access
-    >>> from pydpm.language.grammar import get_grammar_files
-    >>> grammar_files = get_grammar_files()
 
 Available packages:
 - pydpm.api: Main APIs for migration, syntax, and semantic analysis
-- pydpm.language.grammar: Access to DPM-XL grammar and parsing utilities
 """
 
-__version__ = "0.1.4"
+__version__ = "0.1.6"
 __author__ = "MeaningfulData S.L."
 __email__ = "info@meaningfuldata.eu"
 __license__ = "GPL-3.0-or-later"
 
 # Import main API modules for convenient access
 from py_dpm import api
-from py_dpm import language
 
 # Import main classes for direct usage
 from py_dpm.api import MigrationAPI, SyntaxAPI, SemanticAPI
 
 __all__ = [
     'api',
-    'language',
     'MigrationAPI',
     'SyntaxAPI',
     'SemanticAPI',

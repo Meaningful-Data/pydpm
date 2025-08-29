@@ -9,17 +9,36 @@ import re
 from .models import Base, ViewDatapoints
 
 def extract_access_tables(access_file):
-    """Extract tables from Access database using mdbtools"""
+    """Extract tables from Access database using multiple methods"""
+    
+    # Method 1: Try mdbtools first
     try:
         # Get list of tables
         tables = subprocess.check_output(["mdb-tables", access_file]).decode().split()
+        print("✓ Using mdb-tools for Access database extraction")
+        return _extract_with_mdbtools(access_file, tables)
     except FileNotFoundError:
-        print("Error: mdb-tables command not found. Please make sure mdbtools is installed.", file=sys.stderr)
-        sys.exit(1)
+        print("⚠ mdb-tables command not found, trying alternative methods...", file=sys.stderr)
     except subprocess.CalledProcessError as e:
-        print(f"Error getting tables from {access_file}: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"⚠ mdb-tools failed: {e}, trying alternative methods...", file=sys.stderr)
+    
+    # Method 2: Try pyodbc with different drivers
+    try:
+        print("Trying pyodbc with Access drivers...")
+        return _extract_with_pyodbc(access_file)
+    except Exception as e:
+        print(f"⚠ pyodbc method failed: {e}", file=sys.stderr)
+    
+    # If all methods fail
+    raise Exception(
+        "Unable to extract Access database. Please install one of:\n"
+        "  - mdb-tools: sudo apt-get install mdb-tools\n"
+        "  - Microsoft Access ODBC Driver\n"
+        "  - Or convert your .accdb file to SQLite manually"
+    )
 
+def _extract_with_mdbtools(access_file, tables):
+    """Extract using mdb-tools (original method)"""
     data = {}
     for table in tables:
         # Export each table to CSV
@@ -71,9 +90,97 @@ def extract_access_tables(access_file):
             continue
         finally:
             # Clean up
-            os.remove(csv_file)
+            if os.path.exists(csv_file):
+                os.remove(csv_file)
 
     return data
+
+def _extract_with_pyodbc(access_file):
+    """Extract using pyodbc with different Access drivers"""
+    try:
+        import pyodbc
+    except ImportError:
+        raise Exception("pyodbc not available")
+    
+    # Try different Access drivers
+    drivers_to_try = [
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};',
+        r'DRIVER={Microsoft Access Driver (*.mdb)};',
+        r'DRIVER={MDBTools};'
+    ]
+    
+    conn = None
+    for driver in drivers_to_try:
+        try:
+            conn_str = driver + f'DBQ={access_file};'
+            conn = pyodbc.connect(conn_str)
+            print(f"✓ Connected using: {driver}")
+            break
+        except pyodbc.Error:
+            continue
+    
+    if not conn:
+        raise Exception("No suitable ODBC driver found for Access database")
+    
+    try:
+        # Get all table names
+        cursor = conn.cursor()
+        tables = []
+        for table_info in cursor.tables(tableType='TABLE'):
+            table_name = table_info.table_name
+            if not table_name.startswith('MSys'):  # Skip system tables
+                tables.append(table_name)
+        
+        data = {}
+        STRING_COLUMNS = ["row", "column", "sheet"]
+        
+        # Extract each table
+        for table_name in tables:
+            print(table_name)
+            try:
+                cursor.execute(f"SELECT * FROM [{table_name}]")
+                columns = [column[0] for column in cursor.description]
+                rows = cursor.fetchall()
+                
+                if rows:
+                    # Convert to DataFrame
+                    df = pd.DataFrame([list(row) for row in rows], columns=columns)
+                    
+                    # Apply same dtype conversion logic as mdb-tools method
+                    df = df.astype(str)  # Start with all strings
+                    
+                    numeric_columns = []
+                    for column in df.columns:
+                        if column in STRING_COLUMNS:
+                            continue
+                        try:
+                            # Convert to numeric and check if any values start with '0' (except '0' itself)
+                            numeric_series = pd.to_numeric(df[column], errors='coerce')
+                            has_leading_zeros = df[column].str.match(r'^0\d+').any()
+
+                            if not has_leading_zeros and not numeric_series.isna().all():
+                                numeric_columns.append(column)
+                        except Exception:
+                            continue
+
+                    # Convert only the identified numeric columns
+                    for col in numeric_columns:
+                        try:
+                            df[col] = pd.to_numeric(df[col])
+                        except (ValueError, TypeError):
+                            # Keep as string if conversion fails
+                            pass
+                    
+                    data[table_name] = df
+                
+            except Exception as e:
+                print(f"Error processing table {table_name}: {e}", file=sys.stderr)
+                continue
+        
+        return data
+        
+    finally:
+        conn.close()
 
 def migrate_to_sqlite(data, sqlite_db_path):
     """Migrate data to SQLite"""

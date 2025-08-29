@@ -1,6 +1,6 @@
 [project]
 name = "pydpm_xl"
-version = "0.1.3"
+version = "0.1.6"
 description = "Python library for DPM-XL data processing and analysis"
 authors = [
     {name = "MeaningfulData S.L.", email = "info@meaningfuldata.eu"}
@@ -42,6 +42,29 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["py_dpm*"]
 exclude = []
+
+[tool.poetry]
+name = "pydpm_xl"
+version = "0.1.6"
+description = "Python library for DPM-XL data processing and analysis"
+authors = ["MeaningfulData S.L. <info@meaningfuldata.eu>"]
+readme = "README.md"
+license = "GPL-3.0-or-later"
+packages = [{include = "py_dpm"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+rich = ">=14.0.0,<15.0.0"
+sqlalchemy = ">=2.0.41,<3.0.0"
+pandas = ">=2.3.0,<3.0.0"
+antlr4-python3-runtime = ">=4.13.2,<5.0.0"
+pyodbc = ">=5.2.0,<6.0.0"
+click = ">=8.2.1,<9.0.0"
+alembic = ">=1.16.2,<2.0.0"
+python-dotenv = ">=1.1.1,<2.0.0"
+
+[tool.poetry.scripts]
+pydpm = "py_dpm.client:main"
 
 [tool.setuptools.package-data]
 "py_dpm.grammar" = ["*.g4"]
