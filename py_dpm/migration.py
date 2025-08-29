@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import os
 import sys
+import tempfile
 from pathlib import Path
 import re
 from .models import Base, ViewDatapoints
@@ -43,7 +44,9 @@ def _extract_with_mdbtools(access_file, tables):
     for table in tables:
         # Export each table to CSV
         print(table)
-        csv_file = f"/tmp/{table}.csv"
+        # Use platform-independent temporary file
+        temp_dir = tempfile.gettempdir()
+        csv_file = os.path.join(temp_dir, f"{table}.csv")
         try:
             with open(csv_file, "w") as f:
                 subprocess.run(["mdb-export", access_file, table], stdout=f, check=True)
