@@ -43,10 +43,21 @@ class Start(AST):
     __repr__ = __str__
 
     def toJSON(self):
-        return {
-            'class_name': self.__class__.__name__,
-            'children': self.children
+        result = {
+            'class_name': self.__class__.__name__
         }
+
+        # Check if this Start node has left/right/op structure (expanded from WithExpression)
+        if hasattr(self, 'left') and hasattr(self, 'right'):
+            result['left'] = self.left
+            result['right'] = self.right
+            if hasattr(self, 'op'):
+                result['op'] = self.op
+        else:
+            # Use original children structure
+            result['children'] = self.children
+
+        return result
 
 
 class ParExpr(AST):
@@ -214,6 +225,41 @@ class VarID(AST):
         )
 
     __repr__ = __str__
+
+    def toJSON(self):
+        result = {
+            'class_name': self.__class__.__name__,
+        }
+
+        # If data has been populated (after operand checking), use that
+        if hasattr(self, 'data') and self.data is not None:
+            # Convert DataFrame to list of dictionaries
+            try:
+                if hasattr(self.data, 'to_dict'):
+                    result['data'] = self.data.to_dict('records')
+                else:
+                    result['data'] = self.data
+            except Exception:
+                # Fallback: try to convert to list if it's iterable
+                try:
+                    result['data'] = list(self.data)
+                except Exception:
+                    result['data'] = str(self.data)
+            result['table'] = self.table
+            result['interval'] = self.interval
+        else:
+            # Use original structure for unexpanded VarID
+            result.update({
+                'table': self.table,
+                'rows': self.rows,
+                'cols': self.cols,
+                'sheets': self.sheets,
+                'interval': self.interval,
+                'default': self.default,
+                'is_table_group': self.is_table_group
+            })
+
+        return result
 
 
 class Constant(AST):
@@ -677,6 +723,12 @@ class PropertyReference(AST):
         )
 
     __repr__ = __str__
+
+    def toJSON(self):
+        return {
+            'class_name': self.__class__.__name__,
+            'code': self.code
+        }
 
 
 class OperationRef(AST):

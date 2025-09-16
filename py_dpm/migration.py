@@ -5,8 +5,6 @@ from sqlalchemy.orm import sessionmaker
 import os
 import sys
 import tempfile
-from pathlib import Path
-import re
 from .models import Base, ViewDatapoints
 
 def extract_access_tables(access_file):
@@ -148,18 +146,26 @@ def _extract_with_pyodbc(access_file):
                 if rows:
                     # Convert to DataFrame
                     df = pd.DataFrame([list(row) for row in rows], columns=columns)
-                    
+
                     # Apply same dtype conversion logic as mdb-tools method
-                    df = df.astype(str)  # Start with all strings
-                    
+                    # Start with all strings, but preserve None as actual None (not string 'None')
+                    for col in df.columns:
+                        df[col] = df[col].astype(object)
+                        mask = df[col].notna()
+                        df.loc[mask, col] = df.loc[mask, col].astype(str)
+
                     numeric_columns = []
                     for column in df.columns:
                         if column in STRING_COLUMNS:
                             continue
                         try:
                             # Convert to numeric and check if any values start with '0' (except '0' itself)
+                            # Only check string values for leading zeros
+                            string_mask = df[column].astype(str).str.match(r'^0\d+', na=False)
+                            has_leading_zeros = string_mask.any()
+
+                            # Test numeric conversion
                             numeric_series = pd.to_numeric(df[column], errors='coerce')
-                            has_leading_zeros = df[column].str.match(r'^0\d+').any()
 
                             if not has_leading_zeros and not numeric_series.isna().all():
                                 numeric_columns.append(column)
@@ -169,7 +175,7 @@ def _extract_with_pyodbc(access_file):
                     # Convert only the identified numeric columns
                     for col in numeric_columns:
                         try:
-                            df[col] = pd.to_numeric(df[col])
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
                         except (ValueError, TypeError):
                             # Keep as string if conversion fails
                             pass
@@ -232,7 +238,7 @@ def create_datapoints_view(engine):
     finally:
         session.close()
 
-def run_migration(file_name, sqlite_db_path, export_csv=True, csv_path="datapoints.csv"):
+def run_migration(file_name, sqlite_db_path):
     try:
         # Extract data from Access
         print("Extracting data from Access database...")
@@ -273,4 +279,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sqlite_path = args.database.replace('.mdb', '.db')
-    run_migration(args.database, sqlite_path, export_csv=True, csv_path=args.output)
+    run_migration(args.database, sqlite_path)
