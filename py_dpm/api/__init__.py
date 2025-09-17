@@ -2,6 +2,7 @@ from py_dpm.api.migration import MigrationAPI
 from py_dpm.api.syntax import SyntaxAPI
 from py_dpm.api.semantic import SemanticAPI
 from py_dpm.api.ast_generator import ASTGenerator, parse_expression, validate_expression, parse_batch
+from py_dpm.api.complete_ast import generate_complete_ast, generate_complete_batch
 
 from antlr4 import CommonTokenStream, InputStream
 
@@ -29,7 +30,11 @@ from py_dpm.db_utils import get_session, get_engine
 
 # Export the main API classes
 __all__ = [
-    # Simple AST API (recommended for external packages)
+    # Complete AST API (recommended - includes data fields)
+    'generate_complete_ast',
+    'generate_complete_batch',
+
+    # Simple AST API
     'ASTGenerator',
     'parse_expression',
     'validate_expression',

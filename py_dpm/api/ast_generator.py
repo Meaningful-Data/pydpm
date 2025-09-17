@@ -190,10 +190,11 @@ class ASTGenerator:
 
     def _to_clean_json(self, ast_node, context=None):
         """Convert AST node to clean JSON format."""
-        from test_ast_validation import ASTToJSONVisitor
+        # Import the serialization function from utils
+        from py_dpm.utils.ast_serialization import serialize_ast
 
-        visitor = ASTToJSONVisitor(context)
-        return visitor.visit(ast_node)
+        # Use the serialize_ast function which handles all AST node types properly
+        return serialize_ast(ast_node)
 
     def _serialize_context(self, context):
         """Serialize context to clean dictionary."""
