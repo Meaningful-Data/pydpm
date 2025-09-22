@@ -113,11 +113,11 @@ class OperandsChecking(ASTTemplate, ABC):
         df_headers = pd.read_sql(query, self.session.connection())
         for table in table_codes:
             table_headers = df_headers[df_headers['Code'] == table]
+            if table_headers.empty:
+                continue
             open_rows = table_headers['HasOpenRows'].values[0]
             open_cols = table_headers['HasOpenColumns'].values[0]
             open_sheets = table_headers['HasOpenSheets'].values[0]
-            if table_headers.empty:
-                continue
             if "Y" in table_headers['Direction'].values and not open_rows:
                 self._check_header_present(table, 'rows')
             if "X" in table_headers['Direction'].values and not open_cols:
