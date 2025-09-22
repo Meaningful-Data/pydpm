@@ -1278,7 +1278,7 @@ def filter_elements(query, column, values):
     return query.filter(or_((x for x in dynamic_filter)))
 
 def _check_ranges_values_are_present(data: pd.DataFrame, data_column, values):
-    if values is not None and '-' in values[0]:
+    if values is not None and len(values) > 0 and '-' in values[0]:
         test = values[0].split('-')
         if test[0] not in list(data[data_column].values):
             data = pd.DataFrame(columns=data.columns)
