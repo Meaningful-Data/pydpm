@@ -6,7 +6,7 @@ This API generates ASTs with complete data fields including datapoint IDs and op
 exactly matching the structure found in json_scripts/*.json files.
 """
 
-from py_dpm.utils.ast_serialization import ASTToJSONVisitor
+from py_dpm.Utils.ast_serialization import ASTToJSONVisitor
 
 
 def generate_complete_ast(expression: str, database_path: str = None):

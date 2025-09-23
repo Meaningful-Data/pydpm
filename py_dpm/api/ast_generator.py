@@ -191,7 +191,7 @@ class ASTGenerator:
     def _to_clean_json(self, ast_node, context=None):
         """Convert AST node to clean JSON format."""
         # Import the serialization function from utils
-        from py_dpm.utils.ast_serialization import serialize_ast
+        from py_dpm.Utils.ast_serialization import serialize_ast
 
         # Use the serialize_ast function which handles all AST node types properly
         return serialize_ast(ast_node)
