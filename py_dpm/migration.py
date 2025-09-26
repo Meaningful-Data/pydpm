@@ -238,6 +238,56 @@ def create_datapoints_view(engine):
     finally:
         session.close()
 
+
+def create_key_components_view(engine):
+    """Create the key_components view for SQLite database"""
+    from sqlalchemy.orm import sessionmaker
+
+    session_maker = sessionmaker(bind=engine)
+    session = session_maker()
+
+    try:
+        # Drop existing view/table if it exists
+        try:
+            session.execute(text("DROP TABLE IF EXISTS key_components"))
+            session.execute(text("DROP VIEW IF EXISTS key_components"))
+            session.commit()
+        except Exception:
+            pass  # Ignore errors if view/table doesn't exist
+
+        # Create the key_components view with SQLite-compatible syntax
+        key_components_query = """
+        CREATE VIEW key_components AS
+        SELECT tv.Code AS table_code,
+               ic.Code AS property_code,
+               dt.Code AS data_type,
+               tv.TableVID AS table_version_id,
+               ic.StartReleaseID AS start_release_ic,
+               ic.EndReleaseID AS end_release_ic,
+               mv.StartReleaseID AS start_release_mv,
+               mv.EndReleaseID AS end_release_mv
+        FROM TableVersion tv
+        INNER JOIN KeyComposition kc ON tv.KeyID = kc.KeyID
+        INNER JOIN VariableVersion vv ON vv.VariableVID = kc.VariableVID
+        INNER JOIN Item i ON vv.PropertyID = i.ItemID
+        INNER JOIN ItemCategory ic ON ic.ItemID = i.ItemID
+        INNER JOIN Property p ON vv.PropertyID = p.PropertyID
+        LEFT JOIN DataType dt ON p.DataTypeID = dt.DataTypeID
+        INNER JOIN ModuleVersionComposition mvc ON tv.TableVID = mvc.TableVID
+        INNER JOIN ModuleVersion mv ON mvc.ModuleVID = mv.ModuleVID
+        """
+
+        session.execute(text(key_components_query))
+        session.commit()
+
+        print("Key components view created successfully")
+
+    except Exception as e:
+        print(f"Error creating key_components view: {e}")
+        raise
+    finally:
+        session.close()
+
 def run_migration(file_name, sqlite_db_path):
     try:
         # Extract data from Access
@@ -251,6 +301,10 @@ def run_migration(file_name, sqlite_db_path):
         # Create the datapoints view
         print("Creating datapoints view...")
         create_datapoints_view(engine)
+
+        # Create the key_components view
+        print("Creating key_components view...")
+        create_key_components_view(engine)
 
         print("Migration complete")
         return engine

@@ -148,10 +148,22 @@ class ASTToJSONVisitor(NodeVisitor):
                         transformed_record['datapoint'] = record['variable_id']
                     if 'cell_id' in record:
                         transformed_record['operand_reference_id'] = record['cell_id']
-                    # Include additional fields if they exist
-                    for field in ['cell_code', 'table_code', 'row_code', 'column_code', 'sheet_code', 'data_type', 'table_vid']:
-                        if field in record:
-                            transformed_record[field] = record[field]
+                    # Include additional fields with correct field names
+                    if 'cell_code' in record:
+                        transformed_record['cell_code'] = record['cell_code']
+                    if 'table_code' in record:
+                        transformed_record['table_code'] = record['table_code']
+                    # Map row_code -> row, column_code -> column, sheet_code -> sheet
+                    if 'row_code' in record:
+                        transformed_record['row'] = record['row_code']
+                    if 'column_code' in record:
+                        transformed_record['column'] = record['column_code']
+                    if 'sheet_code' in record:
+                        transformed_record['sheet'] = record['sheet_code']
+                    if 'data_type' in record:
+                        transformed_record['data_type'] = record['data_type']
+                    if 'table_vid' in record:
+                        transformed_record['table_vid'] = record['table_vid']
                     transformed_data.append(transformed_record)
                 result['data'] = transformed_data
             else:

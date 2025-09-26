@@ -37,15 +37,42 @@ class SemanticValidationResult:
 class SemanticAPI:
     """
     API for DPM-XL semantic validation and analysis.
-    
+
     This class provides methods to perform semantic analysis on DPM-XL expressions,
     including operand checking, data type validation, and structure validation.
     """
-    
-    def __init__(self):
-        """Initialize the Semantic API."""
-        get_engine()
-        self.session = get_session()
+
+    def __init__(self, database_path: Optional[str] = None):
+        """
+        Initialize the Semantic API.
+
+        Args:
+            database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+        """
+        self.database_path = database_path
+
+        if database_path:
+            # Create isolated engine and session for this specific database
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            import os
+
+            # Create the database directory if it doesn't exist
+            db_dir = os.path.dirname(database_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir)
+
+            # Create engine for specific database path
+            connection_url = f"sqlite:///{database_path}"
+            self.engine = create_engine(connection_url, pool_pre_ping=True)
+            session_maker = sessionmaker(bind=self.engine)
+            self.session = session_maker()
+        else:
+            # Use default global connection
+            get_engine()
+            self.session = get_session()
+            self.engine = None
+
         self.error_listener = DPMErrorListener()
         self.visitor = ASTVisitor()
     
@@ -185,40 +212,44 @@ class SemanticAPI:
         """Clean up resources."""
         if hasattr(self, 'session'):
             self.session.close()
+        if hasattr(self, 'engine') and self.engine is not None:
+            self.engine.dispose()
 
 
 # Convenience functions for direct usage
-def validate_expression(expression: str) -> SemanticValidationResult:
+def validate_expression(expression: str, database_path: Optional[str] = None) -> SemanticValidationResult:
     """
     Convenience function to validate DPM-XL expression semantics.
-    
+
     Args:
         expression (str): The DPM-XL expression to validate
-        
+        database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+
     Returns:
         SemanticValidationResult: Result containing validation status and details
-        
+
     Example:
         >>> from pydpm.api.semantic import validate_expression
-        >>> result = validate_expression("{tC_01.00, r0100, c0010}")
+        >>> result = validate_expression("{tC_01.00, r0100, c0010}", database_path="./database.db")
     """
-    api = SemanticAPI()
+    api = SemanticAPI(database_path=database_path)
     return api.validate_expression(expression)
 
 
-def is_valid_semantics(expression: str) -> bool:
+def is_valid_semantics(expression: str, database_path: Optional[str] = None) -> bool:
     """
     Convenience function to check if expression has valid semantics.
-    
+
     Args:
         expression (str): The DPM-XL expression to check
-        
+        database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+
     Returns:
         bool: True if semantics are valid, False otherwise
-        
+
     Example:
         >>> from pydpm.api.semantic import is_valid_semantics
-        >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}")
+        >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}", database_path="./database.db")
     """
-    api = SemanticAPI()
+    api = SemanticAPI(database_path=database_path)
     return api.is_valid_semantics(expression)
