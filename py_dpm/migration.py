@@ -288,6 +288,51 @@ def create_key_components_view(engine):
     finally:
         session.close()
 
+
+def create_open_keys_view(engine):
+    """Create the open_keys view for SQLite database"""
+    from sqlalchemy.orm import sessionmaker
+
+    session_maker = sessionmaker(bind=engine)
+    session = session_maker()
+
+    try:
+        # Drop existing view/table if it exists
+        try:
+            session.execute(text("DROP TABLE IF EXISTS open_keys"))
+            session.execute(text("DROP VIEW IF EXISTS open_keys"))
+            session.commit()
+        except Exception:
+            pass  # Ignore errors if view/table doesn't exist
+
+        # Create the open_keys view with SQLite-compatible syntax
+        # This view provides information about open keys (dimensions) used in WHERE clauses
+        open_keys_query = """
+        CREATE VIEW open_keys AS
+        SELECT ic.Code AS property_code,
+               dt.Code AS data_type,
+               ic.StartReleaseID AS start_release,
+               ic.EndReleaseID AS end_release
+        FROM KeyComposition kc
+        INNER JOIN VariableVersion vv ON vv.VariableVID = kc.VariableVID
+        INNER JOIN Item i ON vv.PropertyID = i.ItemID
+        INNER JOIN ItemCategory ic ON ic.ItemID = i.ItemID
+        INNER JOIN Property p ON vv.PropertyID = p.PropertyID
+        LEFT JOIN DataType dt ON p.DataTypeID = dt.DataTypeID
+        """
+
+        session.execute(text(open_keys_query))
+        session.commit()
+
+        print("Open keys view created successfully")
+
+    except Exception as e:
+        print(f"Error creating open_keys view: {e}")
+        raise
+    finally:
+        session.close()
+
+
 def run_migration(file_name, sqlite_db_path):
     try:
         # Extract data from Access
@@ -305,6 +350,10 @@ def run_migration(file_name, sqlite_db_path):
         # Create the key_components view
         print("Creating key_components view...")
         create_key_components_view(engine)
+
+        # Create the open_keys view
+        print("Creating open_keys view...")
+        create_open_keys_view(engine)
 
         print("Migration complete")
         return engine
