@@ -55,20 +55,24 @@ def create_engine_object(url):
     return engine
 
 
-def get_engine(owner=None):
+def get_engine(owner=None, database_path=None):
     if use_sqlite:
-        # For SQLite, create the database path if it doesn't exist
-        db_dir = os.path.dirname(sqlite_db_path)
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir)
-
-        # If owner is specified, append it to the filename
-        if owner:
-            base_name = os.path.splitext(sqlite_db_path)[0]
-            extension = os.path.splitext(sqlite_db_path)[1] or '.db'
-            db_path = f"{base_name}_{owner}{extension}"
+        # If database_path is explicitly provided, use it directly
+        if database_path:
+            db_path = database_path
         else:
-            db_path = sqlite_db_path
+            # For SQLite, create the database path if it doesn't exist
+            db_dir = os.path.dirname(sqlite_db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir)
+
+            # If owner is specified, append it to the filename
+            if owner:
+                base_name = os.path.splitext(sqlite_db_path)[0]
+                extension = os.path.splitext(sqlite_db_path)[1] or '.db'
+                db_path = f"{base_name}_{owner}{extension}"
+            else:
+                db_path = sqlite_db_path
 
         connection_url = f"sqlite:///{db_path}"
         return create_engine_object(connection_url)
