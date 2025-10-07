@@ -37,7 +37,7 @@ def generate_complete_ast(expression: str, database_path: str = None):
         # Initialize database connection if provided
         if database_path:
             try:
-                engine = get_engine(database_path)
+                engine = get_engine(database_path=database_path)
             except Exception as e:
                 return {
                     'success': False,
