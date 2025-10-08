@@ -172,13 +172,24 @@ class InputAnalyzer(ASTTemplate, ABC):
             df_records.columns = standard_key_names
             df_records['data_type'] = df['data_type']
 
-            repeated_identifiers = df_records[df_records[standard_key_names].duplicated()]
-            if len(repeated_identifiers) > 0:
-                repeated_values = ""
-                for value in repeated_identifiers.values:
-                    repeated_values = ', '.join([repeated_values, str(value)]) if repeated_values else str(value)
-                raise exceptions.SemanticError("2-6", name=getattr(node, 'label', None), keys=standard_key_names,
-                                               values=repeated_values)
+            # Check for duplicate keys, but only among non-NULL combinations
+            # NULL values can repeat without being considered duplicates
+            # Filter out rows where ALL standard keys are NULL
+            mask_all_null = df_records[standard_key_names].isnull().all(axis=1)
+            df_non_null_keys = df_records[~mask_all_null]
+
+            if len(df_non_null_keys) > 0:
+                repeated_identifiers = df_non_null_keys[df_non_null_keys[standard_key_names].duplicated(keep=False)]
+                # Further filter: only report duplicates where NO key is NULL (fully specified duplicates)
+                mask_has_null = repeated_identifiers[standard_key_names].isnull().any(axis=1)
+                fully_specified_duplicates = repeated_identifiers[~mask_has_null]
+
+                if len(fully_specified_duplicates) > 0:
+                    repeated_values = ""
+                    for value in fully_specified_duplicates.values:
+                        repeated_values = ', '.join([repeated_values, str(value)]) if repeated_values else str(value)
+                    raise exceptions.SemanticError("2-6", name=getattr(node, 'label', None), keys=standard_key_names,
+                                                   values=repeated_values)
 
             recordset.records = df_records
 

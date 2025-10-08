@@ -139,32 +139,87 @@ class ASTToJSONVisitor(NodeVisitor):
             # Convert pandas DataFrame to list of dictionaries
             if hasattr(node.data, 'to_dict'):
                 data_records = node.data.to_dict('records')
+
+                # Determine if this is a multi-column or multi-row expression from context
+                context_cols = []
+                if self.with_context and hasattr(self.with_context, 'cols') and self.with_context.cols:
+                    context_cols = self.with_context.cols
+
+                is_multi_column = len(context_cols) > 1
+
+                # Parse cell_code to extract row/column/sheet if needed
+                # Some databases store these in separate fields, others embed them in cell_code
+                import re
+                for record in data_records:
+                    if not record.get('row_code') or str(record.get('row_code')) == 'None':
+                        # Try to extract from cell_code like "{K_04.00.a, r0010, c0020, s0001}"
+                        cell_code = record.get('cell_code', '')
+                        if cell_code:
+                            row_match = re.search(r'r(\d+)', cell_code)
+                            col_match = re.search(r'c(\d+)', cell_code)
+                            sheet_match = re.search(r's(\d+)', cell_code)
+                            if row_match:
+                                record['row_code'] = row_match.group(1)
+                            if col_match:
+                                record['column_code'] = col_match.group(1)
+                            if sheet_match:
+                                record['sheet_code'] = sheet_match.group(1)
+
+                # Group data entries by row_code to detect multi-row
+                entries_by_row = {}
+                for record in data_records:
+                    row_code = record.get('row_code', '')
+                    if row_code not in entries_by_row:
+                        entries_by_row[row_code] = []
+                    entries_by_row[row_code].append(record)
+
+                is_multi_row = len(entries_by_row) > 1
+                rows = list(entries_by_row.keys())
+
+                # Build column order if not in context (for wildcard expansion)
+                if not context_cols:
+                    # Extract unique columns from data in order
+                    context_cols = []
+                    seen_cols = set()
+                    for record in data_records:
+                        col = record.get('column_code', '')
+                        if col and col not in seen_cols:
+                            context_cols.append(col)
+                            seen_cols.add(col)
+
                 # Transform the data to match expected JSON structure
                 transformed_data = []
-                for record in data_records:
-                    # Map database columns to expected JSON fields
-                    transformed_record = {}
-                    if 'variable_id' in record:
-                        transformed_record['datapoint'] = record['variable_id']
-                    if 'cell_id' in record:
-                        transformed_record['operand_reference_id'] = record['cell_id']
-                    # Include additional fields with correct field names
-                    if 'cell_code' in record:
-                        transformed_record['cell_code'] = record['cell_code']
-                    if 'table_code' in record:
-                        transformed_record['table_code'] = record['table_code']
-                    # Map row_code -> row, column_code -> column, sheet_code -> sheet
-                    if 'row_code' in record:
-                        transformed_record['row'] = record['row_code']
-                    if 'column_code' in record:
-                        transformed_record['column'] = record['column_code']
-                    if 'sheet_code' in record:
-                        transformed_record['sheet'] = record['sheet_code']
-                    if 'data_type' in record:
-                        transformed_record['data_type'] = record['data_type']
-                    if 'table_vid' in record:
-                        transformed_record['table_vid'] = record['table_vid']
-                    transformed_data.append(transformed_record)
+                for x_index, row_code in enumerate(rows, 1):
+                    for record in entries_by_row[row_code]:
+                        # Start with minimal required fields
+                        transformed_record = {}
+
+                        # Core fields (always present)
+                        if 'variable_id' in record and record['variable_id'] is not None:
+                            transformed_record['datapoint'] = record['variable_id']
+                        if 'cell_id' in record and record['cell_id'] is not None:
+                            transformed_record['operand_reference_id'] = record['cell_id']
+
+                        # IMPORTANT: Always add x, y, row, column for engine compatibility
+                        # The ADAM engine requires these fields even for single-row/column expressions
+                        # Add x coordinate and row (always)
+                        transformed_record['x'] = x_index
+                        if row_code:
+                            transformed_record['row'] = row_code
+
+                        # Add y coordinate and column (always)
+                        column_code = record.get('column_code', '')
+                        # Find y coordinate based on column position in context
+                        y_index = 1  # default
+                        if context_cols and column_code in context_cols:
+                            y_index = context_cols.index(column_code) + 1
+
+                        transformed_record['y'] = y_index
+                        if column_code:
+                            transformed_record['column'] = column_code
+
+                        transformed_data.append(transformed_record)
+
                 result['data'] = transformed_data
             else:
                 # Handle other data formats if needed
@@ -238,6 +293,10 @@ class ASTToJSONVisitor(NodeVisitor):
                 result['item'] = normalized_item
             else:
                 result['item'] = item_name
+
+        # Include scalar_type field (REQUIRED by ADAM Engine)
+        if hasattr(node, 'scalar_type') and node.scalar_type:
+            result['scalar_type'] = node.scalar_type
 
         if hasattr(node, 'member') and node.member:
             result['member'] = node.member

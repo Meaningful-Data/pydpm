@@ -195,8 +195,11 @@ def migrate_to_sqlite(data, sqlite_db_path):
     """Migrate data to SQLite"""
     engine = create_engine(f"sqlite:///{sqlite_db_path}")
 
-    # Create all tables defined in the models
-    Base.metadata.create_all(engine)
+    # Create all tables defined in the models, but exclude 'datapoints' 
+    # which should be created as a view, not a table
+    tables_to_create = [table for table in Base.metadata.sorted_tables 
+                        if table.name != 'datapoints']
+    Base.metadata.create_all(engine, tables=tables_to_create)
 
     for table_name, df in data.items():
         df.to_sql(
@@ -214,6 +217,15 @@ def create_datapoints_view(engine):
     session = Session()
 
     try:
+        # Drop any existing table or view with this name first
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("DROP TABLE IF EXISTS datapoints"))
+                conn.execute(text("DROP VIEW IF EXISTS datapoints"))
+                conn.commit()
+            except Exception:
+                pass  # Ignore errors if they don't exist
+
         # Get the view query
         view_query = ViewDatapoints.create_view_query(session)
 
@@ -224,7 +236,7 @@ def create_datapoints_view(engine):
         )
 
         # Create the view in the database
-        create_view_sql = f"CREATE VIEW IF NOT EXISTS datapoints AS {compiled_query}"
+        create_view_sql = f"CREATE VIEW datapoints AS {compiled_query}"
 
         with engine.connect() as conn:
             conn.execute(text(create_view_sql))

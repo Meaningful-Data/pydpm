@@ -1534,34 +1534,62 @@ class ViewDatapoints(Base):
 
     @classmethod
     def get_table_data(cls, session, table, rows=None, columns=None, sheets=None, release_id=None):
-        query, aliases = cls._create_base_query_with_aliases(session)
-
-        # Select only needed columns
-        query = query.add_columns(
-            TableVersionCell.cellcode.label('cell_code'),
-            TableVersion.code.label('table_code'),
-            aliases['hvr'].code.label('row_code'),
-            aliases['hvc'].code.label('column_code'),
-            aliases['hvs'].code.label('sheet_code'),
-            VariableVersion.variableid.label('variable_id'),
-            DataType.code.label('data_type'),
-            TableVersion.tablevid.label('table_vid'),
-            TableVersionCell.cellid.label('cell_id')
-        ).distinct()
-
-        query = query.filter(TableVersion.code == table)
-
-        if rows is not None:
-            query = filter_elements(query, aliases['hvr'].code, rows)
-        if columns is not None:
-            query = filter_elements(query, aliases['hvc'].code, columns)
-        if sheets is not None:
-            query = filter_elements(query, aliases['hvs'].code, sheets)
-
-        query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
-
-        data = pd.read_sql_query(query.statement, session.connection())
-
+        # Query the datapoints view directly instead of reconstructing it
+        from sqlalchemy import text
+        
+        sql = "SELECT cell_code, table_code, row_code, column_code, sheet_code, variable_id, data_type, table_vid, cell_id FROM datapoints WHERE table_code = :table"
+        params = {'table': table}
+        
+        # Apply row filter
+        if rows is not None and rows != ['*']:
+            if len(rows) == 1 and '-' in rows[0]:
+                low, high = rows[0].split('-')
+                sql += " AND row_code BETWEEN :row_low AND :row_high"
+                params['row_low'] = low
+                params['row_high'] = high
+            else:
+                placeholders = ','.join([f":row{i}" for i in range(len(rows))])
+                sql += f" AND row_code IN ({placeholders})"
+                for i, r in enumerate(rows):
+                    params[f'row{i}'] = r
+        
+        # Apply column filter
+        if columns is not None and columns != ['*']:
+            if len(columns) == 1 and '-' in columns[0]:
+                low, high = columns[0].split('-')
+                sql += " AND column_code BETWEEN :col_low AND :col_high"
+                params['col_low'] = low
+                params['col_high'] = high
+            else:
+                placeholders = ','.join([f":col{i}" for i in range(len(columns))])
+                sql += f" AND column_code IN ({placeholders})"
+                for i, c in enumerate(columns):
+                    params[f'col{i}'] = c
+        
+        # Apply sheet filter
+        if sheets is not None and sheets != ['*']:
+            if len(sheets) == 1 and '-' in sheets[0]:
+                low, high = sheets[0].split('-')
+                sql += " AND sheet_code BETWEEN :sheet_low AND :sheet_high"
+                params['sheet_low'] = low
+                params['sheet_high'] = high
+            else:
+                placeholders = ','.join([f":sheet{i}" for i in range(len(sheets))])
+                sql += f" AND sheet_code IN ({placeholders})"
+                for i, s in enumerate(sheets):
+                    params[f'sheet{i}'] = s
+        
+        # Apply release filter  
+        # Note: In the DPM database, if release_id is None, we should get all active rows
+        # The original logic with ORM was more complex, but for views we simplify:
+        # - If release_id is provided: start_release <= release_id AND (end_release IS NULL OR end_release > release_id)
+        # - If release_id is None: get all rows (no filter on releases)
+        if release_id is not None:
+            sql += " AND start_release <= :release AND (end_release IS NULL OR end_release > :release)"
+            params['release'] = release_id
+        
+        data = pd.read_sql_query(text(sql), session.connection(), params=params)
+        
         data = _check_ranges_values_are_present(data, 'row_code', rows)
         data = _check_ranges_values_are_present(data, 'column_code', columns)
         data = _check_ranges_values_are_present(data, 'sheet_code', sheets)
