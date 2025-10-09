@@ -218,6 +218,21 @@ class ASTToJSONVisitor(NodeVisitor):
                         if column_code:
                             transformed_record['column'] = column_code
 
+                        # Add additional fields required by ADAM engine
+                        # CRITICAL: data_type determines how the engine processes values
+                        if 'data_type' in record and record['data_type'] is not None:
+                            transformed_record['data_type'] = record['data_type']
+
+                        # Add other metadata fields
+                        if 'cell_code' in record and record['cell_code'] is not None:
+                            transformed_record['cell_code'] = record['cell_code']
+                        if 'table_code' in record and record['table_code'] is not None:
+                            transformed_record['table_code'] = record['table_code']
+                        if 'table_vid' in record and record['table_vid'] is not None:
+                            transformed_record['table_vid'] = record['table_vid']
+                        if 'sheet_code' in record and record['sheet_code'] is not None:
+                            transformed_record['sheet'] = record['sheet_code']
+
                         transformed_data.append(transformed_record)
 
                 result['data'] = transformed_data

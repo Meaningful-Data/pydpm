@@ -102,7 +102,7 @@ class OperandsChecking(ASTTemplate, ABC):
             return
         query = """
         SELECT DISTINCT tv.Code, tv.StartReleaseID, tv.EndReleaseID, h.Direction, t.HasOpenRows, t.HasOpenColumns, t.HasOpenSheets
-        FROM [Table] AS t
+        FROM "Table" AS t
         INNER JOIN TableVersion tv ON t.TableID = tv.TableID
         INNER JOIN TableVersionHeader tvh ON tv.TableVID = tvh.TableVID
         INNER JOIN Header h ON h.HeaderID = tvh.HeaderID
