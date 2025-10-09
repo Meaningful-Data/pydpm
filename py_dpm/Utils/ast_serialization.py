@@ -233,27 +233,24 @@ class ASTToJSONVisitor(NodeVisitor):
                         if 'cell_id' in record and record['cell_id'] is not None:
                             transformed_record['operand_reference_id'] = record['cell_id']
 
-                        # NOTE: row and column are NOT included in data entries
-                        # They are already present at the VarID level
-                        # Only coordinates (x, y) and metadata go in data entries
+                        # ADAM engine requires x, y, row, and column in all VarID data entries
+                        # (but NOT in scalar types like Constant)
+
+                        transformed_record['x'] = x_index
+
+                        row_code = record.get('row_code', '')
+                        if row_code:
+                            transformed_record['row'] = row_code
 
                         column_code = record.get('column_code', '')
+                        y_index = 1  # default
+                        if context_cols and column_code in context_cols:
+                            y_index = context_cols.index(column_code) + 1
+                        transformed_record['y'] = y_index
 
-                        # Add coordinates ONLY when there are multiple rows/columns
-                        # IMPORTANT: Coordinates should only be present when needed for disambiguation
-                        # Single row/column expressions should NOT have x/y coordinates
-
-                        # Add x coordinate only if multiple rows
-                        if is_multi_row:
-                            transformed_record['x'] = x_index
-
-                        # Add y coordinate only if multiple columns
-                        if is_multi_column:
-                            # Find y coordinate based on column position in context
-                            y_index = 1  # default
-                            if context_cols and column_code in context_cols:
-                                y_index = context_cols.index(column_code) + 1
-                            transformed_record['y'] = y_index
+                        # column code (e.g., "0020")
+                        if column_code:
+                            transformed_record['column'] = column_code
 
                         # Add additional fields required by ADAM engine
                         # CRITICAL: data_type determines how the engine processes values
