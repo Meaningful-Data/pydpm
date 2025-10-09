@@ -234,9 +234,11 @@ class VarID(AST):
         # If data has been populated (after operand checking), use that
         if hasattr(self, 'data') and self.data is not None:
             # Convert DataFrame to list of dictionaries
+            data_records = None
             try:
                 if hasattr(self.data, 'to_dict'):
-                    result['data'] = self.data.to_dict('records')
+                    data_records = self.data.to_dict('records')
+                    result['data'] = data_records
                 else:
                     result['data'] = self.data
             except Exception:
@@ -246,15 +248,43 @@ class VarID(AST):
                 except Exception:
                     result['data'] = str(self.data)
             result['table'] = self.table
-            result['interval'] = self.interval
+
+            # Interval handling: determine from data_type in data records
+            # According to DPM-XL spec, interval only applies to Number types
+            interval_value = False  # default
+
+            # First check if type attribute is set (from semantic validation)
+            if hasattr(self, 'type') and self.type is not None:
+                from py_dpm.DataTypes.ScalarTypes import Number
+                if isinstance(self.type, Number):
+                    interval_value = self.interval if self.interval is not None else False
+                else:
+                    interval_value = None
+            # Otherwise, infer from data_type in data records
+            elif data_records and len(data_records) > 0 and 'data_type' in data_records[0]:
+                data_type = data_records[0]['data_type']
+                # Map database data types to determine if numeric
+                # Numeric types: 'i' (integer), 'r' (decimal), 'm' (monetary), 'p' (percentage)
+                # Non-numeric types: 'b' (boolean), 's' (string), 'e' (enumeration/item), etc.
+                numeric_data_types = {'i', 'r', 'm', 'p', 'INT', 'DEC', 'MON', 'PER'}
+                if data_type in numeric_data_types:
+                    interval_value = self.interval if self.interval is not None else False
+                else:
+                    interval_value = None
+            else:
+                # No type info available - use explicit interval or default to False
+                interval_value = self.interval if self.interval is not None else False
+
+            result['interval'] = interval_value
         else:
             # Use original structure for unexpanded VarID
+            # When there's no data (no semantic validation), default interval to False
             result.update({
                 'table': self.table,
                 'rows': self.rows,
                 'cols': self.cols,
                 'sheets': self.sheets,
-                'interval': self.interval,
+                'interval': self.interval if self.interval is not None else False,
                 'default': self.default,
                 'is_table_group': self.is_table_group
             })

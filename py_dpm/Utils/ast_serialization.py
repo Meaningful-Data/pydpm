@@ -61,6 +61,15 @@ class ASTToJSONVisitor(NodeVisitor):
                 return '-' in single_val or single_val == '*'
             return False
 
+        # Helper function to check if data type is numeric (supports interval)
+        def is_numeric_data_type(data_type):
+            """Check if data type is Number or Integer (supports interval field)"""
+            if data_type is None:
+                return False
+            # Numeric types that support interval: Number and Integer
+            numeric_types = ['i', 'm', 'p', 'r', 'PER', 'INT', 'MON', 'DEC']
+            return data_type in numeric_types
+
         # Apply context first, then override with node-specific values
         if self.with_context:
             # Handle simple context fields
@@ -111,8 +120,27 @@ class ASTToJSONVisitor(NodeVisitor):
                         # Node has explicit interval value, use it
                         result[node_attr] = node_value
                     elif node_attr not in result:
-                        # No context value and node value is None, default to False
-                        result[node_attr] = False
+                        # No context value and node value is None
+                        # Check data type to determine if interval should be False or None
+                        # Extract data_type from node.data if available
+                        data_type = None
+                        if hasattr(node, 'data') and node.data is not None:
+                            if hasattr(node.data, 'to_dict'):
+                                # DataFrame - get first entry's data_type
+                                data_records = node.data.to_dict('records')
+                                if data_records:
+                                    data_type = data_records[0].get('data_type')
+                            elif isinstance(node.data, list) and node.data:
+                                # List - get first entry's data_type
+                                data_type = node.data[0].get('data_type') if isinstance(node.data[0], dict) else None
+
+                        # Set interval based on data type
+                        if is_numeric_data_type(data_type):
+                            # Numeric types: default to false
+                            result[node_attr] = False
+                        else:
+                            # Non-numeric types: explicitly set to None (will serialize as null in JSON)
+                            result[node_attr] = None
                     # If context already set this field, don't override
                 elif node_value is not None:
                     # Handle AST objects (like Constant)
@@ -241,7 +269,8 @@ class ASTToJSONVisitor(NodeVisitor):
                 result['data'] = node.data
 
         # Filter out None values and internal fields
-        filtered_result = {k: v for k, v in result.items() if v is not None}
+        # EXCEPTION: Keep 'interval' field even when it's None (for non-numeric types)
+        filtered_result = {k: v for k, v in result.items() if v is not None or k == 'interval'}
         return filtered_result
 
     def visit_AggregationOp(self, node):
