@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
 AST to JSON serialization utilities for pyDPM
+
+ALTERNATIVE VERSION: interval field is always False (never null)
+This version is compatible with ADAM engine which requires interval to be boolean.
 """
 
 from py_dpm.AST.ASTVisitor import NodeVisitor
-
 
 class ASTToJSONVisitor(NodeVisitor):
     """Visitor that converts AST nodes to JSON using the existing visitor pattern infrastructure."""
@@ -134,13 +136,9 @@ class ASTToJSONVisitor(NodeVisitor):
                                 # List - get first entry's data_type
                                 data_type = node.data[0].get('data_type') if isinstance(node.data[0], dict) else None
 
-                        # Set interval based on data type
-                        if is_numeric_data_type(data_type):
-                            # Numeric types: default to false
-                            result[node_attr] = False
-                        else:
-                            # Non-numeric types: explicitly set to None (will serialize as null in JSON)
-                            result[node_attr] = None
+                        # Set interval to False for all data types
+                        # The ADAM engine requires interval to always be a boolean (true/false), never null
+                        result[node_attr] = False
                     # If context already set this field, don't override
                 elif node_value is not None:
                     # Handle AST objects (like Constant)
@@ -172,8 +170,6 @@ class ASTToJSONVisitor(NodeVisitor):
                 context_cols = []
                 if self.with_context and hasattr(self.with_context, 'cols') and self.with_context.cols:
                     context_cols = self.with_context.cols
-
-                is_multi_column = len(context_cols) > 1
 
                 # Parse cell_code to extract row/column/sheet if needed
                 # Some databases store these in separate fields, others embed them in cell_code
@@ -215,6 +211,15 @@ class ASTToJSONVisitor(NodeVisitor):
                             context_cols.append(col)
                             seen_cols.add(col)
 
+                # Determine if this specific VarID has multiple columns
+                # based on actual data, not just context
+                unique_cols = set()
+                for record in data_records:
+                    col = record.get('column_code', '')
+                    if col:
+                        unique_cols.add(col)
+                is_multi_column = len(unique_cols) > 1
+
                 # Transform the data to match expected JSON structure
                 transformed_data = []
                 for x_index, row_code in enumerate(rows, 1):
@@ -228,38 +233,41 @@ class ASTToJSONVisitor(NodeVisitor):
                         if 'cell_id' in record and record['cell_id'] is not None:
                             transformed_record['operand_reference_id'] = record['cell_id']
 
-                        # IMPORTANT: Always add x, y, row, column for engine compatibility
-                        # The ADAM engine requires these fields even for single-row/column expressions
-                        # Add x coordinate and row (always)
-                        transformed_record['x'] = x_index
-                        if row_code:
-                            transformed_record['row'] = row_code
+                        # NOTE: row and column are NOT included in data entries
+                        # They are already present at the VarID level
+                        # Only coordinates (x, y) and metadata go in data entries
 
-                        # Add y coordinate and column (always)
                         column_code = record.get('column_code', '')
-                        # Find y coordinate based on column position in context
-                        y_index = 1  # default
-                        if context_cols and column_code in context_cols:
-                            y_index = context_cols.index(column_code) + 1
 
-                        transformed_record['y'] = y_index
-                        if column_code:
-                            transformed_record['column'] = column_code
+                        # Add coordinates ONLY when there are multiple rows/columns
+                        # IMPORTANT: Coordinates should only be present when needed for disambiguation
+                        # Single row/column expressions should NOT have x/y coordinates
+
+                        # Add x coordinate only if multiple rows
+                        if is_multi_row:
+                            transformed_record['x'] = x_index
+
+                        # Add y coordinate only if multiple columns
+                        if is_multi_column:
+                            # Find y coordinate based on column position in context
+                            y_index = 1  # default
+                            if context_cols and column_code in context_cols:
+                                y_index = context_cols.index(column_code) + 1
+                            transformed_record['y'] = y_index
 
                         # Add additional fields required by ADAM engine
                         # CRITICAL: data_type determines how the engine processes values
                         if 'data_type' in record and record['data_type'] is not None:
                             transformed_record['data_type'] = record['data_type']
 
-                        # Add other metadata fields
+                        # Add metadata fields (cell_code, table_code, table_vid)
+                        # NOTE: row, column, sheet are NOT included in data - they're at VarID level
                         if 'cell_code' in record and record['cell_code'] is not None:
                             transformed_record['cell_code'] = record['cell_code']
                         if 'table_code' in record and record['table_code'] is not None:
                             transformed_record['table_code'] = record['table_code']
                         if 'table_vid' in record and record['table_vid'] is not None:
                             transformed_record['table_vid'] = record['table_vid']
-                        if 'sheet_code' in record and record['sheet_code'] is not None:
-                            transformed_record['sheet'] = record['sheet_code']
 
                         transformed_data.append(transformed_record)
 
@@ -269,8 +277,8 @@ class ASTToJSONVisitor(NodeVisitor):
                 result['data'] = node.data
 
         # Filter out None values and internal fields
-        # EXCEPTION: Keep 'interval' field even when it's None (for non-numeric types)
-        filtered_result = {k: v for k, v in result.items() if v is not None or k == 'interval'}
+        # In this version, interval is always False (never None), so standard filtering applies
+        filtered_result = {k: v for k, v in result.items() if v is not None}
         return filtered_result
 
     def visit_AggregationOp(self, node):
