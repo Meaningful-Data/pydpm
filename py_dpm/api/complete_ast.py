@@ -49,7 +49,7 @@ def generate_complete_ast(expression: str, database_path: str = None):
 
         # Use the legacy API which does complete semantic validation
         # This is the same API used to generate the original JSON files
-        api = API()
+        api = API(database_path=database_path)
 
         # Perform complete semantic validation with operand checking
         # This should populate all data fields on VarID nodes

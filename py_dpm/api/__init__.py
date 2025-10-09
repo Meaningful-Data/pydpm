@@ -52,8 +52,8 @@ class API:
     error_listener = DPMErrorListener()
     visitor = ASTVisitor()
 
-    def __init__(self):
-        get_engine()
+    def __init__(self, database_path=None):
+        get_engine(database_path=database_path)
         self.session = get_session()
 
     @classmethod
