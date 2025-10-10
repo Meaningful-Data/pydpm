@@ -210,15 +210,16 @@ class ASTToJSONVisitor(NodeVisitor):
                         if 'cell_id' in record and record['cell_id'] is not None:
                             transformed_record['operand_reference_id'] = record['cell_id']
 
-                        # Check if data type is scalar (no x/y coordinates)
+                        # Check if data type is scalar (no x/y/z coordinates)
                         # Scalar types: b (boolean), s (string), e (enumeration/item)
                         # Non-scalar types: i, r, m, p (integer, decimal, monetary, percentage)
                         data_type = record.get('data_type', '')
                         is_scalar_type = data_type in ['b', 's', 'e']
 
                         column_code = record.get('column_code', '')
+                        sheet_code = record.get('sheet_code', '')
 
-                        # Add x/y coordinates for non-scalar types only
+                        # Add x/y/z coordinates for non-scalar types only
                         if not is_scalar_type:
                             transformed_record['x'] = x_index
 
@@ -227,6 +228,11 @@ class ASTToJSONVisitor(NodeVisitor):
                             if context_cols and column_code in context_cols:
                                 y_index = context_cols.index(column_code) + 1
                             transformed_record['y'] = y_index
+
+                            # Add z coordinate if sheet data exists
+                            if sheet_code:
+                                # For now, use a simple index; could be enhanced with sheet position logic
+                                transformed_record['z'] = 1  # This could be enhanced with actual sheet indexing
 
                         # Note: column and row are at VarID level, not in data entries
 
@@ -245,6 +251,63 @@ class ASTToJSONVisitor(NodeVisitor):
                             transformed_record['table_vid'] = record['table_vid']
 
                         transformed_data.append(transformed_record)
+
+                # Remove common coordinates (coordinates with the same value across all entries)
+                # Common coordinates act like "defining variables" and should not be in data entries
+                # Variable coordinates should include their dimension codes (row/column/sheet)
+                if transformed_data:
+                    # Collect all coordinate values to detect which are common
+                    coord_values = {'x': set(), 'y': set(), 'z': set()}
+
+                    for record in transformed_data:
+                        for coord in ['x', 'y', 'z']:
+                            if coord in record:
+                                coord_values[coord].add(record[coord])
+
+                    # Identify common vs variable coordinates
+                    common_coords = []
+                    variable_coords = []
+                    for coord, values in coord_values.items():
+                        if len(values) == 1:  # All entries have the same value
+                            common_coords.append(coord)
+                        elif len(values) > 1:  # Coordinate varies
+                            variable_coords.append(coord)
+
+                    # For variable coordinates, add dimension codes to each entry
+                    # Map coordinates to their dimension codes from original data
+                    coord_to_dimension = {
+                        'x': 'row_code',
+                        'y': 'column_code',
+                        'z': 'sheet_code'
+                    }
+                    coord_to_field = {
+                        'x': 'row',
+                        'y': 'column',
+                        'z': 'sheet'
+                    }
+
+                    # Add dimension codes for variable coordinates
+                    # We need to match each transformed record back to its original record
+                    record_index = 0
+                    for x_index, row_code in enumerate(rows, 1):
+                        for original_record in entries_by_row[row_code]:
+                            if record_index < len(transformed_data):
+                                transformed_record = transformed_data[record_index]
+
+                                # Add dimension codes for variable coordinates
+                                for coord in variable_coords:
+                                    dimension_field = coord_to_dimension[coord]
+                                    output_field = coord_to_field[coord]
+
+                                    if dimension_field in original_record and original_record[dimension_field]:
+                                        transformed_record[output_field] = original_record[dimension_field]
+
+                                record_index += 1
+
+                    # Remove common coordinates from all entries
+                    for record in transformed_data:
+                        for coord in common_coords:
+                            record.pop(coord, None)
 
                 result['data'] = transformed_data
             else:
