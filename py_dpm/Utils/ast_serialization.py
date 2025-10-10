@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
 AST to JSON serialization utilities for pyDPM
-
-ALTERNATIVE VERSION: interval field is always False (never null)
-This version is compatible with ADAM engine which requires interval to be boolean.
 """
 
 from py_dpm.AST.ASTVisitor import NodeVisitor
@@ -62,15 +59,6 @@ class ASTToJSONVisitor(NodeVisitor):
             if isinstance(single_val, str):
                 return '-' in single_val or single_val == '*'
             return False
-
-        # Helper function to check if data type is numeric (supports interval)
-        def is_numeric_data_type(data_type):
-            """Check if data type is Number or Integer (supports interval field)"""
-            if data_type is None:
-                return False
-            # Numeric types that support interval: Number and Integer
-            numeric_types = ['i', 'm', 'p', 'r', 'PER', 'INT', 'MON', 'DEC']
-            return data_type in numeric_types
 
         # Apply context first, then override with node-specific values
         if self.with_context:
@@ -137,7 +125,6 @@ class ASTToJSONVisitor(NodeVisitor):
                                 data_type = node.data[0].get('data_type') if isinstance(node.data[0], dict) else None
 
                         # Set interval to False for all data types
-                        # The ADAM engine requires interval to always be a boolean (true/false), never null
                         result[node_attr] = False
                     # If context already set this field, don't override
                 elif node_value is not None:
@@ -189,7 +176,7 @@ class ASTToJSONVisitor(NodeVisitor):
                             if sheet_match:
                                 record['sheet_code'] = sheet_match.group(1)
 
-                # Group data entries by row_code to detect multi-row
+                # Group data entries by row_code
                 entries_by_row = {}
                 for record in data_records:
                     row_code = record.get('row_code', '')
@@ -197,7 +184,6 @@ class ASTToJSONVisitor(NodeVisitor):
                         entries_by_row[row_code] = []
                     entries_by_row[row_code].append(record)
 
-                is_multi_row = len(entries_by_row) > 1
                 rows = list(entries_by_row.keys())
 
                 # Build column order if not in context (for wildcard expansion)
@@ -210,15 +196,6 @@ class ASTToJSONVisitor(NodeVisitor):
                         if col and col not in seen_cols:
                             context_cols.append(col)
                             seen_cols.add(col)
-
-                # Determine if this specific VarID has multiple columns
-                # based on actual data, not just context
-                unique_cols = set()
-                for record in data_records:
-                    col = record.get('column_code', '')
-                    if col:
-                        unique_cols.add(col)
-                is_multi_column = len(unique_cols) > 1
 
                 # Transform the data to match expected JSON structure
                 transformed_data = []
@@ -233,24 +210,25 @@ class ASTToJSONVisitor(NodeVisitor):
                         if 'cell_id' in record and record['cell_id'] is not None:
                             transformed_record['operand_reference_id'] = record['cell_id']
 
-                        # ADAM engine requires x, y, row, and column in all VarID data entries
-                        # (but NOT in scalar types like Constant)
-
-                        transformed_record['x'] = x_index
-
-                        row_code = record.get('row_code', '')
-                        if row_code:
-                            transformed_record['row'] = row_code
+                        # Check if data type is scalar (no x/y coordinates)
+                        # Scalar types: b (boolean), s (string), e (enumeration/item)
+                        # Non-scalar types: i, r, m, p (integer, decimal, monetary, percentage)
+                        data_type = record.get('data_type', '')
+                        is_scalar_type = data_type in ['b', 's', 'e']
 
                         column_code = record.get('column_code', '')
-                        y_index = 1  # default
-                        if context_cols and column_code in context_cols:
-                            y_index = context_cols.index(column_code) + 1
-                        transformed_record['y'] = y_index
 
-                        # column code (e.g., "0020")
-                        if column_code:
-                            transformed_record['column'] = column_code
+                        # Add x/y coordinates for non-scalar types only
+                        if not is_scalar_type:
+                            transformed_record['x'] = x_index
+
+                            # Find y coordinate based on column position in context
+                            y_index = 1  # default
+                            if context_cols and column_code in context_cols:
+                                y_index = context_cols.index(column_code) + 1
+                            transformed_record['y'] = y_index
+
+                        # Note: column and row are at VarID level, not in data entries
 
                         # Add additional fields required by ADAM engine
                         # CRITICAL: data_type determines how the engine processes values
@@ -274,7 +252,6 @@ class ASTToJSONVisitor(NodeVisitor):
                 result['data'] = node.data
 
         # Filter out None values and internal fields
-        # In this version, interval is always False (never None), so standard filtering applies
         filtered_result = {k: v for k, v in result.items() if v is not None}
         return filtered_result
 
