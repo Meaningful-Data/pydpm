@@ -326,6 +326,14 @@ class ASTToJSONVisitor(NodeVisitor):
             'operand': self.visit(node.operand)
         }
 
+    def visit_ComplexNumericOp(self, node):
+        """Visit ComplexNumericOp nodes (max, min)."""
+        return {
+            'class_name': 'ComplexNumericOp',
+            'op': node.op,
+            'operands': [self.visit(operand) for operand in node.operands] if node.operands else []
+        }
+
     def visit_Constant(self, node):
         """Visit Constant nodes."""
         return {
@@ -413,7 +421,7 @@ class ASTToJSONVisitor(NodeVisitor):
                     result[attr] = self.visit(attr_value)
 
         # Handle lists of child nodes
-        for attr in ['children', 'args']:
+        for attr in ['children', 'args', 'operands']:
             if hasattr(node, attr):
                 attr_value = getattr(node, attr)
                 if attr_value and isinstance(attr_value, list):

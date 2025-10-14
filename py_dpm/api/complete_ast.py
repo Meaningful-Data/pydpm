@@ -142,15 +142,15 @@ def generate_complete_ast(expression: str, database_path: str = None):
                                         node.data = filtered_data
 
                         # Recursively apply to child nodes
-                        for attr_name in ['children', 'left', 'right', 'operand', 'expression', 'condition', 'then_expr', 'else_expr']:
+                        for attr_name in ['children', 'left', 'right', 'operand', 'operands', 'expression', 'condition', 'then_expr', 'else_expr']:
                             if hasattr(node, attr_name):
                                 attr_value = getattr(node, attr_name)
-                                if attr_value and hasattr(attr_value, '__class__'):
-                                    apply_data_to_varids(attr_value)
-                                elif isinstance(attr_value, list):
+                                if isinstance(attr_value, list):
                                     for item in attr_value:
                                         if hasattr(item, '__class__'):
                                             apply_data_to_varids(item)
+                                elif attr_value and hasattr(attr_value, '__class__'):
+                                    apply_data_to_varids(attr_value)
 
                     # Apply data to all VarID nodes in the AST
                     apply_data_to_varids(inner_ast)
