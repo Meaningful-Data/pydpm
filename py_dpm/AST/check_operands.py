@@ -102,7 +102,7 @@ class OperandsChecking(ASTTemplate, ABC):
             return
         query = """
         SELECT DISTINCT tv.Code, tv.StartReleaseID, tv.EndReleaseID, h.Direction, t.HasOpenRows, t.HasOpenColumns, t.HasOpenSheets
-        FROM [Table] AS t
+        FROM "Table" AS t
         INNER JOIN TableVersion tv ON t.TableID = tv.TableID
         INNER JOIN TableVersionHeader tvh ON tv.TableVID = tvh.TableVID
         INNER JOIN Header h ON h.HeaderID = tvh.HeaderID
@@ -170,10 +170,31 @@ class OperandsChecking(ASTTemplate, ABC):
                 if node_data.empty:
                     format_missing_data(node)
                 extract_data_types(node, node_data['data_type'])
+
+                # Check for invalid sheet wildcards
                 if df_table['sheet_code'].isnull().all() and node.sheets is not None and '*' in node.sheets:
-                    raise SemanticError("1-18")
+                    # Check if s* is required to avoid duplicate (row, column) combinations
+                    # Group by (row_code, column_code) and check for duplicates
+                    # IMPORTANT: Include NA/NULL values in grouping (dropna=False)
+                    df_without_sheets = df_table.groupby(['row_code', 'column_code'], dropna=False).size()
+                    has_duplicates = (df_without_sheets > 1).any()
+
+                    if not has_duplicates:
+                        # Only raise error if sheets are truly not needed (no duplicates without them)
+                        raise SemanticError("1-18")
+                    # else: s* is required even though sheet_code is NULL, so allow it
+
+                # Check for invalid row wildcards
                 if df_table['row_code'].isnull().all() and node.rows is not None and '*' in node.rows:
-                    raise SemanticError("1-19")
+                    # Check if r* is required to avoid duplicate (column, sheet) combinations
+                    # IMPORTANT: Include NA/NULL values in grouping (dropna=False)
+                    df_without_rows = df_table.groupby(['column_code', 'sheet_code'], dropna=False).size()
+                    has_duplicates = (df_without_rows > 1).any()
+
+                    if not has_duplicates:
+                        # Only raise error if rows are truly not needed
+                        raise SemanticError("1-19")
+                    # else: r* is required even though row_code is NULL, so allow it
             del node_data
 
             # Adding data to self.data

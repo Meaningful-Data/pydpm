@@ -41,7 +41,7 @@ Available packages:
 - pydpm.api: Main APIs for migration, syntax, and semantic analysis
 """
 
-__version__ = "0.1.13"
+__version__ = "0.1.24"
 __author__ = "MeaningfulData S.L."
 __email__ = "info@meaningfuldata.eu"
 __license__ = "GPL-3.0-or-later"

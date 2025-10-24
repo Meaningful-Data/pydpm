@@ -195,8 +195,11 @@ def migrate_to_sqlite(data, sqlite_db_path):
     """Migrate data to SQLite"""
     engine = create_engine(f"sqlite:///{sqlite_db_path}")
 
-    # Create all tables defined in the models
-    Base.metadata.create_all(engine)
+    # Create all tables defined in the models, but exclude 'datapoints' 
+    # which should be created as a view, not a table
+    tables_to_create = [table for table in Base.metadata.sorted_tables 
+                        if table.name != 'datapoints']
+    Base.metadata.create_all(engine, tables=tables_to_create)
 
     for table_name, df in data.items():
         df.to_sql(
@@ -214,6 +217,15 @@ def create_datapoints_view(engine):
     session = Session()
 
     try:
+        # Drop any existing table or view with this name first
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("DROP TABLE IF EXISTS datapoints"))
+                conn.execute(text("DROP VIEW IF EXISTS datapoints"))
+                conn.commit()
+            except Exception:
+                pass  # Ignore errors if they don't exist
+
         # Get the view query
         view_query = ViewDatapoints.create_view_query(session)
 
@@ -224,7 +236,7 @@ def create_datapoints_view(engine):
         )
 
         # Create the view in the database
-        create_view_sql = f"CREATE VIEW IF NOT EXISTS datapoints AS {compiled_query}"
+        create_view_sql = f"CREATE VIEW datapoints AS {compiled_query}"
 
         with engine.connect() as conn:
             conn.execute(text(create_view_sql))
@@ -288,6 +300,51 @@ def create_key_components_view(engine):
     finally:
         session.close()
 
+
+def create_open_keys_view(engine):
+    """Create the open_keys view for SQLite database"""
+    from sqlalchemy.orm import sessionmaker
+
+    session_maker = sessionmaker(bind=engine)
+    session = session_maker()
+
+    try:
+        # Drop existing view/table if it exists
+        try:
+            session.execute(text("DROP TABLE IF EXISTS open_keys"))
+            session.execute(text("DROP VIEW IF EXISTS open_keys"))
+            session.commit()
+        except Exception:
+            pass  # Ignore errors if view/table doesn't exist
+
+        # Create the open_keys view with SQLite-compatible syntax
+        # This view provides information about open keys (dimensions) used in WHERE clauses
+        open_keys_query = """
+        CREATE VIEW open_keys AS
+        SELECT ic.Code AS property_code,
+               dt.Code AS data_type,
+               ic.StartReleaseID AS start_release,
+               ic.EndReleaseID AS end_release
+        FROM KeyComposition kc
+        INNER JOIN VariableVersion vv ON vv.VariableVID = kc.VariableVID
+        INNER JOIN Item i ON vv.PropertyID = i.ItemID
+        INNER JOIN ItemCategory ic ON ic.ItemID = i.ItemID
+        INNER JOIN Property p ON vv.PropertyID = p.PropertyID
+        LEFT JOIN DataType dt ON p.DataTypeID = dt.DataTypeID
+        """
+
+        session.execute(text(open_keys_query))
+        session.commit()
+
+        print("Open keys view created successfully")
+
+    except Exception as e:
+        print(f"Error creating open_keys view: {e}")
+        raise
+    finally:
+        session.close()
+
+
 def run_migration(file_name, sqlite_db_path):
     try:
         # Extract data from Access
@@ -305,6 +362,10 @@ def run_migration(file_name, sqlite_db_path):
         # Create the key_components view
         print("Creating key_components view...")
         create_key_components_view(engine)
+
+        # Create the open_keys view
+        print("Creating open_keys view...")
+        create_open_keys_view(engine)
 
         print("Migration complete")
         return engine

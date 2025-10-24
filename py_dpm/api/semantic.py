@@ -76,25 +76,30 @@ class SemanticAPI:
         self.error_listener = DPMErrorListener()
         self.visitor = ASTVisitor()
     
-    def validate_expression(self, expression: str) -> SemanticValidationResult:
+    def validate_expression(self, expression: str, release_id: Optional[int] = None) -> SemanticValidationResult:
         """
         Perform semantic validation on a DPM-XL expression.
-        
+
         This includes syntax validation, operands checking, data type validation,
         and structure validation.
-        
+
         Args:
             expression (str): The DPM-XL expression to validate
-            
+            release_id (Optional[int]): Specific release ID for component filtering.
+                                       If None, uses live/latest release (EndReleaseID IS NULL).
+
         Returns:
             SemanticValidationResult: Result containing validation status and details
-            
+
         Example:
             >>> from pydpm.api import SemanticAPI
             >>> semantic = SemanticAPI()
             >>> result = semantic.validate_expression("{tC_01.00, r0100, c0010} + {tC_01.00, r0200, c0010}")
             >>> print(result.is_valid)
             True
+
+            >>> # Validate for specific release
+            >>> result = semantic.validate_expression("{tC_01.00, r0100, c0010}", release_id=5)
         """
         try:
             # Parse expression to AST
@@ -120,7 +125,7 @@ class SemanticAPI:
             ast = self.visitor.visit(parse_tree)
             
             # Perform semantic analysis
-            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=None)
+            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
             semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
             
             semanticAnalysis.data = oc.data
@@ -156,25 +161,29 @@ class SemanticAPI:
                 validation_type="SEMANTIC"
             )
     
-    def analyze_expression(self, expression: str) -> Dict[str, Any]:
+    def analyze_expression(self, expression: str, release_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Perform detailed semantic analysis on a DPM-XL expression.
-        
+
         Args:
             expression (str): The DPM-XL expression to analyze
-            
+            release_id (Optional[int]): Specific release ID for component filtering.
+                                       If None, uses live/latest release.
+
         Returns:
             Dict[str, Any]: Detailed analysis results
-            
+
         Raises:
             Exception: If analysis fails
-            
+
         Example:
             >>> from pydpm.api import SemanticAPI
             >>> semantic = SemanticAPI()
             >>> analysis = semantic.analyze_expression("{tC_01.00, r0100, c0010}")
+            >>> # Analyze for specific release
+            >>> analysis = semantic.analyze_expression("{tC_01.00, r0100, c0010}", release_id=5)
         """
-        result = self.validate_expression(expression)
+        result = self.validate_expression(expression, release_id=release_id)
         
         if not result.is_valid:
             raise Exception(f"Semantic analysis failed: {result.error_message}")
@@ -190,22 +199,26 @@ class SemanticAPI:
         
         return analysis
     
-    def is_valid_semantics(self, expression: str) -> bool:
+    def is_valid_semantics(self, expression: str, release_id: Optional[int] = None) -> bool:
         """
         Quick check if expression has valid semantics.
-        
+
         Args:
             expression (str): The DPM-XL expression to check
-            
+            release_id (Optional[int]): Specific release ID for component filtering.
+                                       If None, uses live/latest release.
+
         Returns:
             bool: True if semantics are valid, False otherwise
-            
+
         Example:
             >>> from pydpm.api import SemanticAPI
             >>> semantic = SemanticAPI()
             >>> is_valid = semantic.is_valid_semantics("{tC_01.00, r0100, c0010}")
+            >>> # Check for specific release
+            >>> is_valid = semantic.is_valid_semantics("{tC_01.00, r0100, c0010}", release_id=5)
         """
-        result = self.validate_expression(expression)
+        result = self.validate_expression(expression, release_id=release_id)
         return result.is_valid
     
     def __del__(self):
@@ -217,13 +230,15 @@ class SemanticAPI:
 
 
 # Convenience functions for direct usage
-def validate_expression(expression: str, database_path: Optional[str] = None) -> SemanticValidationResult:
+def validate_expression(expression: str, database_path: Optional[str] = None, release_id: Optional[int] = None) -> SemanticValidationResult:
     """
     Convenience function to validate DPM-XL expression semantics.
 
     Args:
         expression (str): The DPM-XL expression to validate
         database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+        release_id (Optional[int]): Specific release ID for component filtering.
+                                   If None, uses live/latest release.
 
     Returns:
         SemanticValidationResult: Result containing validation status and details
@@ -231,18 +246,22 @@ def validate_expression(expression: str, database_path: Optional[str] = None) ->
     Example:
         >>> from pydpm.api.semantic import validate_expression
         >>> result = validate_expression("{tC_01.00, r0100, c0010}", database_path="./database.db")
+        >>> # Validate for specific release
+        >>> result = validate_expression("{tC_01.00, r0100, c0010}", database_path="./database.db", release_id=5)
     """
     api = SemanticAPI(database_path=database_path)
-    return api.validate_expression(expression)
+    return api.validate_expression(expression, release_id=release_id)
 
 
-def is_valid_semantics(expression: str, database_path: Optional[str] = None) -> bool:
+def is_valid_semantics(expression: str, database_path: Optional[str] = None, release_id: Optional[int] = None) -> bool:
     """
     Convenience function to check if expression has valid semantics.
 
     Args:
         expression (str): The DPM-XL expression to check
         database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+        release_id (Optional[int]): Specific release ID for component filtering.
+                                   If None, uses live/latest release.
 
     Returns:
         bool: True if semantics are valid, False otherwise
@@ -250,6 +269,8 @@ def is_valid_semantics(expression: str, database_path: Optional[str] = None) -> 
     Example:
         >>> from pydpm.api.semantic import is_valid_semantics
         >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}", database_path="./database.db")
+        >>> # Check for specific release
+        >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}", database_path="./database.db", release_id=5)
     """
     api = SemanticAPI(database_path=database_path)
-    return api.is_valid_semantics(expression)
+    return api.is_valid_semantics(expression, release_id=release_id)
