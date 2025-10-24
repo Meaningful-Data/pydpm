@@ -1275,15 +1275,38 @@ def filter_elements(query, column, values):
             dynamic_filter.append(column.between(limits[0], limits[1]))
         else:
             dynamic_filter.append(column == x)
-    return query.filter(or_((x for x in dynamic_filter)))
+    # Fixed: or_() requires unpacked arguments, not a generator
+    return query.filter(or_(*dynamic_filter))
 
 def _check_ranges_values_are_present(data: pd.DataFrame, data_column, values):
-    if values is not None and len(values) > 0 and '-' in values[0]:
-        test = values[0].split('-')
-        if test[0] not in list(data[data_column].values):
-            data = pd.DataFrame(columns=data.columns)
-        if test[1] not in list(data[data_column].values):
-            data = pd.DataFrame(columns=data.columns)
+    """
+    Validate that range notation in values has corresponding data.
+
+    For each range in values (e.g., '0010-0070'), check that both boundary
+    values exist in the returned data to ensure the range is valid.
+
+    Args:
+        data: DataFrame returned from SQL query
+        data_column: Column name to check (e.g., 'row_code', 'column_code')
+        values: List of values which may contain range notation (e.g., ['0010-0070', '0080'])
+
+    Returns:
+        DataFrame: Original data if valid, empty DataFrame if any range boundaries missing
+    """
+    if values is None or len(values) == 0:
+        return data
+
+    # Check ALL values in the list, not just the first one
+    actual_values = list(data[data_column].values)
+
+    for value in values:
+        if '-' in value:
+            # This is a range, check that both boundaries exist
+            limits = value.split('-')
+            if limits[0] not in actual_values or limits[1] not in actual_values:
+                # Range boundary missing, return empty DataFrame
+                return pd.DataFrame(columns=data.columns)
+
     return data
 
 class ViewDatapoints(Base):

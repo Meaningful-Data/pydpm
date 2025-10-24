@@ -76,19 +76,21 @@ class SemanticAPI:
         self.error_listener = DPMErrorListener()
         self.visitor = ASTVisitor()
     
-    def validate_expression(self, expression: str) -> SemanticValidationResult:
+    def validate_expression(self, expression: str, release_id: Optional[int] = None) -> SemanticValidationResult:
         """
         Perform semantic validation on a DPM-XL expression.
-        
+
         This includes syntax validation, operands checking, data type validation,
         and structure validation.
-        
+
         Args:
             expression (str): The DPM-XL expression to validate
-            
+            release_id (Optional[int]): Specific release ID for filtering datapoints (e.g., 5 for DPM 4.2)
+                                       If None, no release filtering is applied
+
         Returns:
             SemanticValidationResult: Result containing validation status and details
-            
+
         Example:
             >>> from pydpm.api import SemanticAPI
             >>> semantic = SemanticAPI()
@@ -102,11 +104,11 @@ class SemanticAPI:
             lexer = dpm_xlLexer(input_stream)
             lexer._listeners = [self.error_listener]
             token_stream = CommonTokenStream(lexer)
-            
+
             parser = dpm_xlParser(token_stream)
             parser._listeners = [self.error_listener]
             parse_tree = parser.start()
-            
+
             if parser._syntaxErrors > 0:
                 return SemanticValidationResult(
                     is_valid=False,
@@ -115,21 +117,21 @@ class SemanticAPI:
                     expression=expression,
                     validation_type="SEMANTIC"
                 )
-            
+
             # Generate AST
             ast = self.visitor.visit(parse_tree)
-            
+
             # Perform semantic analysis
-            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=None)
+            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
             semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
-            
+
             semanticAnalysis.data = oc.data
             semanticAnalysis.key_components = oc.key_components
             semanticAnalysis.open_keys = oc.open_keys
             semanticAnalysis.preconditions = oc.preconditions
-            
+
             results = semanticAnalysis.visit(ast)
-            
+
             return SemanticValidationResult(
                 is_valid=True,
                 error_message=None,
@@ -138,7 +140,7 @@ class SemanticAPI:
                 validation_type="SEMANTIC",
                 results=results
             )
-            
+
         except SemanticError as e:
             return SemanticValidationResult(
                 is_valid=False,
