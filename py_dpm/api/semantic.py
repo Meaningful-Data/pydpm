@@ -107,11 +107,11 @@ class SemanticAPI:
             lexer = dpm_xlLexer(input_stream)
             lexer._listeners = [self.error_listener]
             token_stream = CommonTokenStream(lexer)
-            
+
             parser = dpm_xlParser(token_stream)
             parser._listeners = [self.error_listener]
             parse_tree = parser.start()
-            
+
             if parser._syntaxErrors > 0:
                 return SemanticValidationResult(
                     is_valid=False,
@@ -120,21 +120,21 @@ class SemanticAPI:
                     expression=expression,
                     validation_type="SEMANTIC"
                 )
-            
+
             # Generate AST
             ast = self.visitor.visit(parse_tree)
-            
+
             # Perform semantic analysis
             oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
             semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
-            
+
             semanticAnalysis.data = oc.data
             semanticAnalysis.key_components = oc.key_components
             semanticAnalysis.open_keys = oc.open_keys
             semanticAnalysis.preconditions = oc.preconditions
-            
+
             results = semanticAnalysis.visit(ast)
-            
+
             return SemanticValidationResult(
                 is_valid=True,
                 error_message=None,
@@ -143,7 +143,7 @@ class SemanticAPI:
                 validation_type="SEMANTIC",
                 results=results
             )
-            
+
         except SemanticError as e:
             return SemanticValidationResult(
                 is_valid=False,
