@@ -37,7 +37,7 @@ def generate_complete_ast(expression: str, database_path: str = None):
         # Initialize database connection if provided
         if database_path:
             try:
-                engine = get_engine(database_path)
+                engine = get_engine(database_path=database_path)
             except Exception as e:
                 return {
                     'success': False,
@@ -49,7 +49,7 @@ def generate_complete_ast(expression: str, database_path: str = None):
 
         # Use the legacy API which does complete semantic validation
         # This is the same API used to generate the original JSON files
-        api = API()
+        api = API(database_path=database_path)
 
         # Perform complete semantic validation with operand checking
         # This should populate all data fields on VarID nodes
@@ -84,7 +84,6 @@ def generate_complete_ast(expression: str, database_path: str = None):
                     release_id=None
                 )
 
-
                 # Apply the data from operand checker to VarID nodes
                 if hasattr(oc, 'data') and oc.data is not None:
 
@@ -97,26 +96,61 @@ def generate_complete_ast(expression: str, database_path: str = None):
 
                             if table and table in oc.operands:
                                 # Filter data for this specific VarID
-                                filtered_data = oc.data[
-                                    (oc.data['table_code'] == table) &
-                                    (oc.data['row_code'].isin(rows or [])) &
-                                    (oc.data['column_code'].isin(cols or []))
-                                ]
+                                # Start with table filter
+                                filter_mask = (oc.data['table_code'] == table)
+
+                                # Add row filter only if rows is not None and doesn't contain wildcards
+                                # IMPORTANT: If rows contains '*', include all rows (don't filter)
+                                if rows is not None and '*' not in rows:
+                                    filter_mask = filter_mask & (oc.data['row_code'].isin(rows))
+
+                                # Add column filter only if cols is not None and doesn't contain wildcards
+                                # IMPORTANT: If cols contains '*', include all columns (don't filter)
+                                if cols is not None and '*' not in cols:
+                                    filter_mask = filter_mask & (oc.data['column_code'].isin(cols))
+
+                                filtered_data = oc.data[filter_mask]
 
                                 if not filtered_data.empty:
+                                    # IMPORTANT: Remove wildcard entries (NULL column/row/sheet codes)
+                                    # when specific entries exist for the same dimension
+                                    # The database contains both wildcard entries (column_code=NULL for c*)
+                                    # and specific entries (column_code='0010'). When we query with wildcards,
+                                    # we want only the specific entries.
+
+                                    # Remove rows where column_code is NULL if there are non-NULL column_code entries
+                                    if filtered_data['column_code'].notna().any():
+                                        filtered_data = filtered_data[filtered_data['column_code'].notna()]
+
+                                    # Remove rows where row_code is NULL if there are non-NULL row_code entries
+                                    if filtered_data['row_code'].notna().any():
+                                        filtered_data = filtered_data[filtered_data['row_code'].notna()]
+
+                                    # Remove rows where sheet_code is NULL if there are non-NULL sheet_code entries
+                                    if filtered_data['sheet_code'].notna().any():
+                                        filtered_data = filtered_data[filtered_data['sheet_code'].notna()]
+
+                                    # IMPORTANT: After filtering, remove any remaining duplicates
+                                    # based on (row_code, column_code, sheet_code) combination
+                                    filtered_data = filtered_data.drop_duplicates(
+                                        subset=['row_code', 'column_code', 'sheet_code'],
+                                        keep='first'
+                                    )
+
                                     # Set the data attribute on the VarID node
-                                    node.data = filtered_data
+                                    if not filtered_data.empty:
+                                        node.data = filtered_data
 
                         # Recursively apply to child nodes
-                        for attr_name in ['children', 'left', 'right', 'operand', 'expression', 'condition', 'then_expr', 'else_expr']:
+                        for attr_name in ['children', 'left', 'right', 'operand', 'operands', 'expression', 'condition', 'then_expr', 'else_expr']:
                             if hasattr(node, attr_name):
                                 attr_value = getattr(node, attr_name)
-                                if attr_value and hasattr(attr_value, '__class__'):
-                                    apply_data_to_varids(attr_value)
-                                elif isinstance(attr_value, list):
+                                if isinstance(attr_value, list):
                                     for item in attr_value:
                                         if hasattr(item, '__class__'):
                                             apply_data_to_varids(item)
+                                elif attr_value and hasattr(attr_value, '__class__'):
+                                    apply_data_to_varids(attr_value)
 
                     # Apply data to all VarID nodes in the AST
                     apply_data_to_varids(inner_ast)

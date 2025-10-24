@@ -5,7 +5,6 @@ AST to JSON serialization utilities for pyDPM
 
 from py_dpm.AST.ASTVisitor import NodeVisitor
 
-
 class ASTToJSONVisitor(NodeVisitor):
     """Visitor that converts AST nodes to JSON using the existing visitor pattern infrastructure."""
 
@@ -111,7 +110,21 @@ class ASTToJSONVisitor(NodeVisitor):
                         # Node has explicit interval value, use it
                         result[node_attr] = node_value
                     elif node_attr not in result:
-                        # No context value and node value is None, default to False
+                        # No context value and node value is None
+                        # Check data type to determine if interval should be False or None
+                        # Extract data_type from node.data if available
+                        data_type = None
+                        if hasattr(node, 'data') and node.data is not None:
+                            if hasattr(node.data, 'to_dict'):
+                                # DataFrame - get first entry's data_type
+                                data_records = node.data.to_dict('records')
+                                if data_records:
+                                    data_type = data_records[0].get('data_type')
+                            elif isinstance(node.data, list) and node.data:
+                                # List - get first entry's data_type
+                                data_type = node.data[0].get('data_type') if isinstance(node.data[0], dict) else None
+
+                        # Set interval to False for all data types
                         result[node_attr] = False
                     # If context already set this field, don't override
                 elif node_value is not None:
@@ -139,32 +152,163 @@ class ASTToJSONVisitor(NodeVisitor):
             # Convert pandas DataFrame to list of dictionaries
             if hasattr(node.data, 'to_dict'):
                 data_records = node.data.to_dict('records')
+
+                # Determine if this is a multi-column or multi-row expression from context
+                context_cols = []
+                if self.with_context and hasattr(self.with_context, 'cols') and self.with_context.cols:
+                    context_cols = self.with_context.cols
+
+                # Parse cell_code to extract row/column/sheet if needed
+                # Some databases store these in separate fields, others embed them in cell_code
+                import re
+                for record in data_records:
+                    if not record.get('row_code') or str(record.get('row_code')) == 'None':
+                        # Try to extract from cell_code like "{K_04.00.a, r0010, c0020, s0001}"
+                        cell_code = record.get('cell_code', '')
+                        if cell_code:
+                            row_match = re.search(r'r(\d+)', cell_code)
+                            col_match = re.search(r'c(\d+)', cell_code)
+                            sheet_match = re.search(r's(\d+)', cell_code)
+                            if row_match:
+                                record['row_code'] = row_match.group(1)
+                            if col_match:
+                                record['column_code'] = col_match.group(1)
+                            if sheet_match:
+                                record['sheet_code'] = sheet_match.group(1)
+
+                # Group data entries by row_code
+                entries_by_row = {}
+                for record in data_records:
+                    row_code = record.get('row_code', '')
+                    if row_code not in entries_by_row:
+                        entries_by_row[row_code] = []
+                    entries_by_row[row_code].append(record)
+
+                rows = list(entries_by_row.keys())
+
+                # Build column order if not in context (for wildcard expansion)
+                if not context_cols:
+                    # Extract unique columns from data in order
+                    context_cols = []
+                    seen_cols = set()
+                    for record in data_records:
+                        col = record.get('column_code', '')
+                        if col and col not in seen_cols:
+                            context_cols.append(col)
+                            seen_cols.add(col)
+
                 # Transform the data to match expected JSON structure
                 transformed_data = []
-                for record in data_records:
-                    # Map database columns to expected JSON fields
-                    transformed_record = {}
-                    if 'variable_id' in record:
-                        transformed_record['datapoint'] = record['variable_id']
-                    if 'cell_id' in record:
-                        transformed_record['operand_reference_id'] = record['cell_id']
-                    # Include additional fields with correct field names
-                    if 'cell_code' in record:
-                        transformed_record['cell_code'] = record['cell_code']
-                    if 'table_code' in record:
-                        transformed_record['table_code'] = record['table_code']
-                    # Map row_code -> row, column_code -> column, sheet_code -> sheet
-                    if 'row_code' in record:
-                        transformed_record['row'] = record['row_code']
-                    if 'column_code' in record:
-                        transformed_record['column'] = record['column_code']
-                    if 'sheet_code' in record:
-                        transformed_record['sheet'] = record['sheet_code']
-                    if 'data_type' in record:
-                        transformed_record['data_type'] = record['data_type']
-                    if 'table_vid' in record:
-                        transformed_record['table_vid'] = record['table_vid']
-                    transformed_data.append(transformed_record)
+                for x_index, row_code in enumerate(rows, 1):
+                    for record in entries_by_row[row_code]:
+                        # Start with minimal required fields
+                        transformed_record = {}
+
+                        # Core fields (always present)
+                        if 'variable_id' in record and record['variable_id'] is not None:
+                            transformed_record['datapoint'] = record['variable_id']
+                        if 'cell_id' in record and record['cell_id'] is not None:
+                            transformed_record['operand_reference_id'] = record['cell_id']
+
+                        # Check if data type is scalar (no x/y/z coordinates)
+                        # Scalar types: b (boolean), s (string), e (enumeration/item)
+                        # Non-scalar types: i, r, m, p (integer, decimal, monetary, percentage)
+                        data_type = record.get('data_type', '')
+                        is_scalar_type = data_type in ['b', 's', 'e']
+
+                        column_code = record.get('column_code', '')
+                        sheet_code = record.get('sheet_code', '')
+
+                        # Add x/y/z coordinates for non-scalar types only
+                        if not is_scalar_type:
+                            transformed_record['x'] = x_index
+
+                            # Find y coordinate based on column position in context
+                            y_index = 1  # default
+                            if context_cols and column_code in context_cols:
+                                y_index = context_cols.index(column_code) + 1
+                            transformed_record['y'] = y_index
+
+                            # Add z coordinate if sheet data exists
+                            if sheet_code:
+                                # For now, use a simple index; could be enhanced with sheet position logic
+                                transformed_record['z'] = 1  # This could be enhanced with actual sheet indexing
+
+                        # Note: column and row are at VarID level, not in data entries
+
+                        # Add additional fields required by ADAM engine
+                        # CRITICAL: data_type determines how the engine processes values
+                        if 'data_type' in record and record['data_type'] is not None:
+                            transformed_record['data_type'] = record['data_type']
+
+                        # Add metadata fields (cell_code, table_code, table_vid)
+                        # NOTE: row, column, sheet are NOT included in data - they're at VarID level
+                        if 'cell_code' in record and record['cell_code'] is not None:
+                            transformed_record['cell_code'] = record['cell_code']
+                        if 'table_code' in record and record['table_code'] is not None:
+                            transformed_record['table_code'] = record['table_code']
+                        if 'table_vid' in record and record['table_vid'] is not None:
+                            transformed_record['table_vid'] = record['table_vid']
+
+                        transformed_data.append(transformed_record)
+
+                # Remove common coordinates (coordinates with the same value across all entries)
+                # Common coordinates act like "defining variables" and should not be in data entries
+                # Variable coordinates should include their dimension codes (row/column/sheet)
+                if transformed_data:
+                    # Collect all coordinate values to detect which are common
+                    coord_values = {'x': set(), 'y': set(), 'z': set()}
+
+                    for record in transformed_data:
+                        for coord in ['x', 'y', 'z']:
+                            if coord in record:
+                                coord_values[coord].add(record[coord])
+
+                    # Identify common vs variable coordinates
+                    common_coords = []
+                    variable_coords = []
+                    for coord, values in coord_values.items():
+                        if len(values) == 1:  # All entries have the same value
+                            common_coords.append(coord)
+                        elif len(values) > 1:  # Coordinate varies
+                            variable_coords.append(coord)
+
+                    # For variable coordinates, add dimension codes to each entry
+                    # Map coordinates to their dimension codes from original data
+                    coord_to_dimension = {
+                        'x': 'row_code',
+                        'y': 'column_code',
+                        'z': 'sheet_code'
+                    }
+                    coord_to_field = {
+                        'x': 'row',
+                        'y': 'column',
+                        'z': 'sheet'
+                    }
+
+                    # Add dimension codes for variable coordinates
+                    # We need to match each transformed record back to its original record
+                    record_index = 0
+                    for x_index, row_code in enumerate(rows, 1):
+                        for original_record in entries_by_row[row_code]:
+                            if record_index < len(transformed_data):
+                                transformed_record = transformed_data[record_index]
+
+                                # Add dimension codes for variable coordinates
+                                for coord in variable_coords:
+                                    dimension_field = coord_to_dimension[coord]
+                                    output_field = coord_to_field[coord]
+
+                                    if dimension_field in original_record and original_record[dimension_field]:
+                                        transformed_record[output_field] = original_record[dimension_field]
+
+                                record_index += 1
+
+                    # Remove common coordinates from all entries
+                    for record in transformed_data:
+                        for coord in common_coords:
+                            record.pop(coord, None)
+
                 result['data'] = transformed_data
             else:
                 # Handle other data formats if needed
@@ -180,6 +324,14 @@ class ASTToJSONVisitor(NodeVisitor):
             'class_name': 'AggregationOp',
             'op': node.op,
             'operand': self.visit(node.operand)
+        }
+
+    def visit_ComplexNumericOp(self, node):
+        """Visit ComplexNumericOp nodes (max, min)."""
+        return {
+            'class_name': 'ComplexNumericOp',
+            'op': node.op,
+            'operands': [self.visit(operand) for operand in node.operands] if node.operands else []
         }
 
     def visit_Constant(self, node):
@@ -239,6 +391,10 @@ class ASTToJSONVisitor(NodeVisitor):
             else:
                 result['item'] = item_name
 
+        # Include scalar_type field (REQUIRED by ADAM Engine)
+        if hasattr(node, 'scalar_type') and node.scalar_type:
+            result['scalar_type'] = node.scalar_type
+
         if hasattr(node, 'member') and node.member:
             result['member'] = node.member
 
@@ -265,7 +421,7 @@ class ASTToJSONVisitor(NodeVisitor):
                     result[attr] = self.visit(attr_value)
 
         # Handle lists of child nodes
-        for attr in ['children', 'args']:
+        for attr in ['children', 'args', 'operands']:
             if hasattr(node, attr):
                 attr_value = getattr(node, attr)
                 if attr_value and isinstance(attr_value, list):
