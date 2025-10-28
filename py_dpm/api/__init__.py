@@ -2,7 +2,12 @@ from py_dpm.api.migration import MigrationAPI
 from py_dpm.api.syntax import SyntaxAPI
 from py_dpm.api.semantic import SemanticAPI
 from py_dpm.api.ast_generator import ASTGenerator, parse_expression, validate_expression, parse_batch
-from py_dpm.api.complete_ast import generate_complete_ast, generate_complete_batch
+from py_dpm.api.complete_ast import (
+    generate_complete_ast,
+    generate_complete_batch,
+    generate_enriched_ast,
+    enrich_ast_with_metadata
+)
 
 from antlr4 import CommonTokenStream, InputStream
 
@@ -33,6 +38,10 @@ __all__ = [
     # Complete AST API (recommended - includes data fields)
     'generate_complete_ast',
     'generate_complete_batch',
+
+    # Enriched AST API (engine-ready with framework structure)
+    'generate_enriched_ast',
+    'enrich_ast_with_metadata',
 
     # Simple AST API
     'ASTGenerator',
