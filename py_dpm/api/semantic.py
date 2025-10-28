@@ -42,16 +42,30 @@ class SemanticAPI:
     including operand checking, data type validation, and structure validation.
     """
 
-    def __init__(self, database_path: Optional[str] = None):
+    def __init__(self, database_path: Optional[str] = None, connection_url: Optional[str] = None):
         """
         Initialize the Semantic API.
 
         Args:
             database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+            connection_url (Optional[str]): Full SQLAlchemy connection URL (e.g., postgresql://user:pass@host:port/db).
+                                          Takes precedence over database_path.
         """
         self.database_path = database_path
+        self.connection_url = connection_url
 
-        if database_path:
+        if connection_url:
+            # Create isolated engine and session for the provided connection URL
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+
+            # Create engine for the connection URL (PostgreSQL, MySQL, etc.)
+            self.engine = create_engine(connection_url, pool_pre_ping=True,
+                                       pool_size=20, max_overflow=10, pool_recycle=180)
+            session_maker = sessionmaker(bind=self.engine)
+            self.session = session_maker()
+
+        elif database_path:
             # Create isolated engine and session for this specific database
             from sqlalchemy import create_engine
             from sqlalchemy.orm import sessionmaker
@@ -63,8 +77,8 @@ class SemanticAPI:
                 os.makedirs(db_dir)
 
             # Create engine for specific database path
-            connection_url = f"sqlite:///{database_path}"
-            self.engine = create_engine(connection_url, pool_pre_ping=True)
+            db_connection_url = f"sqlite:///{database_path}"
+            self.engine = create_engine(db_connection_url, pool_pre_ping=True)
             session_maker = sessionmaker(bind=self.engine)
             self.session = session_maker()
         else:
@@ -230,13 +244,15 @@ class SemanticAPI:
 
 
 # Convenience functions for direct usage
-def validate_expression(expression: str, database_path: Optional[str] = None, release_id: Optional[int] = None) -> SemanticValidationResult:
+def validate_expression(expression: str, database_path: Optional[str] = None,
+                       connection_url: Optional[str] = None, release_id: Optional[int] = None) -> SemanticValidationResult:
     """
     Convenience function to validate DPM-XL expression semantics.
 
     Args:
         expression (str): The DPM-XL expression to validate
         database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+        connection_url (Optional[str]): Full SQLAlchemy connection URL (e.g., postgresql://user:pass@host:port/db).
         release_id (Optional[int]): Specific release ID for component filtering.
                                    If None, uses live/latest release.
 
@@ -246,20 +262,25 @@ def validate_expression(expression: str, database_path: Optional[str] = None, re
     Example:
         >>> from pydpm.api.semantic import validate_expression
         >>> result = validate_expression("{tC_01.00, r0100, c0010}", database_path="./database.db")
+        >>> # Using PostgreSQL
+        >>> result = validate_expression("{tC_01.00, r0100, c0010}",
+        ...     connection_url="postgresql://user:pass@host:5432/db")
         >>> # Validate for specific release
         >>> result = validate_expression("{tC_01.00, r0100, c0010}", database_path="./database.db", release_id=5)
     """
-    api = SemanticAPI(database_path=database_path)
+    api = SemanticAPI(database_path=database_path, connection_url=connection_url)
     return api.validate_expression(expression, release_id=release_id)
 
 
-def is_valid_semantics(expression: str, database_path: Optional[str] = None, release_id: Optional[int] = None) -> bool:
+def is_valid_semantics(expression: str, database_path: Optional[str] = None,
+                      connection_url: Optional[str] = None, release_id: Optional[int] = None) -> bool:
     """
     Convenience function to check if expression has valid semantics.
 
     Args:
         expression (str): The DPM-XL expression to check
         database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
+        connection_url (Optional[str]): Full SQLAlchemy connection URL (e.g., postgresql://user:pass@host:port/db).
         release_id (Optional[int]): Specific release ID for component filtering.
                                    If None, uses live/latest release.
 
@@ -269,8 +290,11 @@ def is_valid_semantics(expression: str, database_path: Optional[str] = None, rel
     Example:
         >>> from pydpm.api.semantic import is_valid_semantics
         >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}", database_path="./database.db")
+        >>> # Using PostgreSQL
+        >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}",
+        ...     connection_url="postgresql://user:pass@host:5432/db")
         >>> # Check for specific release
         >>> is_valid = is_valid_semantics("{tC_01.00, r0100, c0010}", database_path="./database.db", release_id=5)
     """
-    api = SemanticAPI(database_path=database_path)
+    api = SemanticAPI(database_path=database_path, connection_url=connection_url)
     return api.is_valid_semantics(expression, release_id=release_id)
