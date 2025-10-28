@@ -29,7 +29,8 @@ dependencies = [
     "pyodbc>=5.2.0,<6.0.0",
     "click>=8.2.1,<9.0.0",
     "alembic>=1.16.2,<2.0.0",
-    "python-dotenv>=1.1.1,<2.0.0"
+    "python-dotenv>=1.1.1,<2.0.0",
+    "psycopg2-binary>=2.9.0,<3.0.0"
 ]
 [project.scripts]
 pydpm = "py_dpm.client:main"
@@ -62,6 +63,7 @@ pyodbc = ">=5.2.0,<6.0.0"
 click = ">=8.2.1,<9.0.0"
 alembic = ">=1.16.2,<2.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
+psycopg2-binary = ">=2.9.0,<3.0.0"
 
 [tool.poetry.scripts]
 pydpm = "py_dpm.client:main"
