@@ -101,15 +101,15 @@ class OperandsChecking(ASTTemplate, ABC):
         if len(table_codes) == 0:
             return
         query = """
-        SELECT DISTINCT tv.Code, tv.StartReleaseID, tv.EndReleaseID, h.Direction, t.HasOpenRows, t.HasOpenColumns, t.HasOpenSheets
+        SELECT DISTINCT tv."Code", tv."StartReleaseID", tv."EndReleaseID", h."Direction", t."HasOpenRows", t."HasOpenColumns", t."HasOpenSheets"
         FROM "Table" AS t
-        INNER JOIN TableVersion tv ON t.TableID = tv.TableID
-        INNER JOIN TableVersionHeader tvh ON tv.TableVID = tvh.TableVID
-        INNER JOIN Header h ON h.HeaderID = tvh.HeaderID
+        INNER JOIN "TableVersion" tv ON t."TableID" = tv."TableID"
+        INNER JOIN "TableVersionHeader" tvh ON tv."TableVID" = tvh."TableVID"
+        INNER JOIN "Header" h ON h."HeaderID" = tvh."HeaderID"
         """
         codes = [f"{code!r}" for code in table_codes]
-        query += f"WHERE tv.Code IN ({', '.join(codes)})"
-        query += "AND tv.EndReleaseID is null"
+        query += f"WHERE tv.\"Code\" IN ({', '.join(codes)}) "
+        query += "AND tv.\"EndReleaseID\" is null"
         df_headers = pd.read_sql(query, self.session.connection())
         for table in table_codes:
             table_headers = df_headers[df_headers['Code'] == table]

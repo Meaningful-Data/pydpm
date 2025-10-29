@@ -16,6 +16,13 @@ if os.path.exists(env_path):
 # SQLite configuration
 sqlite_db_path = os.getenv("SQLITE_DB_PATH", "database.db")
 
+# PostgreSQL configuration
+postgres_host = os.getenv("POSTGRES_HOST", None)
+postgres_port = os.getenv("POSTGRES_PORT", "5432")
+postgres_db = os.getenv("POSTGRES_DB", None)
+postgres_user = os.getenv("POSTGRES_USER", None)
+postgres_pass = os.getenv("POSTGRES_PASS", None)
+
 # Legacy SQL Server configuration (kept for backward compatibility)
 server = os.getenv("DATABASE_SERVER", None)
 username = os.getenv("DATABASE_USER", None)
@@ -23,11 +30,14 @@ password = os.getenv("DATABASE_PASS", None)
 database_name = os.getenv("DATABASE_NAME", None)
 
 # Determine database type
-use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true"
+use_postgres = os.getenv("USE_POSTGRES", "false").lower() == "true"
+use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true" and not use_postgres
 
-if not use_sqlite and not (server and username and password):
+if use_postgres and not (postgres_host and postgres_user and postgres_pass and postgres_db):
+    console.print(f"Warning: PostgreSQL credentials not provided", style="bold yellow")
+elif not use_sqlite and not use_postgres and not (server and username and password):
     console.print(f"Warning: Database credentials not provided", style="bold yellow")
-elif not use_sqlite:
+elif not use_sqlite and not use_postgres:
     # Handling special characters in password for SQL Server
     password = password.replace('}', '}}')
     for x in '%&.@#/\\=;':
@@ -44,7 +54,12 @@ def create_engine_object(url):
     global engine
     if use_sqlite:
         engine = create_engine(url, pool_pre_ping=True)
+    elif use_postgres:
+        # PostgreSQL with connection pooling
+        engine = create_engine(url, pool_size=20, max_overflow=10,
+                               pool_recycle=180, pool_pre_ping=True)
     else:
+        # SQL Server with connection pooling
         engine = create_engine(url, pool_size=20, max_overflow=10,
                                pool_recycle=180, pool_pre_ping=True)
 
@@ -55,8 +70,28 @@ def create_engine_object(url):
     return engine
 
 
-def get_engine(owner=None, database_path=None):
-    if use_sqlite:
+def get_engine(owner=None, database_path=None, connection_url=None):
+    """
+    Get database engine based on configuration or explicit parameters.
+
+    Args:
+        owner: Owner for SQL Server databases (EBA/EIOPA) - legacy support
+        database_path: Explicit SQLite database path
+        connection_url: Explicit SQLAlchemy connection URL (e.g., for PostgreSQL)
+
+    Returns:
+        SQLAlchemy Engine
+    """
+    # If explicit connection URL is provided, use it directly
+    if connection_url:
+        return create_engine_object(connection_url)
+
+    if use_postgres:
+        # PostgreSQL connection
+        connection_url = f"postgresql://{postgres_user}:{postgres_pass}@{postgres_host}:{postgres_port}/{postgres_db}"
+        return create_engine_object(connection_url)
+
+    elif use_sqlite:
         # If database_path is explicitly provided, use it directly
         if database_path:
             db_path = database_path
