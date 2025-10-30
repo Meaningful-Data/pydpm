@@ -1,6 +1,7 @@
 from py_dpm.api.migration import MigrationAPI
 from py_dpm.api.syntax import SyntaxAPI
 from py_dpm.api.semantic import SemanticAPI
+from py_dpm.api.data_dictionary import DataDictionaryAPI
 from py_dpm.api.ast_generator import ASTGenerator, parse_expression, validate_expression, parse_batch
 from py_dpm.api.complete_ast import (
     generate_complete_ast,
@@ -53,6 +54,7 @@ __all__ = [
     'MigrationAPI',
     'SyntaxAPI',
     'SemanticAPI',
+    'DataDictionaryAPI',
     'API'  # Keep for backward compatibility
 ]
 
@@ -61,9 +63,45 @@ class API:
     error_listener = DPMErrorListener()
     visitor = ASTVisitor()
 
-    def __init__(self, database_path=None):
-        get_engine(database_path=database_path)
-        self.session = get_session()
+    def __init__(self, database_path=None, connection_url=None):
+        """
+        Initialize the API.
+
+        Args:
+            database_path: Path to SQLite database (optional)
+            connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
+        """
+        if connection_url:
+            # Create isolated engine and session for the provided connection URL
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+
+            # Create engine for the connection URL (PostgreSQL, MySQL, etc.)
+            self.engine = create_engine(connection_url, pool_pre_ping=True,
+                                       pool_size=20, max_overflow=10, pool_recycle=180)
+            session_maker = sessionmaker(bind=self.engine)
+            self.session = session_maker()
+        elif database_path:
+            # Create isolated engine and session for this specific database
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            import os
+
+            # Create the database directory if it doesn't exist
+            db_dir = os.path.dirname(database_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir)
+
+            # Create engine for specific database path
+            db_connection_url = f"sqlite:///{database_path}"
+            self.engine = create_engine(db_connection_url, pool_pre_ping=True)
+            session_maker = sessionmaker(bind=self.engine)
+            self.session = session_maker()
+        else:
+            # Use default global connection
+            get_engine()
+            self.session = get_session()
+            self.engine = None
 
     @classmethod
     def lexer(cls, text: str):
