@@ -6,7 +6,7 @@ All methods use SQLAlchemy ORM instead of raw SQL for PostgreSQL compatibility.
 """
 
 from typing import List, Optional, Dict, Tuple, Any
-from sqlalchemy import and_, or_, func, distinct
+from sqlalchemy import and_, or_, func, distinct, text
 from sqlalchemy.orm import Session
 
 from py_dpm.db_utils import get_session, get_engine
@@ -40,7 +40,7 @@ class DataDictionaryAPI:
             database_path: Path to SQLite database (optional)
             connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
         """
-        get_engine(database_path=database_path, connection_url=connection_url)
+        engine = get_engine(database_path=database_path, connection_url=connection_url)
         self.session = get_session()
 
     # ==================== Reference Query Methods ====================
@@ -73,7 +73,8 @@ class DataDictionaryAPI:
 
     def get_available_tables_from_datapoints(self, release_id: Optional[int] = None) -> List[str]:
         """
-        Get all available table codes from datapoints (fallback).
+        Get all available table codes from datapoints.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             release_id: Optional release ID to filter by
@@ -81,25 +82,30 @@ class DataDictionaryAPI:
         Returns:
             List of table codes
         """
-        query = self.session.query(distinct(ViewDatapoints.table_code)).filter(
-            ViewDatapoints.table_code.isnot(None)
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(distinct(subq.c.table_code)).filter(
+            subq.c.table_code.isnot(None)
         )
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
-        results = query.order_by(ViewDatapoints.table_code).all()
+        results = query.order_by(subq.c.table_code).all()
         return [r[0] for r in results]
 
     def get_available_rows(self, table_code: str, release_id: Optional[int] = None) -> List[str]:
         """
         Get all available row codes for a table.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             table_code: Table code to query
@@ -108,26 +114,31 @@ class DataDictionaryAPI:
         Returns:
             List of row codes
         """
-        query = self.session.query(distinct(ViewDatapoints.row_code)).filter(
-            ViewDatapoints.table_code == table_code,
-            ViewDatapoints.row_code.isnot(None)
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(distinct(subq.c.row_code)).filter(
+            subq.c.table_code == table_code,
+            subq.c.row_code.isnot(None)
         )
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
-        results = query.order_by(ViewDatapoints.row_code).all()
+        results = query.order_by(subq.c.row_code).all()
         return [r[0] for r in results]
 
     def get_available_columns(self, table_code: str, release_id: Optional[int] = None) -> List[str]:
         """
         Get all available column codes for a table.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             table_code: Table code to query
@@ -136,26 +147,31 @@ class DataDictionaryAPI:
         Returns:
             List of column codes
         """
-        query = self.session.query(distinct(ViewDatapoints.column_code)).filter(
-            ViewDatapoints.table_code == table_code,
-            ViewDatapoints.column_code.isnot(None)
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(distinct(subq.c.column_code)).filter(
+            subq.c.table_code == table_code,
+            subq.c.column_code.isnot(None)
         )
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
-        results = query.order_by(ViewDatapoints.column_code).all()
+        results = query.order_by(subq.c.column_code).all()
         return [r[0] for r in results]
 
     def get_reference_statistics(self, release_id: Optional[int] = None) -> Dict[str, int]:
         """
         Get statistics about rows and columns in the data dictionary.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             release_id: Optional release ID to filter by
@@ -163,23 +179,30 @@ class DataDictionaryAPI:
         Returns:
             Dictionary with row_count and column_count
         """
-        query = self.session.query(ViewDatapoints)
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        # Base query for filtering
+        base = self.session.query(subq)
 
         if release_id is not None:
-            query = query.filter(
+            base = base.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
-        row_count = query.filter(ViewDatapoints.row_code.isnot(None)).with_entities(
-            func.count(distinct(ViewDatapoints.row_code))
+        # Count distinct rows
+        row_count = base.filter(subq.c.row_code.isnot(None)).with_entities(
+            func.count(distinct(subq.c.row_code))
         ).scalar()
 
-        column_count = query.filter(ViewDatapoints.column_code.isnot(None)).with_entities(
-            func.count(distinct(ViewDatapoints.column_code))
+        # Count distinct columns
+        column_count = base.filter(subq.c.column_code.isnot(None)).with_entities(
+            func.count(distinct(subq.c.column_code))
         ).scalar()
 
         return {
@@ -251,6 +274,7 @@ class DataDictionaryAPI:
     def table_has_sheets(self, table_code: str, release_id: Optional[int] = None) -> bool:
         """
         Check if a table has any sheets defined.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             table_code: Table code to check
@@ -259,19 +283,23 @@ class DataDictionaryAPI:
         Returns:
             True if table has sheets, False otherwise
         """
-        query = self.session.query(ViewDatapoints).filter(
-            ViewDatapoints.table_code == table_code,
-            ViewDatapoints.sheet_code.isnot(None),
-            ViewDatapoints.sheet_code != ''
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(subq).filter(
+            subq.c.table_code == table_code,
+            subq.c.sheet_code.isnot(None),
+            subq.c.sheet_code != ''
         )
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
         count = query.with_entities(func.count()).scalar()
@@ -280,6 +308,7 @@ class DataDictionaryAPI:
     def get_available_sheets(self, table_code: str, release_id: Optional[int] = None) -> List[str]:
         """
         Get all available sheet codes for a table.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             table_code: Table code to query
@@ -288,22 +317,26 @@ class DataDictionaryAPI:
         Returns:
             List of sheet codes
         """
-        query = self.session.query(distinct(ViewDatapoints.sheet_code)).filter(
-            ViewDatapoints.table_code == table_code,
-            ViewDatapoints.sheet_code.isnot(None),
-            ViewDatapoints.sheet_code != ''
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(distinct(subq.c.sheet_code)).filter(
+            subq.c.table_code == table_code,
+            subq.c.sheet_code.isnot(None),
+            subq.c.sheet_code != ''
         )
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
-        results = query.order_by(ViewDatapoints.sheet_code).all()
+        results = query.order_by(subq.c.sheet_code).all()
         return [r[0] for r in results]
 
     def check_cell_exists(
@@ -316,6 +349,7 @@ class DataDictionaryAPI:
     ) -> bool:
         """
         Check if a cell reference exists in the datapoints.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             table_code: Table code
@@ -327,26 +361,30 @@ class DataDictionaryAPI:
         Returns:
             True if cell exists, False otherwise
         """
-        query = self.session.query(ViewDatapoints).filter(
-            ViewDatapoints.table_code == table_code
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(subq).filter(
+            subq.c.table_code == table_code
         )
 
         if row_code:
-            query = query.filter(ViewDatapoints.row_code == row_code)
+            query = query.filter(subq.c.row_code == row_code)
 
         if column_code:
-            query = query.filter(ViewDatapoints.column_code == column_code)
+            query = query.filter(subq.c.column_code == column_code)
 
         if sheet_code:
-            query = query.filter(ViewDatapoints.sheet_code == sheet_code)
+            query = query.filter(subq.c.sheet_code == sheet_code)
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
         count = query.with_entities(func.count()).scalar()
@@ -645,6 +683,7 @@ class DataDictionaryAPI:
     ) -> Optional[Dict[str, Any]]:
         """
         Get metadata for a specific datapoint.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             table_code: Table code
@@ -656,22 +695,26 @@ class DataDictionaryAPI:
         Returns:
             Dictionary with datapoint metadata or None
         """
-        query = self.session.query(ViewDatapoints).filter(
-            ViewDatapoints.table_code == table_code,
-            ViewDatapoints.row_code == row_code,
-            ViewDatapoints.column_code == column_code
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(subq).filter(
+            subq.c.table_code == table_code,
+            subq.c.row_code == row_code,
+            subq.c.column_code == column_code
         )
 
         if sheet_code:
-            query = query.filter(ViewDatapoints.sheet_code == sheet_code)
+            query = query.filter(subq.c.sheet_code == sheet_code)
 
         if release_id is not None:
             query = query.filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
         result = query.first()
@@ -842,6 +885,7 @@ class DataDictionaryAPI:
     def get_datapoints_count(self, release_id: Optional[int] = None) -> int:
         """
         Get count of datapoints.
+        Always uses ViewDatapoints class methods for database compatibility.
 
         Args:
             release_id: Optional release ID to filter by
@@ -849,15 +893,19 @@ class DataDictionaryAPI:
         Returns:
             Count of datapoints
         """
-        query = self.session.query(func.count(ViewDatapoints.cell_code))
+        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
+        base_query = ViewDatapoints.create_view_query(self.session)
+        subq = base_query.subquery()
+
+        query = self.session.query(func.count(subq.c.cell_code))
 
         if release_id is not None:
-            query = query.filter(
+            query = query.select_from(subq).filter(
                 or_(
-                    ViewDatapoints.end_release.is_(None),
-                    ViewDatapoints.end_release > release_id
+                    subq.c.end_release.is_(None),
+                    subq.c.end_release > release_id
                 ),
-                ViewDatapoints.start_release <= release_id
+                subq.c.start_release <= release_id
             )
 
         return query.scalar() or 0
