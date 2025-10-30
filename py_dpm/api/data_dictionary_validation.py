@@ -60,15 +60,51 @@ class CellReference:
 class DataDictionaryValidator:
     """
     Main class for validating data dictionary consistency and completeness.
-    
+
     This class provides methods to detect issues that would cause semantic
     validation failures during DPM-XL transpilation.
     """
-    
-    def __init__(self):
-        """Initialize the Data Dictionary Validator."""
-        get_engine()
-        self.session = get_session()
+
+    def __init__(self, database_path: Optional[str] = None, connection_url: Optional[str] = None):
+        """
+        Initialize the Data Dictionary Validator.
+
+        Args:
+            database_path: Path to SQLite database (optional)
+            connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
+        """
+        if connection_url:
+            # Create isolated engine and session for the provided connection URL
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+
+            # Create engine for the connection URL (PostgreSQL, MySQL, etc.)
+            self.engine = create_engine(connection_url, pool_pre_ping=True,
+                                       pool_size=20, max_overflow=10, pool_recycle=180)
+            session_maker = sessionmaker(bind=self.engine)
+            self.session = session_maker()
+        elif database_path:
+            # Create isolated engine and session for this specific database
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            import os
+
+            # Create the database directory if it doesn't exist
+            db_dir = os.path.dirname(database_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir)
+
+            # Create engine for specific database path
+            db_connection_url = f"sqlite:///{database_path}"
+            self.engine = create_engine(db_connection_url, pool_pre_ping=True)
+            session_maker = sessionmaker(bind=self.engine)
+            self.session = session_maker()
+        else:
+            # Use default global connection
+            get_engine()
+            self.session = get_session()
+            self.engine = None
+
         self._table_cache = {}
         self._column_cache = {}
         self._row_cache = {}
@@ -503,8 +539,10 @@ class DataDictionaryValidator:
     
     def __del__(self):
         """Clean up resources."""
-        if hasattr(self, 'session'):
+        if hasattr(self, 'session') and self.session:
             self.session.close()
+        if hasattr(self, 'engine') and self.engine is not None:
+            self.engine.dispose()
 
 
 # Convenience functions for direct usage

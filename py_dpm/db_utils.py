@@ -74,6 +74,12 @@ def get_engine(owner=None, database_path=None, connection_url=None):
     """
     Get database engine based on configuration or explicit parameters.
 
+    Priority order:
+    1. Explicit connection_url parameter (for PostgreSQL or other databases)
+    2. Explicit database_path parameter (for SQLite)
+    3. Environment variable USE_POSTGRES (from .env)
+    4. Environment variable USE_SQLITE (from .env)
+
     Args:
         owner: Owner for SQL Server databases (EBA/EIOPA) - legacy support
         database_path: Explicit SQLite database path
@@ -82,32 +88,35 @@ def get_engine(owner=None, database_path=None, connection_url=None):
     Returns:
         SQLAlchemy Engine
     """
-    # If explicit connection URL is provided, use it directly
+    # Priority 1: If explicit connection URL is provided, use it directly
     if connection_url:
         return create_engine_object(connection_url)
 
+    # Priority 2: If explicit database_path is provided, use SQLite with that path
+    if database_path:
+        connection_url = f"sqlite:///{database_path}"
+        return create_engine_object(connection_url)
+
+    # Priority 3: Check environment variable USE_POSTGRES
     if use_postgres:
         # PostgreSQL connection
         connection_url = f"postgresql://{postgres_user}:{postgres_pass}@{postgres_host}:{postgres_port}/{postgres_db}"
         return create_engine_object(connection_url)
 
+    # Priority 4: Check environment variable USE_SQLITE
     elif use_sqlite:
-        # If database_path is explicitly provided, use it directly
-        if database_path:
-            db_path = database_path
-        else:
-            # For SQLite, create the database path if it doesn't exist
-            db_dir = os.path.dirname(sqlite_db_path)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir)
+        # For SQLite, create the database path if it doesn't exist
+        db_dir = os.path.dirname(sqlite_db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
 
-            # If owner is specified, append it to the filename
-            if owner:
-                base_name = os.path.splitext(sqlite_db_path)[0]
-                extension = os.path.splitext(sqlite_db_path)[1] or '.db'
-                db_path = f"{base_name}_{owner}{extension}"
-            else:
-                db_path = sqlite_db_path
+        # If owner is specified, append it to the filename
+        if owner:
+            base_name = os.path.splitext(sqlite_db_path)[0]
+            extension = os.path.splitext(sqlite_db_path)[1] or '.db'
+            db_path = f"{base_name}_{owner}{extension}"
+        else:
+            db_path = sqlite_db_path
 
         connection_url = f"sqlite:///{db_path}"
         return create_engine_object(connection_url)

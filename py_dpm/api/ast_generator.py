@@ -25,19 +25,22 @@ class ASTGenerator:
     """
 
     def __init__(self, database_path: Optional[str] = None,
+                 connection_url: Optional[str] = None,
                  compatibility_mode: str = "auto",
                  enable_semantic_validation: bool = False):
         """
         Initialize AST Generator.
 
         Args:
-            database_path: Optional path to data dictionary database
+            database_path: Optional path to SQLite data dictionary database
+            connection_url: Optional SQLAlchemy connection URL for PostgreSQL
             compatibility_mode: "auto", "3.1.0", "4.0.0", or "current"
             enable_semantic_validation: Enable semantic validation (requires database)
         """
         self.syntax_api = SyntaxAPI()
-        self.semantic_api = SemanticAPI() if enable_semantic_validation else None
+        self.semantic_api = SemanticAPI(database_path=database_path, connection_url=connection_url) if enable_semantic_validation else None
         self.database_path = database_path
+        self.connection_url = connection_url
         self.compatibility_mode = compatibility_mode
         self.enable_semantic = enable_semantic_validation
 

@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 from py_dpm.Utils.ast_serialization import ASTToJSONVisitor
 
 
-def generate_complete_ast(expression: str, database_path: str = None):
+def generate_complete_ast(expression: str, database_path: str = None, connection_url: str = None):
     """
     Generate complete AST with all data fields, exactly like json_scripts examples.
 
@@ -24,6 +24,7 @@ def generate_complete_ast(expression: str, database_path: str = None):
     Args:
         expression: DPM-XL expression string
         database_path: Path to SQLite database file (e.g., "./database.db")
+        connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
 
     Returns:
         dict: {
@@ -40,9 +41,9 @@ def generate_complete_ast(expression: str, database_path: str = None):
         from py_dpm.db_utils import get_engine
 
         # Initialize database connection if provided
-        if database_path:
+        if connection_url or database_path:
             try:
-                engine = get_engine(database_path=database_path)
+                engine = get_engine(database_path=database_path, connection_url=connection_url)
             except Exception as e:
                 return {
                     'success': False,
@@ -54,7 +55,7 @@ def generate_complete_ast(expression: str, database_path: str = None):
 
         # Use the legacy API which does complete semantic validation
         # This is the same API used to generate the original JSON files
-        api = API(database_path=database_path)
+        api = API(database_path=database_path, connection_url=connection_url)
 
         # Perform complete semantic validation with operand checking
         # This should populate all data fields on VarID nodes
@@ -245,38 +246,40 @@ def _check_data_fields_populated(ast_dict):
     return False
 
 
-def generate_complete_batch(expressions: list, database_path: str = None):
+def generate_complete_batch(expressions: list, database_path: str = None, connection_url: str = None):
     """
     Generate complete ASTs for multiple expressions.
 
     Args:
         expressions: List of DPM-XL expression strings
         database_path: Path to SQLite database file
+        connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
 
     Returns:
         list: List of result dictionaries
     """
     results = []
     for i, expr in enumerate(expressions):
-        result = generate_complete_ast(expr, database_path)
+        result = generate_complete_ast(expr, database_path, connection_url)
         result['batch_index'] = i
         results.append(result)
     return results
 
 
 # Convenience function with cleaner interface
-def parse_with_data_fields(expression: str, database_path: str = None):
+def parse_with_data_fields(expression: str, database_path: str = None, connection_url: str = None):
     """
     Simple function to parse expression and get AST with data fields.
 
     Args:
         expression: DPM-XL expression string
         database_path: Path to SQLite database file
+        connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
 
     Returns:
         dict: AST dictionary with data fields, or None if failed
     """
-    result = generate_complete_ast(expression, database_path)
+    result = generate_complete_ast(expression, database_path, connection_url)
     return result['ast'] if result['success'] else None
 
 

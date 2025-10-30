@@ -1619,6 +1619,16 @@ class ViewDatapoints(Base):
 
         data = pd.read_sql_query(query.statement, session.connection())
 
+        # BUGFIX: Remove duplicates based on cell_code
+        # Even with .distinct(), the query can return duplicates when cells appear in multiple
+        # ModuleVersions or when joins create Cartesian products. We need to keep only one row
+        # per cell_code, prioritizing non-null variable_id values.
+        if len(data) > 0:
+            # Sort by variable_id (nulls last) so we keep rows with actual data
+            data = data.sort_values('variable_id', na_position='last')
+            # Keep first occurrence of each cell_code
+            data = data.drop_duplicates(subset=['cell_code'], keep='first')
+
         data = _check_ranges_values_are_present(data, 'row_code', rows)
         data = _check_ranges_values_are_present(data, 'column_code', columns)
         data = _check_ranges_values_are_present(data, 'sheet_code', sheets)
@@ -1780,6 +1790,8 @@ class ViewKeyComponents(Base):
         )
 
         # Join with ItemCategory
+        # IMPORTANT: ItemCategory has composite PK (itemid, startreleaseid)
+        # Join on itemid only; release filtering applied later via filter_by_release()
         query = query.join(
             ItemCategory,
             ItemCategory.itemid == Item.itemid
@@ -1830,6 +1842,9 @@ class ViewKeyComponents(Base):
         query = filter_by_release(query, ModuleVersion.startreleaseid,
                                  ModuleVersion.endreleaseid, release_id)
 
+        # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
+        query = query.distinct()
+
         # Execute and return as DataFrame
         data = pd.read_sql_query(query.statement, session.connection())
         return data
@@ -1853,6 +1868,9 @@ class ViewKeyComponents(Base):
         query = filter_by_release(query, ModuleVersion.startreleaseid,
                                  ModuleVersion.endreleaseid, release_id)
 
+        # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
+        query = query.distinct()
+
         data = pd.read_sql_query(query.statement, session.connection())
         return data
 
@@ -1867,6 +1885,9 @@ class ViewKeyComponents(Base):
         )
 
         query = query.filter(TableVersion.tablevid == table_version_id)
+
+        # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
+        query = query.distinct()
 
         return pd.read_sql_query(query.statement, session.connection())
 
@@ -1905,6 +1926,8 @@ class ViewOpenKeys(Base):
         )
 
         # Join with ItemCategory
+        # IMPORTANT: ItemCategory has composite PK (itemid, startreleaseid)
+        # Join on itemid only; release filtering applied later via filter_by_release()
         query = query.join(
             ItemCategory,
             ItemCategory.itemid == Item.itemid
@@ -1940,6 +1963,10 @@ class ViewOpenKeys(Base):
         query = filter_by_release(query, ItemCategory.startreleaseid,
                                  ItemCategory.endreleaseid, release_id)
 
+        # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
+        # ItemCategory has composite PK (itemid, startreleaseid), so join on itemid creates duplicates
+        query = query.distinct()
+
         data = pd.read_sql_query(query.statement, session.connection())
         return data
 
@@ -1954,6 +1981,9 @@ class ViewOpenKeys(Base):
 
         query = filter_by_release(query, ItemCategory.startreleaseid,
                                  ItemCategory.endreleaseid, release_id)
+
+        # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
+        query = query.distinct()
 
         data = pd.read_sql_query(query.statement, session.connection())
         return data
