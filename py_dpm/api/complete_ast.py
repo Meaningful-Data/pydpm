@@ -321,7 +321,7 @@ def generate_enriched_ast(
     """
     try:
         # Generate complete AST first
-        complete_result = generate_complete_ast(expression, database_path)
+        complete_result = generate_complete_ast(expression, database_path, connection_url)
 
         if not complete_result['success']:
             return {
