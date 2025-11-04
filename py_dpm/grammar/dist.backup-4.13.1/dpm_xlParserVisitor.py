@@ -1,6 +1,7 @@
-# Generated from dpm_xlParser.g4 by ANTLR 4.9.2
+# Generated from C:/Users/Javier/Documents/MeaningfulData/Programacion/operations/py_dpm/grammar/dpm_xlParser.g4 by ANTLR 4.13.1
 from antlr4 import *
-if __name__ is not None and "." in __name__:
+
+if "." in __name__:
     from .dpm_xlParser import dpm_xlParser
 else:
     from dpm_xlParser import dpm_xlParser
@@ -376,11 +377,6 @@ class dpm_xlParserVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by dpm_xlParser#renameExpr.
     def visitRenameExpr(self, ctx:dpm_xlParser.RenameExprContext):
-        return self.visitChildren(ctx)
-
-
-    # Visit a parse tree produced by dpm_xlParser#subExpr.
-    def visitSubExpr(self, ctx:dpm_xlParser.SubExprContext):
         return self.visitChildren(ctx)
 
 

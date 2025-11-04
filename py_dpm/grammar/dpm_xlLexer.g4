@@ -97,6 +97,7 @@ WHERE:                  'where';
 GET:                    'get';
 RENAME:                 'rename';
 TO:                     'to';
+SUB:                    'sub';
 
 // Reference date
 TIME_SHIFT:             'time_shift';
@@ -358,6 +359,7 @@ CLAUSE_WHERE:                  'where' -> type(WHERE);
 CLAUSE_GET:                    'get' -> type(GET);
 CLAUSE_RENAME:                 'rename' -> type(RENAME);
 CLAUSE_TO:                     'to' -> type(TO);
+CLAUSE_SUB:                    'sub' -> type(SUB);
 
 // Reference date
 CLAUSE_TIME_SHIFT:             'time_shift' -> type(TIME_SHIFT);

@@ -1,6 +1,6 @@
 import os
 from typing import Optional
-from sqlalchemy import Engine
+from sqlalchemy.engine import Engine
 
 from py_dpm.migration import run_migration as _run_migration
 
