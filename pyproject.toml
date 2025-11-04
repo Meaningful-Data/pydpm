@@ -1,6 +1,6 @@
 [project]
 name = "pydpm_xl"
-version = "0.1.27"
+version = "0.1.29"
 description = "Python library for DPM-XL data processing and analysis"
 authors = [
     {name = "MeaningfulData S.L.", email = "info@meaningfuldata.eu"}
@@ -22,15 +22,15 @@ classifiers = [
 ]
 keywords = ["dpm", "dpm-xl", "data-processing", "migration", "analysis"]
 dependencies = [
-    "rich>=14.0.0,<15.0.0",
-    "sqlalchemy>=2.0.41,<3.0.0",
-    "pandas>=2.3.0,<3.0.0",
-    "antlr4-python3-runtime>=4.13.2,<5.0.0",
-    "pyodbc>=5.2.0,<6.0.0",
-    "click>=8.2.1,<9.0.0",
-    "alembic>=1.16.2,<2.0.0",
-    "python-dotenv>=1.1.1,<2.0.0",
-    "psycopg2-binary>=2.9.0,<3.0.0"
+    "rich>=13.7.1,<13.8.0",
+    "sqlalchemy>=1.4.50,<1.5.0",
+    "pandas>=2.1.4,<2.2.0",
+    "antlr4-python3-runtime>=4.9.2,<4.9.3",
+    "pyodbc>=5.1.0,<5.2.0",
+    "click>=8.1.6,<8.2.0",
+    "alembic>=1.13.1,<1.14.0",
+    "python-dotenv>=1.0.1,<1.1.0",
+    "psycopg2-binary>=2.9.9,<2.10.0"
 ]
 [project.scripts]
 pydpm = "py_dpm.client:main"
@@ -46,7 +46,7 @@ exclude = []
 
 [tool.poetry]
 name = "pydpm_xl"
-version = "0.1.27"
+version = "0.1.29"
 description = "Python library for DPM-XL data processing and analysis"
 authors = ["MeaningfulData S.L. <info@meaningfuldata.eu>"]
 readme = "README.md"
@@ -55,15 +55,15 @@ packages = [{include = "py_dpm"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10"
-rich = ">=14.0.0,<15.0.0"
-sqlalchemy = ">=2.0.41,<3.0.0"
-pandas = ">=2.3.0,<3.0.0"
-antlr4-python3-runtime = ">=4.13.2,<5.0.0"
-pyodbc = ">=5.2.0,<6.0.0"
-click = ">=8.2.1,<9.0.0"
-alembic = ">=1.16.2,<2.0.0"
-python-dotenv = ">=1.1.1,<2.0.0"
-psycopg2-binary = ">=2.9.0,<3.0.0"
+rich = ">=13.7.1,<13.8.0"
+sqlalchemy = ">=1.4.50,<1.5.0"
+pandas = ">=2.1.4,<2.2.0"
+antlr4-python3-runtime = ">=4.9.2,<4.9.3"
+pyodbc = ">=5.1.0,<5.2.0"
+click = ">=8.1.6,<8.2.0"
+alembic = ">=1.13.1,<1.14.0"
+python-dotenv = ">=1.0.1,<1.1.0"
+psycopg2-binary = ">=2.9.9,<2.10.0"
 
 [tool.poetry.scripts]
 pydpm = "py_dpm.client:main"
