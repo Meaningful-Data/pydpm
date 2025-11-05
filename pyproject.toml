@@ -28,10 +28,16 @@ dependencies = [
     "antlr4-python3-runtime>=4.9.2,<4.9.3",
     "pyodbc>=5.1.0,<5.2.0",
     "click>=8.1.6,<8.2.0",
-    "alembic>=1.13.1,<1.14.0",
     "python-dotenv>=1.0.1,<1.1.0",
-    "psycopg2-binary>=2.9.9,<2.10.0"
+    "psycopg2>=2.9.0,<3.0.0"
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0,<8.0.0",
+    "pytest-cov>=4.1.0,<5.0.0"
+]
+
 [project.scripts]
 pydpm = "py_dpm.client:main"
 
@@ -61,9 +67,12 @@ pandas = ">=2.1.4,<2.2.0"
 antlr4-python3-runtime = ">=4.9.2,<4.9.3"
 pyodbc = ">=5.1.0,<5.2.0"
 click = ">=8.1.6,<8.2.0"
-alembic = ">=1.13.1,<1.14.0"
 python-dotenv = ">=1.0.1,<1.1.0"
-psycopg2-binary = ">=2.9.9,<2.10.0"
+psycopg2 = ">=2.9.0,<3.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.4.0,<8.0.0"
+pytest-cov = ">=4.1.0,<5.0.0"
 
 [tool.poetry.scripts]
 pydpm = "py_dpm.client:main"
@@ -72,3 +81,20 @@ pydpm = "py_dpm.client:main"
 "py_dpm.grammar" = ["*.g4"]
 "py_dpm.grammar.dist" = ["*"]
 "py_dpm.views" = ["*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--cov=py_dpm",
+    "--cov-report=term-missing",
+    "--cov-report=html"
+]
+markers = [
+    "integration: marks tests as integration tests (requiring database)",
+    "unit: marks tests as unit tests"
+]
