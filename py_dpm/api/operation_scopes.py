@@ -159,8 +159,9 @@ class OperationScopesAPI:
             oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
 
             # Extract table VIDs, precondition items, and table codes from AST
-            # Pass release_id to also extract table codes for cross-version scope calculation
-            table_vids, precondition_items, table_codes = self._extract_vids_from_ast(ast, oc.data, release_id=release_id)
+            # Always extract table codes for cross-version scope calculation
+            # (release_id will be determined later if None)
+            table_vids, precondition_items, table_codes = self._extract_vids_from_ast(ast, oc.data, extract_codes=True)
 
             # Calculate scopes using the low-level API
             return self.calculate_scopes(
@@ -188,21 +189,21 @@ class OperationScopesAPI:
                 release_id=release_id
             )
 
-    def _extract_vids_from_ast(self, ast, data, release_id=None) -> tuple[List[int], List[str], List[str]]:
+    def _extract_vids_from_ast(self, ast, data, extract_codes=False) -> tuple[List[int], List[str], List[str]]:
         """
         Extract table VIDs, table codes, and precondition items from OperandsChecking data.
 
         The OperandsChecking process already extracts all table information,
         so we get it directly from the data DataFrame rather than walking the AST.
 
-        IMPORTANT: When a release_id is specified, this method also returns the table CODES
+        IMPORTANT: When extract_codes is True, this method also returns the table CODES
         so that the scope calculation can find all module versions containing those table codes,
         not just the specific table VIDs from the expression.
 
         Args:
             ast: The abstract syntax tree (not used, kept for compatibility)
             data: DataFrame with table information from OperandsChecking
-            release_id: Optional release ID to look up table codes
+            extract_codes: If True, also extract table codes for cross-version scope calculation
 
         Returns:
             tuple: (list of table VIDs, list of precondition item codes, list of table codes)
@@ -215,8 +216,8 @@ class OperationScopesAPI:
         if 'table_vid' in data.columns:
             table_vids = data['table_vid'].dropna().unique().astype(int).tolist()
 
-            # If release_id is specified, also extract table codes for cross-version scope calculation
-            if release_id is not None and table_vids:
+            # If requested, also extract table codes for cross-version scope calculation
+            if extract_codes and table_vids:
                 from py_dpm.models import TableVersion
 
                 # Get table codes for the VIDs
