@@ -2,6 +2,11 @@ from py_dpm.api.migration import MigrationAPI
 from py_dpm.api.syntax import SyntaxAPI
 from py_dpm.api.semantic import SemanticAPI
 from py_dpm.api.data_dictionary import DataDictionaryAPI
+from py_dpm.api.operation_scopes import (
+    OperationScopesAPI,
+    calculate_scopes_from_expression,
+    get_existing_scopes
+)
 from py_dpm.api.ast_generator import ASTGenerator, parse_expression, validate_expression, parse_batch
 from py_dpm.api.complete_ast import (
     generate_complete_ast,
@@ -55,6 +60,12 @@ __all__ = [
     'SyntaxAPI',
     'SemanticAPI',
     'DataDictionaryAPI',
+    'OperationScopesAPI',
+
+    # Operation Scopes Convenience Functions
+    'calculate_scopes_from_expression',
+    'get_existing_scopes',
+
     'API'  # Keep for backward compatibility
 ]
 

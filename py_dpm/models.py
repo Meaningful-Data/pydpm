@@ -541,6 +541,197 @@ class ModuleVersion(Base):
         UniqueConstraint('ModuleID', 'StartReleaseID'),
     )
 
+    @classmethod
+    def get_from_tables_vids(cls, session, tables_vids, release_id=None):
+        """
+        Query modules containing the specified table versions.
+
+        Args:
+            session: SQLAlchemy session
+            tables_vids: List of TableVID integers
+            release_id: Optional release ID to filter modules by release range
+
+        Returns:
+            pandas DataFrame with columns: ModuleVID, TableVID (as VARIABLE_VID),
+            FromReferenceDate, ToReferenceDate, EndReleaseID
+        """
+        if not tables_vids:
+            return pd.DataFrame(columns=['ModuleVID', 'variable_vid', 'FromReferenceDate',
+                                        'ToReferenceDate', 'EndReleaseID'])
+
+        query = (
+            session.query(
+                cls.modulevid.label('ModuleVID'),
+                ModuleVersionComposition.tablevid.label('variable_vid'),
+                cls.fromreferencedate.label('FromReferenceDate'),
+                cls.toreferencedate.label('ToReferenceDate'),
+                cls.endreleaseid.label('EndReleaseID')
+            )
+            .join(ModuleVersionComposition, cls.modulevid == ModuleVersionComposition.modulevid)
+            .filter(ModuleVersionComposition.tablevid.in_(tables_vids))
+        )
+
+        # Apply release filtering if specified
+        if release_id is not None:
+            query = query.filter(
+                and_(
+                    cls.startreleaseid <= release_id,
+                    or_(
+                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid.is_(None)
+                    )
+                )
+            )
+
+        results = query.all()
+        return pd.DataFrame(results, columns=['ModuleVID', 'variable_vid', 'FromReferenceDate',
+                                              'ToReferenceDate', 'EndReleaseID'])
+
+    @classmethod
+    def get_from_table_codes(cls, session, table_codes, release_id=None):
+        """
+        Query modules containing tables with the specified table codes.
+        This returns ALL module versions that contain tables with these codes in the specified release.
+
+        Args:
+            session: SQLAlchemy session
+            table_codes: List of table codes (e.g., ['G_01.00', 'F_14.00'])
+            release_id: Optional release ID to filter modules by release range
+
+        Returns:
+            pandas DataFrame with columns: ModuleVID, variable_vid (TableVID), FromReferenceDate,
+            ToReferenceDate, StartReleaseID, EndReleaseID, TableCode
+        """
+        if not table_codes:
+            return pd.DataFrame(columns=['ModuleVID', 'variable_vid', 'FromReferenceDate',
+                                        'ToReferenceDate', 'StartReleaseID', 'EndReleaseID', 'TableCode'])
+
+        from py_dpm.models import TableVersion
+
+        query = (
+            session.query(
+                cls.modulevid.label('ModuleVID'),
+                ModuleVersionComposition.tablevid.label('variable_vid'),
+                cls.fromreferencedate.label('FromReferenceDate'),
+                cls.toreferencedate.label('ToReferenceDate'),
+                cls.startreleaseid.label('StartReleaseID'),
+                cls.endreleaseid.label('EndReleaseID'),
+                TableVersion.code.label('TableCode')
+            )
+            .join(ModuleVersionComposition, cls.modulevid == ModuleVersionComposition.modulevid)
+            .join(TableVersion, ModuleVersionComposition.tablevid == TableVersion.tablevid)
+            .filter(TableVersion.code.in_(table_codes))
+        )
+
+        # Apply release filtering if specified
+        # Only include modules that are active in the specified release
+        if release_id is not None:
+            query = query.filter(
+                and_(
+                    cls.startreleaseid <= release_id,
+                    or_(
+                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid.is_(None)
+                    )
+                )
+            )
+
+        results = query.all()
+        return pd.DataFrame(results, columns=['ModuleVID', 'variable_vid', 'FromReferenceDate',
+                                              'ToReferenceDate', 'StartReleaseID', 'EndReleaseID', 'TableCode'])
+
+    @classmethod
+    def get_precondition_module_versions(cls, session, precondition_items, release_id=None):
+        """
+        Query modules containing the specified precondition items (filing indicators).
+
+        Args:
+            session: SQLAlchemy session
+            precondition_items: List of precondition item codes (strings)
+            release_id: Optional release ID to filter modules by release range
+
+        Returns:
+            pandas DataFrame with columns: ModuleVID, VariableVID (as VARIABLE_VID),
+            FromReferenceDate, ToReferenceDate, Code
+        """
+        if not precondition_items:
+            return pd.DataFrame(columns=['ModuleVID', 'variable_vid', 'FromReferenceDate',
+                                        'ToReferenceDate', 'Code'])
+
+        query = (
+            session.query(
+                cls.modulevid.label('ModuleVID'),
+                VariableVersion.variablevid.label('variable_vid'),
+                cls.fromreferencedate.label('FromReferenceDate'),
+                cls.toreferencedate.label('ToReferenceDate'),
+                VariableVersion.code.label('Code')
+            )
+            .join(ModuleParameters, cls.modulevid == ModuleParameters.modulevid)
+            .join(VariableVersion, ModuleParameters.variablevid == VariableVersion.variablevid)
+            .join(Variable, VariableVersion.variableid == Variable.variableid)
+            .filter(VariableVersion.code.in_(precondition_items))
+            .filter(Variable.type == 'Filing Indicator')
+        )
+
+        # Apply release filtering if specified
+        if release_id is not None:
+            query = query.filter(
+                and_(
+                    cls.startreleaseid <= release_id,
+                    or_(
+                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid.is_(None)
+                    )
+                )
+            )
+
+        results = query.all()
+        return pd.DataFrame(results, columns=['ModuleVID', 'variable_vid', 'FromReferenceDate',
+                                              'ToReferenceDate', 'Code'])
+
+    @classmethod
+    def get_module_version_by_vid(cls, session, vid):
+        """
+        Query a single module version by VID.
+
+        Args:
+            session: SQLAlchemy session
+            vid: ModuleVID integer
+
+        Returns:
+            pandas DataFrame with module information
+        """
+        query = (
+            session.query(
+                cls.modulevid.label('ModuleVID'),
+                cls.code.label('Code'),
+                cls.name.label('Name'),
+                cls.fromreferencedate.label('FromReferenceDate'),
+                cls.toreferencedate.label('ToReferenceDate'),
+                cls.startreleaseid.label('StartReleaseID'),
+                cls.endreleaseid.label('EndReleaseID')
+            )
+            .filter(cls.modulevid == vid)
+        )
+
+        results = query.all()
+        return pd.DataFrame(results, columns=['ModuleVID', 'Code', 'Name', 'FromReferenceDate',
+                                              'ToReferenceDate', 'StartReleaseID', 'EndReleaseID'])
+
+    @classmethod
+    def get_last_release(cls, session):
+        """
+        Get the most recent release ID.
+
+        Args:
+            session: SQLAlchemy session
+
+        Returns:
+            Integer release ID or None if no releases exist
+        """
+        result = session.query(func.max(Release.releaseid)).scalar()
+        return result
+
 class ModuleVersionComposition(Base):
     __tablename__ = "ModuleVersionComposition"
 
@@ -647,7 +838,7 @@ class OperationScope(Base):
 
     operationscopeid = Column("OperationScopeID", Integer, primary_key=True)
     operationvid = Column("OperationVID", Integer, ForeignKey("OperationVersion.OperationVID"))
-    isactive = Column("IsActive", Boolean)
+    isactive = Column("IsActive", SmallInteger)  # Using SmallInteger instead of Boolean for PostgreSQL bigint compatibility
     severity = Column("Severity", String(20))
     fromsubmissiondate = Column("FromSubmissionDate", Date)
     rowguid = Column("RowGUID", String(36))
@@ -666,6 +857,30 @@ class OperationScopeComposition(Base):
     # Relationships
     operation_scope = relationship("OperationScope", back_populates="operation_scope_compositions")
     module_version = relationship("ModuleVersion", back_populates="operation_scope_compositions")
+
+    @classmethod
+    def get_from_operation_version_id(cls, session, operation_version_id):
+        """
+        Query operation scope compositions for a specific operation version.
+
+        Args:
+            session: SQLAlchemy session
+            operation_version_id: OperationVID integer
+
+        Returns:
+            pandas DataFrame with columns: OperationScopeID, ModuleVID
+        """
+        query = (
+            session.query(
+                cls.operationscopeid.label('OperationScopeID'),
+                cls.modulevid.label('ModuleVID')
+            )
+            .join(OperationScope, cls.operationscopeid == OperationScope.operationscopeid)
+            .filter(OperationScope.operationvid == operation_version_id)
+        )
+
+        results = query.all()
+        return pd.DataFrame(results, columns=['OperationScopeID', 'ModuleVID'])
 
 class OperationVersion(Base):
     __tablename__ = "OperationVersion"
