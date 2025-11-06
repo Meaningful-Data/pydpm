@@ -1,5 +1,5 @@
 from py_dpm.AST.ASTObjects import AggregationOp, BinOp, ComplexNumericOp, CondExpr, Constant, Dimension, FilterOp, GetOp, GroupingClause, \
-    OperationRef, ParExpr, PersistentAssignment, PreconditionItem, PropertyReference, RenameOp, Scalar, Set, Start, TemporaryAssignment, \
+    OperationRef, ParExpr, PersistentAssignment, PreconditionItem, PropertyReference, RenameOp, Scalar, Set, Start, SubOp, TemporaryAssignment, \
     TimeShiftOp, UnaryOp, VarID, VarRef, WhereClauseOp, WithExpression
 from py_dpm.AST.ASTVisitor import NodeVisitor
 
@@ -83,6 +83,10 @@ class ASTTemplate(NodeVisitor):
 
     def visit_GetOp(self, node: GetOp):
         self.visit(node.operand)
+
+    def visit_SubOp(self, node: SubOp):
+        self.visit(node.operand)
+        self.visit(node.value)
 
     def visit_PreconditionItem(self, node: PreconditionItem):
         pass

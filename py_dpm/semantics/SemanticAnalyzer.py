@@ -6,7 +6,7 @@ import pandas as pd
 from py_dpm.AST.ASTObjects import AggregationOp, BinOp, ComplexNumericOp, CondExpr, Constant, \
     Dimension, FilterOp, GetOp, OperationRef, \
     ParExpr, PersistentAssignment, PreconditionItem, PropertyReference, RenameOp, \
-    Scalar as ScalarNode, Set, Start, TemporaryAssignment, \
+    Scalar as ScalarNode, Set, Start, SubOp, TemporaryAssignment, \
     TimeShiftOp, UnaryOp, VarID, VarRef, WhereClauseOp, WithExpression
 from py_dpm.AST.ASTTemplate import ASTTemplate
 from py_dpm.DataTypes.ScalarTypes import Item, Mixed, Null, ScalarFactory
@@ -17,7 +17,7 @@ from py_dpm.Utils.operands_mapping import set_operand_label
 from py_dpm.Utils.operator_mapping import AGGR_OP_MAPPING, BIN_OP_MAPPING, CLAUSE_OP_MAPPING, \
     COMPLEX_OP_MAPPING, CONDITIONAL_OP_MAPPING, \
     TIME_OPERATORS, UNARY_OP_MAPPING
-from py_dpm.Utils.tokens import DPM, FILTER, GET, IF, RENAME, STANDARD, TIME_SHIFT, WHERE
+from py_dpm.Utils.tokens import DPM, FILTER, GET, IF, RENAME, STANDARD, SUB, TIME_SHIFT, WHERE
 from py_dpm.data_handlers import filter_all_data
 from py_dpm.semantics.Symbols import ConstantOperand, FactComponent, KeyComponent, RecordSet, \
     Scalar, \
@@ -306,6 +306,12 @@ class InputAnalyzer(ASTTemplate, ABC):
         operand = self.visit(node.operand)
         key_names = [node.component]
         result = CLAUSE_OP_MAPPING[GET].validate(operand, key_names)
+        return result
+
+    def visit_SubOp(self, node: SubOp):
+        operand = self.visit(node.operand)
+        value = self.visit(node.value)
+        result = CLAUSE_OP_MAPPING[SUB].validate(operand=operand, property_code=node.property_code, value=value)
         return result
 
     def visit_PreconditionItem(self, node: PreconditionItem) -> Scalar:
