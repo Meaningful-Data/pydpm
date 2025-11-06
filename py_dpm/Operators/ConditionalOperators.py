@@ -165,7 +165,12 @@ class IfOperator(ConditionalOperator):
                     raise SemanticError("4-6-1-3")
             else:
                 if isinstance(first, RecordSet):
-                    raise SemanticError("4-6-1-2")
+                    # Allow RecordSets that have only global components (like refPeriod)
+                    # These are effectively "scalar-like" as they don't have DPM-specific open keys
+                    if not first.has_only_global_components:
+                        raise SemanticError("4-6-1-2")
+                    # Return the RecordSet structure since result will vary across global dimensions
+                    return first.structure, first.records
                 return first, None
         else:  # RecordSet
             if second:
