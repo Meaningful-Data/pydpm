@@ -75,8 +75,8 @@ class ConditionalOperator(Operator):
             raise exceptions.SemanticError("4-6-0-2", condition=left.name, operand=right.name)
 
         raise SemanticError(
-            "5", op=cls.op, structure_1=left.get_key_components_names(),
-            structure_2=right.get_key_components_names()
+            "2-3", op=cls.op, structure_1=left.get_key_components_names(),
+            structure_2=right.get_key_components_names(), origin=origin
         )
 
     @classmethod
