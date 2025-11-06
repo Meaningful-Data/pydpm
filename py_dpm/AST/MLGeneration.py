@@ -400,6 +400,18 @@ class MLGeneration(ASTTemplate):
         )
         self.session.add(new_operand_ref)
 
+    def visit_SubOp(self, node: SubOp):
+        setattr(node, "op", "sub")
+        operand_node = self.create_operation_node(node)
+        setattr(node.operand, "parent", operand_node)
+        setattr(node.operand, "argument", "operand")
+        self.visit(node.operand)
+
+        # Visit the value (can be literal, select, or itemReference)
+        setattr(node.value, "parent", operand_node)
+        setattr(node.value, "argument", "value")
+        self.visit(node.value)
+
     def visit_PreconditionItem(self, node: PreconditionItem):
         operand_node = self.create_operation_node(node, is_leaf=True)
         operand_reference = "PreconditionItem"  # "$_{}".format(node.value)

@@ -740,6 +740,40 @@ class RenameNode(AST):
         }
 
 
+class SubOp(AST):
+    """
+    AST Object for the Sub operator. Filters a recordset based on a property substitution.
+
+    :parameter operand: Recordset to be filtered
+    :parameter property_code: Property code to substitute
+    :parameter value: Value to substitute (can be a literal, select, or itemReference)
+    """
+
+    def __init__(self, operand, property_code, value):
+        super().__init__()
+        self.operand = operand
+        self.property_code = property_code
+        self.value = value
+
+    def __str__(self):
+        return "<AST(name='{name}', operand={operand}, property_code='{property_code}', value={value})>".format(
+            name=self.__class__.__name__,
+            operand=self.operand,
+            property_code=self.property_code,
+            value=self.value
+        )
+
+    __repr__ = __str__
+
+    def toJSON(self):
+        return {
+            'class_name': self.__class__.__name__,
+            'operand': self.operand,
+            'property_code': self.property_code,
+            'value': self.value
+        }
+
+
 class PropertyReference(AST):
 
     def __init__(self, code):

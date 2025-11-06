@@ -37,6 +37,7 @@ NVL= "nvl"
 WHERE = 'where'
 RENAME = 'rename'
 GET = 'get'
+SUB = 'sub'
 
 # Aggregation operators
 MAX_AGGR = 'max_aggr'

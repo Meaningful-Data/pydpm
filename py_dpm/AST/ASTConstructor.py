@@ -220,6 +220,9 @@ class ASTVisitor(dpm_xlParserVisitor):
         elif isinstance(ctx_list[2], dpm_xlParser.RenameExprContext):
             rename_nodes = self.visitRenameExpr(ctx_list[2])
             return RenameOp(operand=operand, rename_nodes=rename_nodes)
+        elif isinstance(ctx_list[2], dpm_xlParser.SubExprContext):
+            property_code, value = self.visitSubExpr(ctx_list[2])
+            return SubOp(operand=operand, property_code=property_code, value=value)
 
     def visitWhereExpr(self, ctx: dpm_xlParser.WhereExprContext):
         return self.visit(ctx.getChild(1))
@@ -240,6 +243,14 @@ class ASTVisitor(dpm_xlParserVisitor):
         old_name = self.visit(ctx_list[0])
         new_name = self.visit(ctx_list[2])
         return RenameNode(old_name=old_name, new_name=new_name)
+
+    def visitSubExpr(self, ctx: dpm_xlParser.SubExprContext):
+        # SUB propertyCode EQ (literal | select | itemReference)
+        ctx_list = list(ctx.getChildren())
+        property_code = self.visit(ctx_list[1])  # propertyCode
+        # ctx_list[2] is EQ
+        value = self.visit(ctx_list[3])  # literal, select, or itemReference
+        return property_code, value
 
     def create_bin_op(self, ctx: dpm_xlParser.ExpressionContext):
         ctx_list = list(ctx.getChildren())

@@ -1,6 +1,6 @@
 from py_dpm.Operators.AggregateOperators import Avg, Count, MaxAggr, Median, MinAggr, Sum
 from py_dpm.Operators.BooleanOperators import And, Not, Or, Xor
-from py_dpm.Operators.ClauseOperators import Get, Rename, Where
+from py_dpm.Operators.ClauseOperators import Get, Rename, Sub, Where
 from py_dpm.Operators.ComparisonOperators import Equal, Greater, GreaterEqual, In, IsNull, Less, LessEqual, Match, NotEqual
 from py_dpm.Operators.ConditionalOperators import Filter, IfOperator, Nvl
 from py_dpm.Operators.NumericOperators import AbsoluteValue, BinMinus, BinPlus, Div, Exponential, Logarithm, \
@@ -71,7 +71,8 @@ AGGR_OP_MAPPING = {
 CLAUSE_OP_MAPPING = {
     WHERE: Where,
     RENAME: Rename,
-    GET: Get
+    GET: Get,
+    SUB: Sub
 }
 
 TIME_OPERATORS = {

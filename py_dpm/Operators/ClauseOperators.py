@@ -157,3 +157,32 @@ class Get(ClauseOperator):
     @classmethod
     def generate_origin_expression(cls, operand, component) -> str:
         return f"{operand.name} [ get {component} ]"
+
+
+class Sub(ClauseOperator):
+    op = tokens.SUB
+    propagate_attributes = True
+
+    @classmethod
+    def validate(cls, operand, property_code, value):
+        if not isinstance(operand, RecordSet):
+            raise exceptions.SemanticError("4-5-0-2", operator=cls.op)
+
+        # The sub operator filters based on property substitution
+        # For now, we just validate the operand is a recordset and return it
+        origin = cls.generate_origin_expression(operand, property_code, value)
+
+        # Generate a new label for the result
+        new_label = generate_new_label()
+        operand.structure.replace_components_parent(new_label)
+
+        result = RecordSet(structure=operand.structure, name=new_label, origin=origin)
+        result.records = operand.records
+        set_operand_label(result.name, result.origin)
+        return result
+
+    @classmethod
+    def generate_origin_expression(cls, operand, property_code, value) -> str:
+        operand_name = getattr(operand, 'name', None) or getattr(operand, 'origin', None)
+        value_str = getattr(value, 'name', None) or getattr(value, 'origin', None) or str(value)
+        return f"{operand_name}[sub {property_code} = {value_str}]"

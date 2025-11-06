@@ -1805,7 +1805,20 @@ class ViewDatapoints(Base):
                 low, high = rows[0].split('-')
                 query = query.filter(aliases['hvr'].code.between(low, high))
             else:
-                query = query.filter(aliases['hvr'].code.in_(rows))
+                # Check if we have a mix of ranges and single values
+                has_range = any('-' in x for x in rows)
+                if has_range:
+                    # Separate ranges and single values
+                    row_filters = []
+                    for row in rows:
+                        if '-' in row:
+                            low, high = row.split('-')
+                            row_filters.append(aliases['hvr'].code.between(low, high))
+                        else:
+                            row_filters.append(aliases['hvr'].code == row)
+                    query = query.filter(or_(*row_filters))
+                else:
+                    query = query.filter(aliases['hvr'].code.in_(rows))
 
         # Apply column filter
         if columns is not None and columns != ['*']:
@@ -1813,7 +1826,20 @@ class ViewDatapoints(Base):
                 low, high = columns[0].split('-')
                 query = query.filter(aliases['hvc'].code.between(low, high))
             else:
-                query = query.filter(aliases['hvc'].code.in_(columns))
+                # Check if we have a mix of ranges and single values
+                has_range = any('-' in x for x in columns)
+                if has_range:
+                    # Separate ranges and single values
+                    col_filters = []
+                    for col in columns:
+                        if '-' in col:
+                            low, high = col.split('-')
+                            col_filters.append(aliases['hvc'].code.between(low, high))
+                        else:
+                            col_filters.append(aliases['hvc'].code == col)
+                    query = query.filter(or_(*col_filters))
+                else:
+                    query = query.filter(aliases['hvc'].code.in_(columns))
 
         # Apply sheet filter
         if sheets is not None and sheets != ['*']:
@@ -1821,7 +1847,20 @@ class ViewDatapoints(Base):
                 low, high = sheets[0].split('-')
                 query = query.filter(aliases['hvs'].code.between(low, high))
             else:
-                query = query.filter(aliases['hvs'].code.in_(sheets))
+                # Check if we have a mix of ranges and single values
+                has_range = any('-' in x for x in sheets)
+                if has_range:
+                    # Separate ranges and single values
+                    sheet_filters = []
+                    for sheet in sheets:
+                        if '-' in sheet:
+                            low, high = sheet.split('-')
+                            sheet_filters.append(aliases['hvs'].code.between(low, high))
+                        else:
+                            sheet_filters.append(aliases['hvs'].code == sheet)
+                    query = query.filter(or_(*sheet_filters))
+                else:
+                    query = query.filter(aliases['hvs'].code.in_(sheets))
 
         # Apply release filter
         if release_id is not None:
