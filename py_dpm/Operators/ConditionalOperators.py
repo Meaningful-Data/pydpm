@@ -156,21 +156,33 @@ class IfOperator(ConditionalOperator):
         """
         if isinstance(condition, Scalar):
             if second:
-                if isinstance(first, RecordSet) and isinstance(second, RecordSet):
+                # Helper: treat recordsets with only global key components as scalars
+                # Per DPM-XL spec, single-cell selections have only global keys
+                first_is_scalar = isinstance(first, Scalar) or (
+                    isinstance(first, RecordSet) and first.has_only_global_components
+                )
+                second_is_scalar = isinstance(second, Scalar) or (
+                    isinstance(second, RecordSet) and second.has_only_global_components
+                )
+
+                if isinstance(first, RecordSet) and isinstance(second, RecordSet) and not (first_is_scalar or second_is_scalar):
+                    # Both are true recordsets (with standard key components r/c/s)
                     if cls._check_structures(first, second, origin, subset_allowed=False):
                         return first.structure, first.records
-                elif isinstance(first, Scalar) and isinstance(second, Scalar):
+                elif first_is_scalar and second_is_scalar:
+                    # Both are scalars (or single-cell recordsets with only global keys)
                     return first, None
                 else:
                     raise SemanticError("4-6-1-3")
             else:
                 if isinstance(first, RecordSet):
-                    # Allow RecordSets that have only global components (like refPeriod)
-                    # These are effectively "scalar-like" as they don't have DPM-specific open keys
-                    if not first.has_only_global_components:
-                        raise SemanticError("4-6-1-2")
-                    # Return the RecordSet structure since result will vary across global dimensions
-                    return first.structure, first.records
+                    # A recordset with only global key components (no standard r/c/s keys) is semantically a scalar
+                    # Per DPM-XL spec 3.1.6: Key components only present if "more than one" row/col/sheet
+                    # So {tC_17.01.b, r0020, c0100} selects one cell = only global keys = scalar value
+                    if first.has_only_global_components:
+                        # Treat as scalar: return the recordset but it's valid
+                        return first, None
+                    raise SemanticError("4-6-1-2")
                 return first, None
         else:  # RecordSet
             if second:
