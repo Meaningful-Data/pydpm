@@ -148,13 +148,6 @@ class OperandsChecking(ASTTemplate, ABC):
             table_info = value
             df_table = ViewDatapoints.get_table_data(self.session, table, table_info['rows'],
                                                 table_info['cols'], table_info['sheets'], self.release_id)
-            if df_table.empty:
-                cell_expression = f'table: {table}'
-                for k, v in table_info.items():
-                    if v:
-                        cell_expression += f' {k}: {v}'
-                raise exceptions.SemanticError("1-2", cell_expression=cell_expression)
-
             # Insert data type on each node by selecting only data required by node
             for node in self.operands[table]:
                 node_data = filter_all_data(df_table, table, node.rows, node.cols, node.sheets)
