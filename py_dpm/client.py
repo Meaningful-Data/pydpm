@@ -255,5 +255,232 @@ def calculate_scopes(expression, operation_vid, tables, preconditions, release_i
         api.session.close()
 
 
+@main.command()
+@click.argument('expression', type=str, required=False)
+@click.option('--operation-vid', type=int, help='Operation version ID')
+@click.option('--release-id', type=int, help='Release ID to filter modules (defaults to last release)')
+def get_scopes_metadata(expression, operation_vid, release_id):
+    """
+    Get operation scopes with detailed module metadata.
+
+    EXPRESSION: DPM-XL expression to analyze (optional if --operation-vid is provided)
+
+    Examples:
+        pydpm get-scopes-metadata --operation-vid 1
+        pydpm get-scopes-metadata "{tC_01.00, r0100, c0010}"
+        pydpm get-scopes-metadata "{tC_01.00, r0100, c0010}" --release-id 42
+    """
+    api = OperationScopesAPI()
+
+    try:
+        # Determine mode: expression-based or operation-vid-based
+        if expression:
+            scopes = api.get_scopes_with_metadata_from_expression(
+                expression=expression,
+                release_id=release_id
+            )
+            mode = "expression"
+        elif operation_vid:
+            scopes = api.get_scopes_with_metadata(operation_version_id=operation_vid)
+            mode = "operation_vid"
+        else:
+            console.print("Error: Either EXPRESSION or --operation-vid must be provided", style="bold red")
+            sys.exit(1)
+
+        # Display results
+        if not scopes:
+            console.print("\n[yellow]No scopes found[/yellow]\n")
+            return
+
+        console.print(f"\n[bold cyan]Operation Scopes with Metadata[/bold cyan] (Total: {len(scopes)})")
+        console.print("=" * 80)
+
+        for idx, scope in enumerate(scopes, 1):
+            console.print(f"\n[bold]Scope #{idx}[/bold]")
+
+            # Scope details
+            details_table = Table(show_header=False, box=None, padding=(0, 2))
+            details_table.add_column("Label", style="bold")
+            details_table.add_column("Value")
+
+            details_table.add_row("Scope ID:", str(scope.operation_scope_id))
+            details_table.add_row("Operation VID:", str(scope.operation_vid))
+            details_table.add_row("Active:", "Yes" if scope.is_active else "No")
+            details_table.add_row("Severity:", scope.severity)
+            if scope.from_submission_date:
+                details_table.add_row("From Date:", str(scope.from_submission_date))
+
+            console.print(details_table)
+
+            # Module versions
+            if scope.module_versions:
+                console.print(f"\n  [bold]Modules ({len(scope.module_versions)}):[/bold]")
+
+                modules_table = Table(show_header=True, header_style="bold magenta")
+                modules_table.add_column("Module VID", justify="right")
+                modules_table.add_column("Code", justify="left")
+                modules_table.add_column("Name", justify="left")
+                modules_table.add_column("Version", justify="center")
+                modules_table.add_column("From Date", justify="center")
+                modules_table.add_column("To Date", justify="center")
+
+                for module in scope.module_versions:
+                    modules_table.add_row(
+                        str(module.module_vid),
+                        module.code,
+                        module.name[:40] + "..." if len(module.name) > 40 else module.name,
+                        module.version_number,
+                        str(module.from_reference_date) if module.from_reference_date else "N/A",
+                        str(module.to_reference_date) if module.to_reference_date else "Open"
+                    )
+
+                console.print(modules_table)
+
+        console.print("\n[bold green]✓ Scopes metadata retrieved successfully[/bold green]\n")
+
+    except Exception as e:
+        console.print(f"Error: {str(e)}", style="bold red")
+        sys.exit(1)
+    finally:
+        api.session.close()
+
+
+@main.command()
+@click.argument('expression', type=str, required=False)
+@click.option('--operation-vid', type=int, help='Operation version ID')
+@click.option('--release-id', type=int, help='Release ID to filter modules (defaults to last release)')
+def get_tables_metadata(expression, operation_vid, release_id):
+    """
+    Get tables from operation scopes with metadata.
+
+    EXPRESSION: DPM-XL expression to analyze (optional if --operation-vid is provided)
+
+    Examples:
+        pydpm get-tables-metadata --operation-vid 1
+        pydpm get-tables-metadata "{tC_01.00, r0100, c0010}"
+        pydpm get-tables-metadata "{tC_01.00, r0100, c0010}" --release-id 42
+    """
+    api = OperationScopesAPI()
+
+    try:
+        # Determine mode: expression-based or operation-vid-based
+        if expression:
+            tables = api.get_tables_with_metadata_from_expression(
+                expression=expression,
+                release_id=release_id
+            )
+        elif operation_vid:
+            tables = api.get_tables_with_metadata(operation_version_id=operation_vid)
+        else:
+            console.print("Error: Either EXPRESSION or --operation-vid must be provided", style="bold red")
+            sys.exit(1)
+
+        # Display results
+        if not tables:
+            console.print("\n[yellow]No tables found[/yellow]\n")
+            return
+
+        console.print(f"\n[bold cyan]Tables with Metadata[/bold cyan] (Total: {len(tables)})")
+        console.print("=" * 80)
+
+        tables_table = Table(show_header=True, header_style="bold magenta")
+        tables_table.add_column("Table VID", justify="right", style="cyan")
+        tables_table.add_column("Code", justify="left", style="green")
+        tables_table.add_column("Name", justify="left")
+        tables_table.add_column("Description", justify="left")
+
+        for table in tables:
+            # Truncate long descriptions
+            description = table.description[:60] + "..." if len(table.description) > 60 else table.description
+
+            tables_table.add_row(
+                str(table.table_vid),
+                table.code,
+                table.name[:40] + "..." if len(table.name) > 40 else table.name,
+                description
+            )
+
+        console.print(tables_table)
+        console.print("\n[bold green]✓ Tables metadata retrieved successfully[/bold green]\n")
+
+    except Exception as e:
+        console.print(f"Error: {str(e)}", style="bold red")
+        sys.exit(1)
+    finally:
+        api.session.close()
+
+
+@main.command()
+@click.argument('expression', type=str, required=False)
+@click.option('--operation-vid', type=int, help='Operation version ID')
+@click.option('--table-vid', type=int, help='Filter by specific table VID')
+@click.option('--release-id', type=int, help='Release ID to filter modules (defaults to last release)')
+def get_headers_metadata(expression, operation_vid, table_vid, release_id):
+    """
+    Get headers from operation scopes with metadata.
+
+    EXPRESSION: DPM-XL expression to analyze (optional if --operation-vid is provided)
+
+    Examples:
+        pydpm get-headers-metadata --operation-vid 1
+        pydpm get-headers-metadata --operation-vid 1 --table-vid 101
+        pydpm get-headers-metadata "{tC_01.00, r0100, c0010}"
+        pydpm get-headers-metadata "{tC_01.00, r0100, c0010}" --table-vid 101
+    """
+    api = OperationScopesAPI()
+
+    try:
+        # Determine mode: expression-based or operation-vid-based
+        if expression:
+            headers = api.get_headers_with_metadata_from_expression(
+                expression=expression,
+                table_vid=table_vid,
+                release_id=release_id
+            )
+        elif operation_vid:
+            headers = api.get_headers_with_metadata(
+                operation_version_id=operation_vid,
+                table_vid=table_vid
+            )
+        else:
+            console.print("Error: Either EXPRESSION or --operation-vid must be provided", style="bold red")
+            sys.exit(1)
+
+        # Display results
+        if not headers:
+            console.print("\n[yellow]No headers found[/yellow]\n")
+            return
+
+        console.print(f"\n[bold cyan]Headers with Metadata[/bold cyan] (Total: {len(headers)})")
+        if table_vid:
+            console.print(f"[dim]Filtered by Table VID: {table_vid}[/dim]")
+        console.print("=" * 80)
+
+        headers_table = Table(show_header=True, header_style="bold magenta")
+        headers_table.add_column("Header VID", justify="right", style="cyan")
+        headers_table.add_column("Table VID", justify="right", style="yellow")
+        headers_table.add_column("Code", justify="left", style="green")
+        headers_table.add_column("Label", justify="left")
+        headers_table.add_column("Type", justify="center")
+
+        for header in headers:
+            headers_table.add_row(
+                str(header.header_vid),
+                str(header.table_vid) if header.table_vid else "N/A",
+                header.code,
+                header.label[:50] + "..." if len(header.label) > 50 else header.label,
+                header.header_type
+            )
+
+        console.print(headers_table)
+        console.print("\n[bold green]✓ Headers metadata retrieved successfully[/bold green]\n")
+
+    except Exception as e:
+        console.print(f"Error: {str(e)}", style="bold red")
+        sys.exit(1)
+    finally:
+        api.session.close()
+
+
 if __name__ == '__main__':
     main()
