@@ -577,7 +577,7 @@ class ModuleVersion(Base):
                 and_(
                     cls.startreleaseid <= release_id,
                     or_(
-                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid > release_id,
                         cls.endreleaseid.is_(None)
                     )
                 )
@@ -630,7 +630,7 @@ class ModuleVersion(Base):
                 and_(
                     cls.startreleaseid <= release_id,
                     or_(
-                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid > release_id,
                         cls.endreleaseid.is_(None)
                     )
                 )
@@ -679,7 +679,7 @@ class ModuleVersion(Base):
                 and_(
                     cls.startreleaseid <= release_id,
                     or_(
-                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid > release_id,
                         cls.endreleaseid.is_(None)
                     )
                 )
