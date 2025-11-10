@@ -168,13 +168,25 @@ class Sub(ClauseOperator):
         if not isinstance(operand, RecordSet):
             raise exceptions.SemanticError("4-5-0-2", operator=cls.op)
 
-        # The sub operator filters based on property substitution
-        # For now, we just validate the operand is a recordset and return it
+        # Validate that the property_code exists in the operand's components
+        dpm_components = operand.get_dpm_components()
+        if property_code not in dpm_components:
+            raise exceptions.SemanticError("2-8", op=cls.op, dpm_keys=[property_code], recordset=operand.name)
+
+        # Generate origin expression
         origin = cls.generate_origin_expression(operand, property_code, value)
 
         # Generate a new label for the result
         new_label = generate_new_label()
         operand.structure.replace_components_parent(new_label)
+
+        # The sub operator drops the specified component from the structure
+        if property_code in operand.structure.components:
+            del operand.structure.components[property_code]
+
+        # Remove attributes if not propagating
+        if not cls.propagate_attributes:
+            operand.structure.remove_attributes()
 
         result = RecordSet(structure=operand.structure, name=new_label, origin=origin)
         result.records = operand.records
