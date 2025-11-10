@@ -577,7 +577,7 @@ class ModuleVersion(Base):
                 and_(
                     cls.startreleaseid <= release_id,
                     or_(
-                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid > release_id,
                         cls.endreleaseid.is_(None)
                     )
                 )
@@ -630,7 +630,7 @@ class ModuleVersion(Base):
                 and_(
                     cls.startreleaseid <= release_id,
                     or_(
-                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid > release_id,
                         cls.endreleaseid.is_(None)
                     )
                 )
@@ -679,7 +679,7 @@ class ModuleVersion(Base):
                 and_(
                     cls.startreleaseid <= release_id,
                     or_(
-                        cls.endreleaseid >= release_id,
+                        cls.endreleaseid > release_id,
                         cls.endreleaseid.is_(None)
                     )
                 )
@@ -1798,6 +1798,11 @@ class ViewDatapoints(Base):
 
         # Filter by table
         query = query.filter(TableVersion.code == table)
+
+        # Filter by active table version if no release_id provided
+        # This prevents duplicate rows from multiple table versions
+        if release_id is None:
+            query = query.filter(TableVersion.endreleaseid.is_(None))
 
         # Apply row filter
         if rows is not None and rows != ['*']:

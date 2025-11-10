@@ -1,5 +1,6 @@
 from typing import List, Optional, Any
 from dataclasses import dataclass, field
+from datetime import date
 
 from antlr4 import CommonTokenStream, InputStream
 from py_dpm.grammar.dist.dpm_xlLexer import dpm_xlLexer
@@ -9,7 +10,7 @@ from py_dpm.AST.ASTConstructor import ASTVisitor
 from py_dpm.AST.check_operands import OperandsChecking
 from py_dpm.AST.ASTObjects import VarID, PreconditionItem
 from py_dpm.OperationScopes.OperationScopeService import OperationScopeService
-from py_dpm.models import ModuleVersion, OperationScope, OperationScopeComposition
+from py_dpm.models import ModuleVersion, OperationScope, OperationScopeComposition, TableVersion, HeaderVersion, TableVersionHeader
 from py_dpm.db_utils import get_session, get_engine
 from py_dpm.Exceptions.exceptions import SemanticError
 
@@ -39,6 +40,86 @@ class OperationScopeResult:
     error_message: Optional[str] = None
     release_id: Optional[int] = None
     expression: Optional[str] = None
+
+
+@dataclass
+class ModuleVersionInfo:
+    """
+    Module version information with metadata.
+
+    Attributes:
+        module_vid (int): Module version ID
+        code (str): Module code
+        name (str): Module name
+        description (str): Module description
+        version_number (str): Version number
+        from_reference_date (Optional[date]): Start date of validity
+        to_reference_date (Optional[date]): End date of validity
+    """
+    module_vid: int
+    code: str
+    name: str
+    description: str
+    version_number: str
+    from_reference_date: Optional[date] = None
+    to_reference_date: Optional[date] = None
+
+
+@dataclass
+class TableVersionInfo:
+    """
+    Table version information with metadata.
+
+    Attributes:
+        table_vid (int): Table version ID
+        code (str): Table code
+        name (str): Table name
+        description (str): Table description
+    """
+    table_vid: int
+    code: str
+    name: str
+    description: str
+
+
+@dataclass
+class HeaderVersionInfo:
+    """
+    Header version information with metadata.
+
+    Attributes:
+        header_vid (int): Header version ID
+        code (str): Header code
+        label (str): Header label/name
+        header_type (str): Type of header (row/column/sheet)
+        table_vid (Optional[int]): Associated table version ID (if queried with table context)
+    """
+    header_vid: int
+    code: str
+    label: str
+    header_type: str
+    table_vid: Optional[int] = None
+
+
+@dataclass
+class OperationScopeDetailedInfo:
+    """
+    Operation scope with detailed module metadata.
+
+    Attributes:
+        operation_scope_id (int): Operation scope ID
+        operation_vid (int): Operation version ID
+        is_active (int): Active status
+        severity (str): Severity level
+        from_submission_date (Optional[date]): Start date for submission
+        module_versions (List[ModuleVersionInfo]): List of modules with metadata
+    """
+    operation_scope_id: int
+    operation_vid: int
+    is_active: int
+    severity: str
+    from_submission_date: Optional[date]
+    module_versions: List[ModuleVersionInfo] = field(default_factory=list)
 
 
 class OperationScopesAPI:
@@ -428,6 +509,409 @@ class OperationScopesAPI:
 
         except Exception:
             return False
+
+    def get_scopes_with_metadata(self, operation_version_id: int) -> List[OperationScopeDetailedInfo]:
+        """
+        Get operation scopes with detailed module metadata.
+
+        Args:
+            operation_version_id (int): Operation version ID
+
+        Returns:
+            List[OperationScopeDetailedInfo]: List of scopes with enriched module information
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> scopes = api.get_scopes_with_metadata(operation_version_id=1)
+            >>> for scope in scopes:
+            ...     print(f"Scope {scope.operation_scope_id}:")
+            ...     for module in scope.module_versions:
+            ...         print(f"  - {module.code}: {module.name}")
+        """
+        scopes = self.get_existing_scopes(operation_version_id)
+        result = []
+
+        for scope in scopes:
+            # Get module metadata for each scope
+            module_infos = []
+            for comp in scope.operation_scope_compositions:
+                module = (
+                    self.session.query(ModuleVersion)
+                    .filter(ModuleVersion.modulevid == comp.modulevid)
+                    .first()
+                )
+                if module:
+                    module_infos.append(ModuleVersionInfo(
+                        module_vid=module.modulevid,
+                        code=module.code or "",
+                        name=module.name or "",
+                        description=module.description or "",
+                        version_number=module.versionnumber or "",
+                        from_reference_date=module.fromreferencedate,
+                        to_reference_date=module.toreferencedate
+                    ))
+
+            result.append(OperationScopeDetailedInfo(
+                operation_scope_id=scope.operationscopeid,
+                operation_vid=scope.operationvid,
+                is_active=scope.isactive,
+                severity=scope.severity or "",
+                from_submission_date=scope.fromsubmissiondate,
+                module_versions=module_infos
+            ))
+
+        return result
+
+    def get_scopes_with_metadata_from_expression(
+        self,
+        expression: str,
+        release_id: Optional[int] = None
+    ) -> List[OperationScopeDetailedInfo]:
+        """
+        Calculate operation scopes from expression and return with detailed metadata.
+
+        This method calculates scopes from the expression without persisting to database.
+
+        Args:
+            expression (str): The DPM-XL expression to analyze
+            release_id (Optional[int]): Specific release ID to filter modules.
+                                       If None, defaults to last release.
+
+        Returns:
+            List[OperationScopeDetailedInfo]: List of calculated scopes with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> scopes = api.get_scopes_with_metadata_from_expression(
+            ...     "{tC_01.00, r0100, c0010} + {tC_02.00, r0200, c0020}",
+            ...     release_id=42
+            ... )
+        """
+        # Calculate scopes in read-only mode
+        scope_result = self.calculate_scopes_from_expression(
+            expression=expression,
+            release_id=release_id,
+            read_only=True
+        )
+
+        if scope_result.has_error:
+            return []
+
+        # Convert to detailed info
+        result = []
+        all_scopes = scope_result.existing_scopes + scope_result.new_scopes
+
+        for scope in all_scopes:
+            module_infos = []
+            for comp in scope.operation_scope_compositions:
+                module = (
+                    self.session.query(ModuleVersion)
+                    .filter(ModuleVersion.modulevid == comp.modulevid)
+                    .first()
+                )
+                if module:
+                    module_infos.append(ModuleVersionInfo(
+                        module_vid=module.modulevid,
+                        code=module.code or "",
+                        name=module.name or "",
+                        description=module.description or "",
+                        version_number=module.versionnumber or "",
+                        from_reference_date=module.fromreferencedate,
+                        to_reference_date=module.toreferencedate
+                    ))
+
+            result.append(OperationScopeDetailedInfo(
+                operation_scope_id=scope.operationscopeid,
+                operation_vid=scope.operationvid,
+                is_active=scope.isactive,
+                severity=scope.severity or "",
+                from_submission_date=scope.fromsubmissiondate,
+                module_versions=module_infos
+            ))
+
+        return result
+
+    def get_tables_with_metadata(self, operation_version_id: int) -> List[TableVersionInfo]:
+        """
+        Get all tables involved in operation scopes with metadata.
+
+        Args:
+            operation_version_id (int): Operation version ID
+
+        Returns:
+            List[TableVersionInfo]: List of unique tables with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> tables = api.get_tables_with_metadata(operation_version_id=1)
+            >>> for table in tables:
+            ...     print(f"{table.code}: {table.name}")
+        """
+        scopes = self.get_existing_scopes(operation_version_id)
+
+        # Collect unique module VIDs
+        module_vids = set()
+        for scope in scopes:
+            for comp in scope.operation_scope_compositions:
+                module_vids.add(comp.modulevid)
+
+        if not module_vids:
+            return []
+
+        # Query tables from these modules
+        from py_dpm.models import ModuleVersionComposition
+
+        tables_query = (
+            self.session.query(TableVersion)
+            .join(ModuleVersionComposition, ModuleVersionComposition.tablevid == TableVersion.tablevid)
+            .filter(ModuleVersionComposition.modulevid.in_(module_vids))
+            .distinct()
+            .order_by(TableVersion.code)
+        )
+
+        result = []
+        for table in tables_query.all():
+            result.append(TableVersionInfo(
+                table_vid=table.tablevid,
+                code=table.code or "",
+                name=table.name or "",
+                description=table.description or ""
+            ))
+
+        return result
+
+    def get_tables_with_metadata_from_expression(
+        self,
+        expression: str,
+        release_id: Optional[int] = None
+    ) -> List[TableVersionInfo]:
+        """
+        Get tables from expression with metadata.
+
+        Args:
+            expression (str): The DPM-XL expression to analyze
+            release_id (Optional[int]): Specific release ID to filter modules
+
+        Returns:
+            List[TableVersionInfo]: List of tables with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> tables = api.get_tables_with_metadata_from_expression(
+            ...     "{tC_01.00, r0100, c0010} + {tC_02.00, r0200, c0020}"
+            ... )
+        """
+        # Calculate scopes in read-only mode
+        scope_result = self.calculate_scopes_from_expression(
+            expression=expression,
+            release_id=release_id,
+            read_only=True
+        )
+
+        if scope_result.has_error:
+            return []
+
+        # Collect module VIDs
+        module_vids = set(scope_result.module_versions)
+
+        if not module_vids:
+            return []
+
+        # Query tables
+        from py_dpm.models import ModuleVersionComposition
+
+        tables_query = (
+            self.session.query(TableVersion)
+            .join(ModuleVersionComposition, ModuleVersionComposition.tablevid == TableVersion.tablevid)
+            .filter(ModuleVersionComposition.modulevid.in_(module_vids))
+            .distinct()
+            .order_by(TableVersion.code)
+        )
+
+        result = []
+        for table in tables_query.all():
+            result.append(TableVersionInfo(
+                table_vid=table.tablevid,
+                code=table.code or "",
+                name=table.name or "",
+                description=table.description or ""
+            ))
+
+        return result
+
+    def get_headers_with_metadata(
+        self,
+        operation_version_id: int,
+        table_vid: Optional[int] = None
+    ) -> List[HeaderVersionInfo]:
+        """
+        Get headers from tables in operation scopes with metadata.
+
+        Args:
+            operation_version_id (int): Operation version ID
+            table_vid (Optional[int]): Filter by specific table VID. If None, returns all headers.
+
+        Returns:
+            List[HeaderVersionInfo]: List of headers with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> # Get all headers
+            >>> headers = api.get_headers_with_metadata(operation_version_id=1)
+            >>> # Get headers for specific table
+            >>> headers = api.get_headers_with_metadata(operation_version_id=1, table_vid=101)
+        """
+        scopes = self.get_existing_scopes(operation_version_id)
+
+        # Collect unique module VIDs
+        module_vids = set()
+        for scope in scopes:
+            for comp in scope.operation_scope_compositions:
+                module_vids.add(comp.modulevid)
+
+        if not module_vids:
+            return []
+
+        # Get table VIDs from modules
+        from py_dpm.models import ModuleVersionComposition, Header
+
+        table_vids_query = (
+            self.session.query(ModuleVersionComposition.tablevid)
+            .filter(ModuleVersionComposition.modulevid.in_(module_vids))
+            .distinct()
+        )
+
+        if table_vid is not None:
+            # Filter by specific table
+            table_vids_query = table_vids_query.filter(ModuleVersionComposition.tablevid == table_vid)
+
+        table_vids = [row[0] for row in table_vids_query.all()]
+
+        if not table_vids:
+            return []
+
+        # Query headers for these tables
+        headers_query = (
+            self.session.query(
+                HeaderVersion,
+                TableVersionHeader.tablevid,
+                Header.direction
+            )
+            .join(TableVersionHeader, TableVersionHeader.headervid == HeaderVersion.headervid)
+            .join(Header, Header.headerid == TableVersionHeader.headerid)
+            .filter(TableVersionHeader.tablevid.in_(table_vids))
+            .order_by(TableVersionHeader.tablevid, HeaderVersion.code)
+            .distinct()
+        )
+
+        result = []
+        for header_version, table_vid_val, direction in headers_query.all():
+            # Map direction to readable type (DPM uses X=Row, Y=Column, Z=Sheet)
+            header_type_map = {'X': 'Row', 'Y': 'Column', 'Z': 'Sheet'}
+            header_type = header_type_map.get(direction, direction or "Unknown")
+
+            result.append(HeaderVersionInfo(
+                header_vid=header_version.headervid,
+                code=header_version.code or "",
+                label=header_version.label or "",
+                header_type=header_type,
+                table_vid=table_vid_val
+            ))
+
+        return result
+
+    def get_headers_with_metadata_from_expression(
+        self,
+        expression: str,
+        table_vid: Optional[int] = None,
+        release_id: Optional[int] = None
+    ) -> List[HeaderVersionInfo]:
+        """
+        Get headers from expression with metadata.
+
+        Args:
+            expression (str): The DPM-XL expression to analyze
+            table_vid (Optional[int]): Filter by specific table VID
+            release_id (Optional[int]): Specific release ID to filter modules
+
+        Returns:
+            List[HeaderVersionInfo]: List of headers with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> headers = api.get_headers_with_metadata_from_expression(
+            ...     "{tC_01.00, r0100, c0010}",
+            ...     table_vid=101
+            ... )
+        """
+        # Calculate scopes in read-only mode
+        scope_result = self.calculate_scopes_from_expression(
+            expression=expression,
+            release_id=release_id,
+            read_only=True
+        )
+
+        if scope_result.has_error:
+            return []
+
+        # Collect module VIDs
+        module_vids = set(scope_result.module_versions)
+
+        if not module_vids:
+            return []
+
+        # Get table VIDs from modules
+        from py_dpm.models import ModuleVersionComposition, Header
+
+        table_vids_query = (
+            self.session.query(ModuleVersionComposition.tablevid)
+            .filter(ModuleVersionComposition.modulevid.in_(module_vids))
+            .distinct()
+        )
+
+        if table_vid is not None:
+            table_vids_query = table_vids_query.filter(ModuleVersionComposition.tablevid == table_vid)
+
+        table_vids = [row[0] for row in table_vids_query.all()]
+
+        if not table_vids:
+            return []
+
+        # Query headers
+        headers_query = (
+            self.session.query(
+                HeaderVersion,
+                TableVersionHeader.tablevid,
+                Header.direction
+            )
+            .join(TableVersionHeader, TableVersionHeader.headervid == HeaderVersion.headervid)
+            .join(Header, Header.headerid == TableVersionHeader.headerid)
+            .filter(TableVersionHeader.tablevid.in_(table_vids))
+            .order_by(TableVersionHeader.tablevid, HeaderVersion.code)
+            .distinct()
+        )
+
+        result = []
+        for header_version, table_vid_val, direction in headers_query.all():
+            # Map direction to readable type (DPM uses X=Row, Y=Column, Z=Sheet)
+            header_type_map = {'X': 'Row', 'Y': 'Column', 'Z': 'Sheet'}
+            header_type = header_type_map.get(direction, direction or "Unknown")
+
+            result.append(HeaderVersionInfo(
+                header_vid=header_version.headervid,
+                code=header_version.code or "",
+                label=header_version.label or "",
+                header_type=header_type,
+                table_vid=table_vid_val
+            ))
+
+        return result
 
     def __del__(self):
         """Clean up resources."""

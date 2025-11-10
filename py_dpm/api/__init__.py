@@ -5,7 +5,12 @@ from py_dpm.api.data_dictionary import DataDictionaryAPI
 from py_dpm.api.operation_scopes import (
     OperationScopesAPI,
     calculate_scopes_from_expression,
-    get_existing_scopes
+    get_existing_scopes,
+    ModuleVersionInfo,
+    TableVersionInfo,
+    HeaderVersionInfo,
+    OperationScopeDetailedInfo,
+    OperationScopeResult
 )
 from py_dpm.api.ast_generator import ASTGenerator, parse_expression, validate_expression, parse_batch
 from py_dpm.api.complete_ast import (
@@ -65,6 +70,13 @@ __all__ = [
     # Operation Scopes Convenience Functions
     'calculate_scopes_from_expression',
     'get_existing_scopes',
+
+    # Operation Scopes Data Classes
+    'ModuleVersionInfo',
+    'TableVersionInfo',
+    'HeaderVersionInfo',
+    'OperationScopeDetailedInfo',
+    'OperationScopeResult',
 
     'API'  # Keep for backward compatibility
 ]
