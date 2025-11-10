@@ -10,7 +10,7 @@ from py_dpm.AST.ASTConstructor import ASTVisitor
 from py_dpm.AST.check_operands import OperandsChecking
 from py_dpm.AST.ASTObjects import VarID, PreconditionItem
 from py_dpm.OperationScopes.OperationScopeService import OperationScopeService
-from py_dpm.models import ModuleVersion, OperationScope, OperationScopeComposition, TableVersion, HeaderVersion, TableVersionHeader
+from py_dpm.models import ModuleVersion, OperationScope, OperationScopeComposition, TableVersion, HeaderVersion, TableVersionHeader, Framework, Module
 from py_dpm.db_utils import get_session, get_engine
 from py_dpm.Exceptions.exceptions import SemanticError
 
@@ -75,11 +75,19 @@ class TableVersionInfo:
         code (str): Table code
         name (str): Table name
         description (str): Table description
+        module_vid (Optional[int]): Module version ID
+        module_code (Optional[str]): Module code
+        module_name (Optional[str]): Module name
+        module_version (Optional[str]): Module version number
     """
     table_vid: int
     code: str
     name: str
     description: str
+    module_vid: Optional[int] = None
+    module_code: Optional[str] = None
+    module_name: Optional[str] = None
+    module_version: Optional[str] = None
 
 
 @dataclass
@@ -93,12 +101,33 @@ class HeaderVersionInfo:
         label (str): Header label/name
         header_type (str): Type of header (row/column/sheet)
         table_vid (Optional[int]): Associated table version ID (if queried with table context)
+        table_code (Optional[str]): Associated table code
+        table_name (Optional[str]): Associated table name
     """
     header_vid: int
     code: str
     label: str
     header_type: str
     table_vid: Optional[int] = None
+    table_code: Optional[str] = None
+    table_name: Optional[str] = None
+
+
+@dataclass
+class FrameworkInfo:
+    """
+    Framework information.
+
+    Attributes:
+        framework_id (int): Framework ID
+        code (str): Framework code
+        name (str): Framework name
+        description (str): Framework description
+    """
+    framework_id: int
+    code: str
+    name: str
+    description: str
 
 
 @dataclass
@@ -665,20 +694,31 @@ class OperationScopesAPI:
         from py_dpm.models import ModuleVersionComposition
 
         tables_query = (
-            self.session.query(TableVersion)
+            self.session.query(
+                TableVersion,
+                ModuleVersionComposition.modulevid,
+                ModuleVersion.code,
+                ModuleVersion.name,
+                ModuleVersion.versionnumber
+            )
             .join(ModuleVersionComposition, ModuleVersionComposition.tablevid == TableVersion.tablevid)
+            .join(ModuleVersion, ModuleVersion.modulevid == ModuleVersionComposition.modulevid)
             .filter(ModuleVersionComposition.modulevid.in_(module_vids))
             .distinct()
             .order_by(TableVersion.code)
         )
 
         result = []
-        for table in tables_query.all():
+        for table, module_vid, module_code, module_name, module_version in tables_query.all():
             result.append(TableVersionInfo(
                 table_vid=table.tablevid,
                 code=table.code or "",
                 name=table.name or "",
-                description=table.description or ""
+                description=table.description or "",
+                module_vid=module_vid,
+                module_code=module_code or "",
+                module_name=module_name or "",
+                module_version=module_version or ""
             ))
 
         return result
@@ -721,24 +761,35 @@ class OperationScopesAPI:
         if not module_vids:
             return []
 
-        # Query tables
+        # Query tables with module information
         from py_dpm.models import ModuleVersionComposition
 
         tables_query = (
-            self.session.query(TableVersion)
+            self.session.query(
+                TableVersion,
+                ModuleVersionComposition.modulevid,
+                ModuleVersion.code,
+                ModuleVersion.name,
+                ModuleVersion.versionnumber
+            )
             .join(ModuleVersionComposition, ModuleVersionComposition.tablevid == TableVersion.tablevid)
+            .join(ModuleVersion, ModuleVersion.modulevid == ModuleVersionComposition.modulevid)
             .filter(ModuleVersionComposition.modulevid.in_(module_vids))
             .distinct()
             .order_by(TableVersion.code)
         )
 
         result = []
-        for table in tables_query.all():
+        for table, module_vid, module_code, module_name, module_version in tables_query.all():
             result.append(TableVersionInfo(
                 table_vid=table.tablevid,
                 code=table.code or "",
                 name=table.name or "",
-                description=table.description or ""
+                description=table.description or "",
+                module_vid=module_vid,
+                module_code=module_code or "",
+                module_name=module_name or "",
+                module_version=module_version or ""
             ))
 
         return result
@@ -795,22 +846,25 @@ class OperationScopesAPI:
         if not table_vids:
             return []
 
-        # Query headers for these tables
+        # Query headers for these tables with table information
         headers_query = (
             self.session.query(
                 HeaderVersion,
                 TableVersionHeader.tablevid,
-                Header.direction
+                Header.direction,
+                TableVersion.code,
+                TableVersion.name
             )
             .join(TableVersionHeader, TableVersionHeader.headervid == HeaderVersion.headervid)
             .join(Header, Header.headerid == TableVersionHeader.headerid)
+            .join(TableVersion, TableVersion.tablevid == TableVersionHeader.tablevid)
             .filter(TableVersionHeader.tablevid.in_(table_vids))
             .order_by(TableVersionHeader.tablevid, HeaderVersion.code)
             .distinct()
         )
 
         result = []
-        for header_version, table_vid_val, direction in headers_query.all():
+        for header_version, table_vid_val, direction, table_code, table_name in headers_query.all():
             # Map direction to readable type (DPM uses X=Row, Y=Column, Z=Sheet)
             header_type_map = {'X': 'Row', 'Y': 'Column', 'Z': 'Sheet'}
             header_type = header_type_map.get(direction, direction or "Unknown")
@@ -820,7 +874,9 @@ class OperationScopesAPI:
                 code=header_version.code or "",
                 label=header_version.label or "",
                 header_type=header_type,
-                table_vid=table_vid_val
+                table_vid=table_vid_val,
+                table_code=table_code or "",
+                table_name=table_name or ""
             ))
 
         return result
@@ -883,22 +939,25 @@ class OperationScopesAPI:
         if not table_vids:
             return []
 
-        # Query headers
+        # Query headers with table information
         headers_query = (
             self.session.query(
                 HeaderVersion,
                 TableVersionHeader.tablevid,
-                Header.direction
+                Header.direction,
+                TableVersion.code,
+                TableVersion.name
             )
             .join(TableVersionHeader, TableVersionHeader.headervid == HeaderVersion.headervid)
             .join(Header, Header.headerid == TableVersionHeader.headerid)
+            .join(TableVersion, TableVersion.tablevid == TableVersionHeader.tablevid)
             .filter(TableVersionHeader.tablevid.in_(table_vids))
             .order_by(TableVersionHeader.tablevid, HeaderVersion.code)
             .distinct()
         )
 
         result = []
-        for header_version, table_vid_val, direction in headers_query.all():
+        for header_version, table_vid_val, direction, table_code, table_name in headers_query.all():
             # Map direction to readable type (DPM uses X=Row, Y=Column, Z=Sheet)
             header_type_map = {'X': 'Row', 'Y': 'Column', 'Z': 'Sheet'}
             header_type = header_type_map.get(direction, direction or "Unknown")
@@ -908,7 +967,120 @@ class OperationScopesAPI:
                 code=header_version.code or "",
                 label=header_version.label or "",
                 header_type=header_type,
-                table_vid=table_vid_val
+                table_vid=table_vid_val,
+                table_code=table_code or "",
+                table_name=table_name or ""
+            ))
+
+        return result
+
+    def get_frameworks_with_metadata(
+        self,
+        operation_version_id: int
+    ) -> List[FrameworkInfo]:
+        """
+        Get frameworks from operation scopes with metadata.
+
+        Args:
+            operation_version_id (int): Operation version ID
+
+        Returns:
+            List[FrameworkInfo]: List of frameworks with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> frameworks = api.get_frameworks_with_metadata(operation_version_id=1)
+            >>> for fw in frameworks:
+            ...     print(f"{fw.code}: {fw.name}")
+        """
+        scopes = self.get_existing_scopes(operation_version_id)
+
+        # Collect unique module VIDs
+        module_vids = set()
+        for scope in scopes:
+            for comp in scope.operation_scope_compositions:
+                module_vids.add(comp.modulevid)
+
+        if not module_vids:
+            return []
+
+        # Query frameworks via modules
+        frameworks_query = (
+            self.session.query(Framework)
+            .join(Module, Module.frameworkid == Framework.frameworkid)
+            .join(ModuleVersion, ModuleVersion.moduleid == Module.moduleid)
+            .filter(ModuleVersion.modulevid.in_(module_vids))
+            .distinct()
+            .order_by(Framework.code)
+        )
+
+        result = []
+        for framework in frameworks_query.all():
+            result.append(FrameworkInfo(
+                framework_id=framework.frameworkid,
+                code=framework.code or "",
+                name=framework.name or "",
+                description=framework.description or ""
+            ))
+
+        return result
+
+    def get_frameworks_with_metadata_from_expression(
+        self,
+        expression: str,
+        release_id: Optional[int] = None
+    ) -> List[FrameworkInfo]:
+        """
+        Get frameworks from expression with metadata.
+
+        Args:
+            expression (str): The DPM-XL expression to analyze
+            release_id (Optional[int]): Specific release ID to filter modules
+
+        Returns:
+            List[FrameworkInfo]: List of frameworks with metadata
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> frameworks = api.get_frameworks_with_metadata_from_expression(
+            ...     "{tC_01.00, r0100, c0010}"
+            ... )
+        """
+        # Calculate scopes in read-only mode
+        scope_result = self.calculate_scopes_from_expression(
+            expression=expression,
+            release_id=release_id,
+            read_only=True
+        )
+
+        if scope_result.has_error:
+            return []
+
+        # Collect module VIDs
+        module_vids = set(scope_result.module_versions)
+
+        if not module_vids:
+            return []
+
+        # Query frameworks via modules
+        frameworks_query = (
+            self.session.query(Framework)
+            .join(Module, Module.frameworkid == Framework.frameworkid)
+            .join(ModuleVersion, ModuleVersion.moduleid == Module.moduleid)
+            .filter(ModuleVersion.modulevid.in_(module_vids))
+            .distinct()
+            .order_by(Framework.code)
+        )
+
+        result = []
+        for framework in frameworks_query.all():
+            result.append(FrameworkInfo(
+                framework_id=framework.frameworkid,
+                code=framework.code or "",
+                name=framework.name or "",
+                description=framework.description or ""
             ))
 
         return result
