@@ -2,6 +2,7 @@ from typing import List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import date
 
+from sqlalchemy import and_, or_
 from antlr4 import CommonTokenStream, InputStream
 from py_dpm.grammar.dist.dpm_xlLexer import dpm_xlLexer
 from py_dpm.grammar.dist.dpm_xlParser import dpm_xlParser
@@ -173,12 +174,11 @@ class OperationScopesAPI:
 
         if connection_url:
             # Create isolated engine and session for the provided connection URL
-            from sqlalchemy import create_engine
             from sqlalchemy.orm import sessionmaker
+            from py_dpm.db_utils import create_engine_from_url
 
-            # Create engine for the connection URL (PostgreSQL, MySQL, etc.)
-            self.engine = create_engine(connection_url, pool_pre_ping=True,
-                                       pool_size=20, max_overflow=10, pool_recycle=180)
+            # Create engine for the connection URL (supports SQLite, PostgreSQL, MySQL, etc.)
+            self.engine = create_engine_from_url(connection_url)
             session_maker = sessionmaker(bind=self.engine)
             self.session = session_maker()
 
@@ -731,12 +731,15 @@ class OperationScopesAPI:
         """
         Get tables from expression with metadata.
 
+        This method parses the expression and returns ONLY the tables that are
+        actually referenced in the expression, not all tables from the modules.
+
         Args:
             expression (str): The DPM-XL expression to analyze
             release_id (Optional[int]): Specific release ID to filter modules
 
         Returns:
-            List[TableVersionInfo]: List of tables with metadata
+            List[TableVersionInfo]: List of tables referenced in the expression with metadata
 
         Example:
             >>> from py_dpm.api import OperationScopesAPI
@@ -744,55 +747,71 @@ class OperationScopesAPI:
             >>> tables = api.get_tables_with_metadata_from_expression(
             ...     "{tC_01.00, r0100, c0010} + {tC_02.00, r0200, c0020}"
             ... )
+            >>> # Returns only tables C_01.00 and C_02.00, not all module tables
         """
-        # Calculate scopes in read-only mode
-        scope_result = self.calculate_scopes_from_expression(
-            expression=expression,
-            release_id=release_id,
-            read_only=True
-        )
+        try:
+            # Parse expression to AST
+            input_stream = InputStream(expression)
+            lexer = dpm_xlLexer(input_stream)
+            lexer._listeners = [self.error_listener]
+            token_stream = CommonTokenStream(lexer)
 
-        if scope_result.has_error:
-            return []
+            parser = dpm_xlParser(token_stream)
+            parser._listeners = [self.error_listener]
+            parse_tree = parser.start()
 
-        # Collect module VIDs
-        module_vids = set(scope_result.module_versions)
+            if parser._syntaxErrors > 0:
+                return []
 
-        if not module_vids:
-            return []
+            # Generate AST
+            ast = self.visitor.visit(parse_tree)
 
-        # Query tables with module information
-        from py_dpm.models import ModuleVersionComposition
+            # Perform operands checking to get data
+            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
 
-        tables_query = (
-            self.session.query(
-                TableVersion,
-                ModuleVersionComposition.modulevid,
-                ModuleVersion.code,
-                ModuleVersion.name,
-                ModuleVersion.versionnumber
+            # Extract table VIDs referenced in the expression
+            table_vids, _, _ = self._extract_vids_from_ast(ast, oc.data, extract_codes=False)
+
+            if not table_vids:
+                return []
+
+            # Query only the specific tables referenced in the expression
+            from py_dpm.models import ModuleVersionComposition
+
+            tables_query = (
+                self.session.query(
+                    TableVersion,
+                    ModuleVersionComposition.modulevid,
+                    ModuleVersion.code,
+                    ModuleVersion.name,
+                    ModuleVersion.versionnumber
+                )
+                .join(ModuleVersionComposition, ModuleVersionComposition.tablevid == TableVersion.tablevid)
+                .join(ModuleVersion, ModuleVersion.modulevid == ModuleVersionComposition.modulevid)
+                .filter(TableVersion.tablevid.in_(table_vids))
+                .distinct()
+                .order_by(TableVersion.code)
             )
-            .join(ModuleVersionComposition, ModuleVersionComposition.tablevid == TableVersion.tablevid)
-            .join(ModuleVersion, ModuleVersion.modulevid == ModuleVersionComposition.modulevid)
-            .filter(ModuleVersionComposition.modulevid.in_(module_vids))
-            .distinct()
-            .order_by(TableVersion.code)
-        )
 
-        result = []
-        for table, module_vid, module_code, module_name, module_version in tables_query.all():
-            result.append(TableVersionInfo(
-                table_vid=table.tablevid,
-                code=table.code or "",
-                name=table.name or "",
-                description=table.description or "",
-                module_vid=module_vid,
-                module_code=module_code or "",
-                module_name=module_name or "",
-                module_version=module_version or ""
-            ))
+            result = []
+            for table, module_vid, module_code, module_name, module_version in tables_query.all():
+                result.append(TableVersionInfo(
+                    table_vid=table.tablevid,
+                    code=table.code or "",
+                    name=table.name or "",
+                    description=table.description or "",
+                    module_vid=module_vid,
+                    module_code=module_code or "",
+                    module_name=module_name or "",
+                    module_version=module_version or ""
+                ))
 
-        return result
+            return result
+
+        except SemanticError:
+            return []
+        except Exception:
+            return []
 
     def get_headers_with_metadata(
         self,
@@ -890,13 +909,17 @@ class OperationScopesAPI:
         """
         Get headers from expression with metadata.
 
+        This method parses the expression and returns ONLY the headers (rows, columns, sheets)
+        that are actually referenced in the expression, not all headers from the tables.
+        Wildcards (r*, c*, s*) are expanded to the actual header codes they reference.
+
         Args:
             expression (str): The DPM-XL expression to analyze
             table_vid (Optional[int]): Filter by specific table VID
             release_id (Optional[int]): Specific release ID to filter modules
 
         Returns:
-            List[HeaderVersionInfo]: List of headers with metadata
+            List[HeaderVersionInfo]: List of headers referenced in the expression with metadata
 
         Example:
             >>> from py_dpm.api import OperationScopesAPI
@@ -905,74 +928,128 @@ class OperationScopesAPI:
             ...     "{tC_01.00, r0100, c0010}",
             ...     table_vid=101
             ... )
+            >>> # Returns only headers r0100 and c0010, not all table headers
         """
-        # Calculate scopes in read-only mode
-        scope_result = self.calculate_scopes_from_expression(
-            expression=expression,
-            release_id=release_id,
-            read_only=True
-        )
+        try:
+            # Parse expression to AST
+            input_stream = InputStream(expression)
+            lexer = dpm_xlLexer(input_stream)
+            lexer._listeners = [self.error_listener]
+            token_stream = CommonTokenStream(lexer)
 
-        if scope_result.has_error:
-            return []
+            parser = dpm_xlParser(token_stream)
+            parser._listeners = [self.error_listener]
+            parse_tree = parser.start()
 
-        # Collect module VIDs
-        module_vids = set(scope_result.module_versions)
+            if parser._syntaxErrors > 0:
+                return []
 
-        if not module_vids:
-            return []
+            # Generate AST
+            ast = self.visitor.visit(parse_tree)
 
-        # Get table VIDs from modules
-        from py_dpm.models import ModuleVersionComposition, Header
+            # Perform operands checking to get data
+            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
 
-        table_vids_query = (
-            self.session.query(ModuleVersionComposition.tablevid)
-            .filter(ModuleVersionComposition.modulevid.in_(module_vids))
-            .distinct()
-        )
+            # Extract table VIDs referenced in the expression
+            table_vids, _, _ = self._extract_vids_from_ast(ast, oc.data, extract_codes=False)
 
-        if table_vid is not None:
-            table_vids_query = table_vids_query.filter(ModuleVersionComposition.tablevid == table_vid)
+            if not table_vids:
+                return []
 
-        table_vids = [row[0] for row in table_vids_query.all()]
+            # Apply table_vid filter if specified
+            if table_vid is not None:
+                table_vids = [vid for vid in table_vids if vid == table_vid]
+                if not table_vids:
+                    return []
 
-        if not table_vids:
-            return []
+            # Extract header codes from the data DataFrame
+            # oc.data contains the resolved codes (wildcards already expanded)
+            # IMPORTANT: The row_code, column_code, sheet_code in oc.data reflect how headers
+            # are USED in the expression syntax (r=Row, c=Column, s=Sheet), which may differ
+            # from the Header.direction field in the database (some tables may be transposed).
+            # We return headers based on their USAGE in the expression, not their catalog definition.
+            row_codes = set(oc.data['row_code'].dropna().unique().tolist())
+            column_codes = set(oc.data['column_code'].dropna().unique().tolist())
+            sheet_codes = set(oc.data['sheet_code'].dropna().unique().tolist())
 
-        # Query headers with table information
-        headers_query = (
-            self.session.query(
-                HeaderVersion,
-                TableVersionHeader.tablevid,
-                Header.direction,
-                TableVersion.code,
-                TableVersion.name
+            # Create mapping: code -> usage dimension(s) in the expression
+            # The same code might be used in multiple dimensions
+            code_usage = {}
+            for code in row_codes:
+                if code not in code_usage:
+                    code_usage[code] = set()
+                code_usage[code].add('Row')
+            for code in column_codes:
+                if code not in code_usage:
+                    code_usage[code] = set()
+                code_usage[code].add('Column')
+            for code in sheet_codes:
+                if code not in code_usage:
+                    code_usage[code] = set()
+                code_usage[code].add('Sheet')
+
+            if not code_usage:
+                return []
+
+            all_header_codes = set(code_usage.keys())
+
+            # Query headers - get all headers with matching codes
+            # Note: We don't filter by Header.direction because tables may be transposed
+            from py_dpm.models import Header
+
+            headers_query = (
+                self.session.query(
+                    HeaderVersion,
+                    TableVersionHeader.tablevid,
+                    Header.direction,
+                    TableVersion.code,
+                    TableVersion.name
+                )
+                .join(TableVersionHeader, TableVersionHeader.headervid == HeaderVersion.headervid)
+                .join(Header, Header.headerid == HeaderVersion.headerid)
+                .join(TableVersion, TableVersion.tablevid == TableVersionHeader.tablevid)
+                .filter(
+                    and_(
+                        TableVersionHeader.tablevid.in_(table_vids),
+                        HeaderVersion.code.in_(all_header_codes)
+                    )
+                )
+                .distinct()
             )
-            .join(TableVersionHeader, TableVersionHeader.headervid == HeaderVersion.headervid)
-            .join(Header, Header.headerid == TableVersionHeader.headerid)
-            .join(TableVersion, TableVersion.tablevid == TableVersionHeader.tablevid)
-            .filter(TableVersionHeader.tablevid.in_(table_vids))
-            .order_by(TableVersionHeader.tablevid, HeaderVersion.code)
-            .distinct()
-        )
 
-        result = []
-        for header_version, table_vid_val, direction, table_code, table_name in headers_query.all():
-            # Map direction to readable type (DPM uses X=Row, Y=Column, Z=Sheet)
-            header_type_map = {'X': 'Row', 'Y': 'Column', 'Z': 'Sheet'}
-            header_type = header_type_map.get(direction, direction or "Unknown")
+            result = []
+            seen = set()  # Track (code, usage_type, table_vid) to avoid duplicates
 
-            result.append(HeaderVersionInfo(
-                header_vid=header_version.headervid,
-                code=header_version.code or "",
-                label=header_version.label or "",
-                header_type=header_type,
-                table_vid=table_vid_val,
-                table_code=table_code or "",
-                table_name=table_name or ""
-            ))
+            for header_version, table_vid_val, direction, table_code, table_name in headers_query.all():
+                code = header_version.code or ""
 
-        return result
+                # For each usage dimension of this code in the expression
+                if code in code_usage:
+                    for usage_type in code_usage[code]:
+                        # Avoid duplicates
+                        key = (code, usage_type, table_vid_val)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+
+                        # Return header with usage type from expression, not catalog direction
+                        result.append(HeaderVersionInfo(
+                            header_vid=header_version.headervid,
+                            code=code,
+                            label=header_version.label or "",
+                            header_type=usage_type,  # Usage in expression: Row, Column, or Sheet
+                            table_vid=table_vid_val,
+                            table_code=table_code or "",
+                            table_name=table_name or ""
+                        ))
+                        break  # Only add each header once per code (we'll get multiple if used in multiple dims)
+
+            return result
+
+        except SemanticError:
+            return []
+        except Exception:
+            return []
 
     def get_frameworks_with_metadata(
         self,
