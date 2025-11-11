@@ -75,12 +75,11 @@ class DataDictionaryValidator:
         """
         if connection_url:
             # Create isolated engine and session for the provided connection URL
-            from sqlalchemy import create_engine
             from sqlalchemy.orm import sessionmaker
+            from py_dpm.db_utils import create_engine_from_url
 
-            # Create engine for the connection URL (PostgreSQL, MySQL, etc.)
-            self.engine = create_engine(connection_url, pool_pre_ping=True,
-                                       pool_size=20, max_overflow=10, pool_recycle=180)
+            # Create engine for the connection URL (supports SQLite, PostgreSQL, MySQL, etc.)
+            self.engine = create_engine_from_url(connection_url)
             session_maker = sessionmaker(bind=self.engine)
             self.session = session_maker()
         elif database_path:

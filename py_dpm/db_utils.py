@@ -50,6 +50,52 @@ connection = None
 sessionMakerObject = None
 
 
+def create_engine_from_url(connection_url):
+    """
+    Create SQLAlchemy engine from a connection URL with appropriate pooling parameters.
+
+    Detects database type from URL scheme and applies pooling parameters conditionally:
+    - SQLite: Only pool_pre_ping=True (no connection pooling)
+    - PostgreSQL/MySQL/others: Full connection pooling parameters
+
+    Also initializes the global sessionMakerObject for use by get_session().
+
+    Args:
+        connection_url (str): SQLAlchemy connection URL (e.g., 'sqlite:///path.db', 'postgresql://user:pass@host/db')
+
+    Returns:
+        sqlalchemy.engine.Engine: Configured database engine
+
+    Examples:
+        >>> engine = create_engine_from_url('sqlite:///database.db')
+        >>> engine = create_engine_from_url('postgresql://user:pass@localhost/mydb')
+    """
+    global engine, sessionMakerObject
+
+    # Detect database type from URL scheme
+    is_sqlite = connection_url.startswith('sqlite://')
+
+    if is_sqlite:
+        # SQLite doesn't support connection pooling
+        engine = create_engine(connection_url, pool_pre_ping=True)
+    else:
+        # Server-based databases (PostgreSQL, MySQL, etc.) with connection pooling
+        engine = create_engine(
+            connection_url,
+            pool_size=20,
+            max_overflow=10,
+            pool_recycle=180,
+            pool_pre_ping=True
+        )
+
+    # Initialize global sessionMakerObject
+    if sessionMakerObject is not None:
+        close_all_sessions()
+    sessionMakerObject = sessionmaker(bind=engine)
+
+    return engine
+
+
 def create_engine_object(url):
     global engine
     if use_sqlite:
@@ -90,7 +136,7 @@ def get_engine(owner=None, database_path=None, connection_url=None):
     """
     # Priority 1: If explicit connection URL is provided, use it directly
     if connection_url:
-        return create_engine_object(connection_url)
+        return create_engine_from_url(connection_url)
 
     # Priority 2: If explicit database_path is provided, use SQLite with that path
     if database_path:
