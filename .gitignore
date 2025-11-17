@@ -37,3 +37,5 @@ htmlcov/
 *.temp
 
 json_scripts/*
+
+docs/*
