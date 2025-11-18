@@ -98,14 +98,16 @@ def create_engine_from_url(connection_url):
 
 def create_engine_object(url):
     global engine
-    if use_sqlite:
+
+    # Convert URL to string for type detection if needed
+    url_str = str(url)
+
+    # Detect database type from URL scheme (not from environment variables)
+    is_sqlite = url_str.startswith('sqlite://')
+
+    if is_sqlite:
         engine = create_engine(url, pool_pre_ping=True)
-    elif use_postgres:
-        # PostgreSQL with connection pooling
-        engine = create_engine(url, pool_size=20, max_overflow=10,
-                               pool_recycle=180, pool_pre_ping=True)
     else:
-        # SQL Server with connection pooling
         engine = create_engine(url, pool_size=20, max_overflow=10,
                                pool_recycle=180, pool_pre_ping=True)
 
