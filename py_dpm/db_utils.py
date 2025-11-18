@@ -108,6 +108,7 @@ def create_engine_object(url):
     if is_sqlite:
         engine = create_engine(url, pool_pre_ping=True)
     else:
+        # Server-based databases (PostgreSQL, MySQL, SQL Server, etc.) with connection pooling
         engine = create_engine(url, pool_size=20, max_overflow=10,
                                pool_recycle=180, pool_pre_ping=True)
 

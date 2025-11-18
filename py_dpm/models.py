@@ -11,6 +11,23 @@ import pandas as pd
 
 Base = declarative_base()
 
+
+def _compile_query_for_pandas(query_statement, session):
+    """
+    Compile a SQLAlchemy query statement to a SQL string for pandas 2.x compatibility.
+
+    Args:
+        query_statement: SQLAlchemy query statement object
+        session: SQLAlchemy session
+
+    Returns:
+        str: Compiled SQL string with literal parameter bindings
+    """
+    return str(query_statement.compile(
+        dialect=session.get_bind().dialect,
+        compile_kwargs={"literal_binds": True}
+    ))
+
 class AuxCellmapping(Base):
     __tablename__ = "Aux_CellMapping"
 
@@ -1747,7 +1764,7 @@ class ViewDatapoints(Base):
         if release_id:
             query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
 
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
 
     @classmethod
@@ -1770,13 +1787,13 @@ class ViewDatapoints(Base):
         """Get the compiled SQL query for the datapoints view"""
         query = cls.create_view_query(session)
         return str(query.statement.compile(
-            dialect=session.bind.dialect,
+            dialect=session.connection().connection.dialect,
             compile_kwargs={"literal_binds": True}
         ))
     @classmethod
     def get_all_datapoints(cls, session):
         query = cls.create_view_query(session)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def get_table_data(cls, session, table, rows=None, columns=None, sheets=None, release_id=None):
@@ -1876,7 +1893,7 @@ class ViewDatapoints(Base):
         # This is critical for PostgreSQL where a cell can appear in multiple releases
         query = query.distinct()
 
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
         # BUGFIX: Remove duplicates based on cell_code
         # Even with .distinct(), the query can return duplicates when cells appear in multiple
@@ -1912,21 +1929,21 @@ class ViewDatapoints(Base):
         query = query.filter(Property.propertyid == property_id)
         query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
 
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def get_from_table_vid(cls, session, table_version_id):
         query = cls.create_view_query(session)
         query = query.filter(TableVersion.tablevid == table_version_id)
         query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id=None)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def get_from_table_code(cls, session, table_code, release_id=None):
         query = cls.create_view_query(session)
         query = query.filter(TableVersion.code == table_code)
         query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def get_from_table_vid_with_is_nullable(cls, session, table_version_id):
@@ -1951,7 +1968,7 @@ class ViewDatapoints(Base):
         ).distinct()
 
         query = query.filter(TableVersion.tablevid == table_version_id)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def get_from_subcategory_properties(cls, session, properties, release_id):
@@ -1980,7 +1997,7 @@ class ViewDatapoints(Base):
         ).distinct()
 
         query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def filter_by_context_and_property(cls, session, context, property_key, release_id):
@@ -2003,7 +2020,7 @@ class ViewDatapoints(Base):
             query = query.filter(Property.propertyid == property_key)
 
         query = filter_by_release(query, ModuleVersion.startreleaseid, ModuleVersion.endreleaseid, release_id)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 class ViewKeyComponents(Base):
     __tablename__ = "key_components"
 
@@ -2105,7 +2122,7 @@ class ViewKeyComponents(Base):
         query = query.distinct()
 
         # Execute and return as DataFrame
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return data
 
     @classmethod
@@ -2130,7 +2147,7 @@ class ViewKeyComponents(Base):
         # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
         query = query.distinct()
 
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return data
 
     @classmethod
@@ -2148,7 +2165,7 @@ class ViewKeyComponents(Base):
         # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
         query = query.distinct()
 
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
 class ViewOpenKeys(Base):
     __tablename__ = "open_keys"
@@ -2226,7 +2243,7 @@ class ViewOpenKeys(Base):
         # ItemCategory has composite PK (itemid, startreleaseid), so join on itemid creates duplicates
         query = query.distinct()
 
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return data
 
     @classmethod
@@ -2244,7 +2261,7 @@ class ViewOpenKeys(Base):
         # Add DISTINCT to eliminate duplicate rows from joins with composite PK tables
         query = query.distinct()
 
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return data
 
 class ViewDataTypes(Base):
@@ -2267,7 +2284,7 @@ class ViewDataTypes(Base):
             query = session.query(cls.datapoint, cls.data_type)
             query = filter_by_release(query, cls.start_release, cls.end_release, release_id)
             query = query.filter(cls.datapoint.in_(datapoints_batch))
-            results.append(pd.read_sql_query(query.statement, session.connection().connection))
+            results.append(pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection))
             batch_start += batch_size
 
         data = pd.concat(results, axis=0)
@@ -2294,7 +2311,7 @@ class ViewSubcategoryItemInfo(Base):
                               cls.comparison_symbol).filter(cls.subcategory_id == subcategory_id)
         query = filter_by_release(query, cls.start_release_id, cls.end_release_id, release_id)
         query = query.order_by(cls.ordering)
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return data
 
 class ViewHierarchyVariables(Base):
@@ -2316,7 +2333,7 @@ class ViewHierarchyVariables(Base):
                               cls.item_code).filter(
             cls.subcategory_id == subcategory_id)
         query = filter_by_release(query, cls.start_release_id, cls.end_release_id, release_id)
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return data
 
 class ViewHierarchyVariablesContext(Base):
@@ -2339,7 +2356,7 @@ class ViewHierarchyVariablesContext(Base):
             query = session.query(cls.variable_vid, cls.context_property_code, cls.item_code).filter(
                 cls.variable_vid.in_(variables_batch))
             query = filter_by_release(query, cls.start_release_id, cls.end_release_id, release_id)
-            results.append(pd.read_sql_query(query.statement, session.connection().connection))
+            results.append(pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection))
         data = pd.concat(results, axis=0)
         # Removing duplicates to avoid issues later with default values
         data = data.drop_duplicates(keep='first').reset_index(drop=True)
@@ -2355,7 +2372,7 @@ class ViewHierarchyPreconditions(Base):
     @classmethod
     def get_preconditions(cls, session):
         query = session.query(cls)
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
 class ViewOperations(Base):
     __tablename__ = "operation_list"
@@ -2370,7 +2387,7 @@ class ViewOperations(Base):
     @classmethod
     def get_operations(cls, session):
         query = session.query(cls).distinct()
-        operations = pd.read_sql_query(query.statement, session.connection().connection)
+        operations = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         return operations.to_dict(orient="records")
 
     @classmethod
@@ -2388,7 +2405,7 @@ class ViewOperations(Base):
         query = session.query(cls)
 
         query = query.filter(cls.operation_version_id.in_(preconditions_ids)).distinct()
-        preconditions = pd.read_sql_query(query.statement, session.connection().connection)
+        preconditions = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
         return preconditions.to_dict(orient="records")
 
@@ -2403,7 +2420,7 @@ class ViewModules(Base):
     @classmethod
     def get_all_modules(cls, session):
         query = session.query(cls.module_code, cls.table_code).distinct()
-        return pd.read_sql_query(query.statement, session.connection().connection)
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
     @classmethod
     def get_modules(cls, session, tables, release_id=None):
@@ -2436,13 +2453,13 @@ class ViewOperationFromModule(Base):
             cls.module_code, cls.from_date, cls.to_date, cls.expression, cls.operation_code, cls.operation_version_id)
         query = query.filter(cls.module_code == module_code)
         query = filter_by_date(query, cls.from_date, cls.to_date, ref_date)
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_module_version_id_from_operation_vid(cls, session, operation_version_id):
         query = session.query(cls.module_version_id, cls.module_code, cls.from_date, cls.to_date)
         query = query.filter(cls.operation_version_id == operation_version_id).distinct()
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_operations_from_moduleversion_id(cls, session, module_version_id, with_preconditions=True, with_errors=False):
@@ -2450,7 +2467,7 @@ class ViewOperationFromModule(Base):
             cls.module_code, cls.from_date, cls.to_date, cls.expression, cls.operation_code, cls.operation_version_id,
             cls.precondition_operation_version_id, cls.is_active, cls.severity)
         query = query.filter(cls.module_version_id == module_version_id).distinct()
-        reference = pd.read_sql_query(query.statement, session.connection().connection)
+        reference = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         not_errors = []
         preconditions_to_remove = []
         if not with_errors:
@@ -2492,7 +2509,7 @@ class ViewOperationInfo(Base):
     @classmethod
     def get_operation_info(cls, session, operation_version_id):
         query = session.query(cls).filter(cls.operation_version_id == operation_version_id)
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_operation_info_df(cls, session, operation_version_ids):
@@ -2515,7 +2532,7 @@ class ViewOperationInfo(Base):
             "variable_id": "VariableID"
         }
         query = session.query(cls).filter(cls.operation_version_id.in_(operation_version_ids))
-        df = pd.read_sql_query(query.statement, session.connection().connection)
+        df = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         df = df.rename(columns=rename_dict)
         return df
 
@@ -2533,17 +2550,17 @@ class ViewTableInfo(Base):
     @classmethod
     def get_tables_from_module_code(cls, session, module_code):
         query = session.query(cls.table_code, cls.table_version_id).filter(cls.module_code == module_code).distinct()
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_tables_from_module_version(cls, session, module_version_id):
         query = session.query(cls.table_code, cls.table_version_id).filter(cls.module_version_id == module_version_id).distinct()
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_variables_from_table_code(cls, session, table_code, to_dict=True):
         query = session.query(cls.variable_id, cls.variable_version_id).filter(cls.table_code == table_code)
-        data = pd.read_sql_query(query.statement, session.connection().connection)
+        data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         if to_dict:
             return data.to_dict(orient="records")
         return data
@@ -2551,12 +2568,12 @@ class ViewTableInfo(Base):
     @classmethod
     def get_variables_from_table_version(cls, session, table_version_id):
         query = session.query(cls.variable_id, cls.variable_version_id).filter(cls.table_version_id == table_version_id)
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_intra_module_variables(cls, session):
         query = session.query(cls.variable_version_id, cls.module_code).distinct()
-        module_data = pd.read_sql_query(query.statement, session.connection().connection)
+        module_data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         intra_module_data = module_data.drop_duplicates(subset=["variable_version_id"], keep=False,
                                                         ignore_index=True)
         del module_data
@@ -2567,7 +2584,7 @@ class ViewTableInfo(Base):
     @classmethod
     def is_intra_module(cls, session, table_codes):
         query = session.query(cls.table_code, cls.module_code).distinct().filter(cls.table_code.in_(table_codes))
-        module_data = pd.read_sql_query(query.statement, session.connection().connection)
+        module_data = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
 
         all_combinations = module_data.groupby("table_code")["module_code"].apply(list).reset_index(
             drop=False).to_dict(orient="records")
@@ -2597,7 +2614,7 @@ class ViewPreconditionInfo(Base):
     @classmethod
     def get_preconditions(cls, session):
         query = session.query(cls.operation_version_id, cls.operation_code, cls.variable_code).distinct()
-        return pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        return pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
 
     @classmethod
     def get_precondition_code(cls, session, variable_version_id):
@@ -2615,7 +2632,7 @@ class ViewHierarchyOperandReferenceInfo(Base):
     @classmethod
     def get_operations(cls, session, cell_id):
         query = session.query(cls.operation_code, cls.operation_node_id).filter(cls.cell_id == cell_id).distinct()
-        operations = pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        operations = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
         return operations
 
     @classmethod
@@ -2623,7 +2640,7 @@ class ViewHierarchyOperandReferenceInfo(Base):
         query = session.query(cls).filter(cls.variable_id.in_(var_id_list))
         possible_op_codes = []
 
-        df = pd.read_sql_query(query.statement, session.connection().connection)
+        df = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection)
         grouped_code = df.groupby("operation_code")
         for elto_k, elto_v in grouped_code.groups.items():
             if len(grouped_code.groups[elto_k]) == len(var_id_list):
@@ -2645,5 +2662,5 @@ class ViewReportTypeOperandReferenceInfo(Base):
     @classmethod
     def get_operations(cls, session, cell_id):
         query = session.query(cls.operation_code, cls.operation_node_id).filter(cls.cell_id == cell_id).distinct()
-        operations = pd.read_sql_query(query.statement, session.connection().connection).to_dict(orient="records")
+        operations = pd.read_sql(_compile_query_for_pandas(query.statement, session), session.connection().connection).to_dict(orient="records")
         return operations
