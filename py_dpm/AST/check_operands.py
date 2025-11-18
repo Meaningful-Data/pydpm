@@ -110,7 +110,7 @@ class OperandsChecking(ASTTemplate, ABC):
         codes = [f"{code!r}" for code in table_codes]
         query += f"WHERE tv.\"Code\" IN ({', '.join(codes)}) "
         query += "AND tv.\"EndReleaseID\" is null"
-        df_headers = pd.read_sql(query, self.session.connection())
+        df_headers = pd.read_sql(query, self.session.connection().connection)
         for table in table_codes:
             table_headers = df_headers[df_headers['Code'] == table]
             if table_headers.empty:
