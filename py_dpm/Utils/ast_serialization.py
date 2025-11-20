@@ -349,6 +349,52 @@ class ASTToJSONVisitor(NodeVisitor):
             'expression': self.visit(node.expression)
         }
 
+    def visit_GetOp(self, node):
+        """Visit GetOp nodes."""
+        return {
+            'class_name': 'GetOp',
+            'operand': self.visit(node.operand),
+            'component': node.component
+        }
+
+    def visit_WhereClauseOp(self, node):
+        """Visit WhereClauseOp nodes."""
+        return {
+            'class_name': 'WhereClauseOp',
+            'operand': self.visit(node.operand),
+            'condition': self.visit(node.condition)
+        }
+
+    def visit_FilterOp(self, node):
+        """Visit FilterOp nodes."""
+        return {
+            'class_name': 'FilterOp',
+            'selection': self.visit(node.selection),
+            'condition': self.visit(node.condition)
+        }
+
+    def visit_TimeShiftOp(self, node):
+        """Visit TimeShiftOp nodes."""
+        return {
+            'class_name': 'TimeShiftOp',
+            'operand': self.visit(node.operand),
+            'component': node.component,
+            'period_indicator': node.period_indicator,
+            'shift_number': node.shift_number
+        }
+
+    def visit_PreconditionItem(self, node):
+        """Visit PreconditionItem nodes."""
+        result = {
+            'class_name': 'PreconditionItem',
+            'variable_id': node.variable_id
+        }
+
+        if hasattr(node, 'variable_code') and node.variable_code is not None:
+            result['variable_code'] = node.variable_code
+
+        return result
+
     def visit_ConditionalOp(self, node):
         """Visit ConditionalOp nodes."""
         result = {
