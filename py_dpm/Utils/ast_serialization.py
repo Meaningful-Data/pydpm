@@ -373,6 +373,19 @@ class ASTToJSONVisitor(NodeVisitor):
             'condition': self.visit(node.condition)
         }
 
+    def visit_Dimension(self, node):
+        """Visit Dimension nodes (used in WHERE clauses)."""
+        result = {
+            'class_name': 'Dimension',
+            'dimension_code': node.dimension_code
+        }
+
+        # Include property_id if present
+        if hasattr(node, 'property_id') and node.property_id is not None:
+            result['property_id'] = node.property_id
+
+        return result
+
     def visit_TimeShiftOp(self, node):
         """Visit TimeShiftOp nodes."""
         return {
