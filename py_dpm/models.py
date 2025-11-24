@@ -8,6 +8,10 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import aliased, declarative_base, relationship
 from sqlalchemy import func
 import pandas as pd
+import warnings
+
+# Suppress pandas UserWarning about SQLAlchemy connection types
+warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*')
 
 Base = declarative_base()
 

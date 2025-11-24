@@ -1,6 +1,10 @@
 from abc import ABC
 
 import pandas as pd
+import warnings
+
+# Suppress pandas UserWarning about SQLAlchemy connection types
+warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*')
 
 from py_dpm.AST.ASTObjects import Dimension, OperationRef, PersistentAssignment, PreconditionItem, \
     Scalar, TemporaryAssignment, VarID, VarRef, WhereClauseOp, WithExpression
