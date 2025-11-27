@@ -692,7 +692,7 @@ def _extract_variables_from_ast(ast_dict: Dict[str, Any]) -> tuple:
                     # Extract variable IDs and data types from AST data array
                     for data_item in node['data']:
                         if 'datapoint' in data_item:
-                            var_id = str(data_item['datapoint'])
+                            var_id = str(int(data_item['datapoint']))
                             data_type = data_item.get('data_type', 'e')
                             variables_by_table[table][var_id] = data_type
                             all_variables[var_id] = data_type

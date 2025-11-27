@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 from py_dpm.db_utils import get_session, get_engine
 from py_dpm.models import (
     ViewDatapoints, TableVersion, ItemCategory, Cell, Property, DataType,
-    KeyComposition, VariableVersion, Category, PropertyCategory,
+    KeyComposition, VariableVersion, Variable, Category, PropertyCategory,
     ModuleVersion, ModuleVersionComposition, Release, Header, HeaderVersion,
-    TableVersionHeader
+    TableVersionHeader, TableVersionCell
 )
 
 
@@ -909,6 +909,69 @@ class DataDictionaryAPI:
             )
 
         return query.scalar() or 0
+
+    # ==================== Module and Table Query Methods ====================
+
+    def get_all_variables_for_table(self, table_vid: int) -> Dict[str, str]:
+        """
+        Get all variables for a table version.
+
+        Queries SOURCE_DB via TableVersionCell -> VariableVersion -> Variable
+        to get all variable IDs for a given table.
+
+        Args:
+            table_vid: Table version ID
+
+        Returns:
+            Dictionary mapping variable_id (str) to type_code (str)
+        """
+        query = self.session.query(
+            Variable.variableid,
+            Variable.type
+        ).select_from(TableVersionCell).join(
+            VariableVersion, TableVersionCell.variablevid == VariableVersion.variablevid
+        ).join(
+            Variable, VariableVersion.variableid == Variable.variableid
+        ).filter(
+            TableVersionCell.tablevid == table_vid
+        ).distinct()
+
+        results = query.all()
+        # IMPORTANT: Convert to int first to avoid ".0" suffix from potential float values
+        return {str(int(r.variableid)): r.type for r in results if r.type is not None}
+
+    def get_all_tables_for_module(self, module_vid: int) -> List[Dict[str, Any]]:
+        """
+        Get ALL tables belonging to a module version.
+
+        Queries SOURCE_DB via ModuleVersionComposition to find all tables
+        in a module, regardless of whether they're referenced in validations.
+
+        Args:
+            module_vid: Module version ID
+
+        Returns:
+            List of dicts with table_vid, table_code, table_name
+        """
+        query = self.session.query(
+            TableVersion.tablevid,
+            TableVersion.code,
+            TableVersion.name
+        ).select_from(ModuleVersionComposition).join(
+            TableVersion, ModuleVersionComposition.tablevid == TableVersion.tablevid
+        ).filter(
+            ModuleVersionComposition.modulevid == module_vid
+        ).distinct().order_by(TableVersion.code)
+
+        results = query.all()
+        return [
+            {
+                "table_vid": r.tablevid,
+                "table_code": r.code,
+                "table_name": r.name
+            }
+            for r in results
+        ]
 
     def __del__(self):
         """Clean up resources."""
