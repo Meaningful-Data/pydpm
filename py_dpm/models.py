@@ -2233,7 +2233,9 @@ class ViewOpenKeys(Base):
         query = cls.create_view_query(session)
 
         # Add column selections
+        # Include property_id (ItemID) for adam-engine Dimension resolution
         query = query.add_columns(
+            ItemCategory.itemid.label('property_id'),
             ItemCategory.code.label('property_code'),
             DataType.code.label('data_type')
         )

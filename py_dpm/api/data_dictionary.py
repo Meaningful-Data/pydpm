@@ -916,29 +916,34 @@ class DataDictionaryAPI:
         """
         Get all variables for a table version.
 
-        Queries SOURCE_DB via TableVersionCell -> VariableVersion -> Variable
-        to get all variable IDs for a given table.
+        Queries SOURCE_DB via TableVersionCell -> VariableVersion -> Property -> DataType
+        to get all variable IDs with their single-char type codes.
 
         Args:
             table_vid: Table version ID
 
         Returns:
             Dictionary mapping variable_id (str) to type_code (str)
+            Type codes are single characters from DataType.Code (e.g., 'm', 'e', 'b', 'p')
         """
         query = self.session.query(
             Variable.variableid,
-            Variable.type
+            DataType.code
         ).select_from(TableVersionCell).join(
             VariableVersion, TableVersionCell.variablevid == VariableVersion.variablevid
         ).join(
             Variable, VariableVersion.variableid == Variable.variableid
+        ).join(
+            Property, VariableVersion.propertyid == Property.propertyid
+        ).join(
+            DataType, Property.datatypeid == DataType.datatypeid
         ).filter(
             TableVersionCell.tablevid == table_vid
         ).distinct()
 
         results = query.all()
         # IMPORTANT: Convert to int first to avoid ".0" suffix from potential float values
-        return {str(int(r.variableid)): r.type for r in results if r.type is not None}
+        return {str(int(r.variableid)): r.code for r in results if r.code is not None}
 
     def get_all_tables_for_module(self, module_vid: int) -> List[Dict[str, Any]]:
         """

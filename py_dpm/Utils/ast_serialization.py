@@ -48,18 +48,6 @@ class ASTToJSONVisitor(NodeVisitor):
             'class_name': 'VarID'
         }
 
-        # Helper function to check if a value represents multiple items, ranges, or wildcards
-        def is_multi_range_or_wildcard(values):
-            if not isinstance(values, list):
-                return False
-            if len(values) != 1:
-                return len(values) > 1  # Multiple values
-            # Check if single value contains range syntax or wildcards
-            single_val = values[0]
-            if isinstance(single_val, str):
-                return '-' in single_val or single_val == '*'
-            return False
-
         # Apply context first, then override with node-specific values
         if self.with_context:
             # Handle simple context fields
@@ -85,17 +73,21 @@ class ASTToJSONVisitor(NodeVisitor):
                         else:
                             result[context_attr] = context_value
 
-            # Handle array context fields (rows, cols, sheets) - only convert to scalar if single value and not range
+            # Handle array context fields (rows, cols, sheets)
+            # Only convert to scalar if single non-wildcard value
             array_mappings = {'rows': 'row', 'cols': 'column', 'sheets': 'sheet'}
             for context_attr, result_key in array_mappings.items():
                 if hasattr(self.with_context, context_attr):
                     context_value = getattr(self.with_context, context_attr)
                     if context_value is not None:
-                        # Only create scalar field if it's a single non-range, non-wildcard value
-                        if isinstance(context_value, list) and len(context_value) == 1 and not is_multi_range_or_wildcard(context_value):
-                            result[result_key] = context_value[0]
-                        # For multi-value, range, or wildcard contexts, don't create scalar fields
-                        # The expected JSON has data field instead (handled by database layer)
+                        if isinstance(context_value, list):
+                            if len(context_value) == 1 and context_value[0] != '*':
+                                # Single value (not wildcard) - use scalar field
+                                result[result_key] = context_value[0]
+                            # Multiple values or wildcard - don't emit scalar field
+                        elif isinstance(context_value, str) and context_value != '*':
+                            # Already a scalar string (not wildcard)
+                            result[result_key] = context_value
 
         # Override with node-specific values using same logic
         node_array_mappings = {'rows': 'row', 'cols': 'column', 'sheets': 'sheet'}
@@ -139,13 +131,27 @@ class ASTToJSONVisitor(NodeVisitor):
                         result[node_attr] = node_value
 
         # Handle array node fields
+        # NOTE: After range expansion in check_operands.py, ranges like '0010-0080' are expanded
+        # to actual codes ['0010', '0020', ...]. We only emit scalar fields for single values.
+        # Multiple values are handled via the data field, not as list-type row/column/sheet.
         for node_attr, result_key in node_array_mappings.items():
             if hasattr(node, node_attr):
                 node_value = getattr(node, node_attr)
                 if node_value is not None:
-                    # Only create scalar field if it's a single non-range, non-wildcard value
-                    if isinstance(node_value, list) and len(node_value) == 1 and not is_multi_range_or_wildcard(node_value):
-                        result[result_key] = node_value[0]
+                    # Check if this is a single non-wildcard value
+                    if isinstance(node_value, list):
+                        if len(node_value) == 1 and node_value[0] != '*':
+                            # Single value (not wildcard) - use scalar field
+                            result[result_key] = node_value[0]
+                        else:
+                            # Multiple values or wildcard - remove scalar field if set by context
+                            # This happens when context had a range like '0010-0080' which was
+                            # expanded to ['0010', '0020', ...] in the node
+                            result.pop(result_key, None)
+                        # The data field will contain the individual entries
+                    elif isinstance(node_value, str) and node_value != '*':
+                        # Already a scalar string (not wildcard)
+                        result[result_key] = node_value
 
         # Handle data field if present (contains datapoint and operand_reference_id)
         if hasattr(node, 'data') and node.data is not None:
@@ -186,8 +192,17 @@ class ASTToJSONVisitor(NodeVisitor):
 
                 rows = list(entries_by_row.keys())
 
-                # Build column order if not in context (for wildcard expansion)
-                if not context_cols:
+                # Helper function to detect range syntax (e.g., '0010-0080')
+                def _has_range_syntax(values):
+                    if not values or not isinstance(values, list):
+                        return False
+                    return any('-' in str(v) for v in values if v and v != '*')
+
+                # Build column order from data if:
+                # - context_cols is empty OR
+                # - context_cols contains range syntax (e.g., ['0010-0080'])
+                # Range syntax means we need actual column codes from data for coordinate calculation
+                if not context_cols or _has_range_syntax(context_cols):
                     # Extract unique columns from data in order
                     context_cols = []
                     seen_cols = set()
@@ -205,10 +220,11 @@ class ASTToJSONVisitor(NodeVisitor):
                         transformed_record = {}
 
                         # Core fields (always present)
+                        # Convert to int to avoid float values from database (e.g., 149633.0 -> 149633)
                         if 'variable_id' in record and record['variable_id'] is not None:
-                            transformed_record['datapoint'] = record['variable_id']
+                            transformed_record['datapoint'] = int(record['variable_id'])
                         if 'cell_id' in record and record['cell_id'] is not None:
-                            transformed_record['operand_reference_id'] = record['cell_id']
+                            transformed_record['operand_reference_id'] = int(record['cell_id'])
 
                         # Check if data type is scalar (no x/y/z coordinates)
                         # Scalar types: b (boolean), s (string), e (enumeration/item)
@@ -248,7 +264,7 @@ class ASTToJSONVisitor(NodeVisitor):
                         if 'table_code' in record and record['table_code'] is not None:
                             transformed_record['table_code'] = record['table_code']
                         if 'table_vid' in record and record['table_vid'] is not None:
-                            transformed_record['table_vid'] = record['table_vid']
+                            transformed_record['table_vid'] = int(record['table_vid'])
 
                         transformed_data.append(transformed_record)
 
@@ -286,7 +302,9 @@ class ASTToJSONVisitor(NodeVisitor):
                         'z': 'sheet'
                     }
 
-                    # Add dimension codes for variable coordinates
+                    # Add dimension codes to each data entry
+                    # IMPORTANT: adam-engine requires BOTH row AND column in every data item
+                    # We add all dimension codes (row, column, sheet) when they exist in the original record
                     # We need to match each transformed record back to its original record
                     record_index = 0
                     for x_index, row_code in enumerate(rows, 1):
@@ -294,8 +312,9 @@ class ASTToJSONVisitor(NodeVisitor):
                             if record_index < len(transformed_data):
                                 transformed_record = transformed_data[record_index]
 
-                                # Add dimension codes for variable coordinates
-                                for coord in variable_coords:
+                                # Add ALL dimension codes (row, column, sheet) to every data item
+                                # This is required by adam-engine even when the coordinate is common
+                                for coord in ['x', 'y', 'z']:
                                     dimension_field = coord_to_dimension[coord]
                                     output_field = coord_to_field[coord]
 
@@ -351,11 +370,17 @@ class ASTToJSONVisitor(NodeVisitor):
 
     def visit_GetOp(self, node):
         """Visit GetOp nodes."""
-        return {
+        result = {
             'class_name': 'GetOp',
             'operand': self.visit(node.operand),
             'component': node.component
         }
+
+        # Include property_id if present (required by adam-engine)
+        if hasattr(node, 'property_id') and node.property_id is not None:
+            result['property_id'] = node.property_id
+
+        return result
 
     def visit_WhereClauseOp(self, node):
         """Visit WhereClauseOp nodes."""
@@ -575,7 +600,7 @@ def apply_partial_selection(expression, partial_selection):
         new_varid = ASTObjects.VarID(
             table=partial_selection.table if expression.table is None else expression.table,
             rows=partial_selection.rows if expression.rows is None else expression.rows,
-            cols=expression.cols,  # Keep the original cols from the expression
+            cols=partial_selection.cols if expression.cols is None else expression.cols,
             sheets=partial_selection.sheets if expression.sheets is None else expression.sheets,
             interval=partial_selection.interval if expression.interval is None else expression.interval,
             default=partial_selection.default if expression.default is None else expression.default,
