@@ -217,9 +217,6 @@ class OperandsChecking(ASTTemplate, ABC):
         from py_dpm.models import _compile_query_for_pandas
 
         compiled_query = _compile_query_for_pandas(query.statement, self.session)
-        print(
-            f"[DEBUG] check_headers SQL query (release_id={self.release_id}):\n{compiled_query}\n"
-        )
         df_headers = pd.read_sql(compiled_query, self.session.connection().connection)
 
         for table in table_codes:
