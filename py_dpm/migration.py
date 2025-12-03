@@ -1,4 +1,5 @@
 import subprocess
+import sqlite3
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -195,19 +196,22 @@ def migrate_to_sqlite(data, sqlite_db_path):
     """Migrate data to SQLite"""
     engine = create_engine(f"sqlite:///{sqlite_db_path}")
 
-    # Create all tables defined in the models, but exclude 'datapoints' 
+    # Create all tables defined in the models, but exclude 'datapoints'
     # which should be created as a view, not a table
-    tables_to_create = [table for table in Base.metadata.sorted_tables 
+    tables_to_create = [table for table in Base.metadata.sorted_tables
                         if table.name != 'datapoints']
     Base.metadata.create_all(engine, tables=tables_to_create)
 
-    for table_name, df in data.items():
-        df.to_sql(
-            table_name.replace(" ", "_"), # Sanitize table names
-            engine,
-            if_exists="replace",
-            index=False
-        )
+    # Use raw sqlite3 connection for pandas 2.2+ compatibility
+    # (pandas 2.2+ requires cursor() method which SQLAlchemy connections don't have)
+    with sqlite3.connect(sqlite_db_path) as raw_conn:
+        for table_name, df in data.items():
+            df.to_sql(
+                table_name.replace(" ", "_"),  # Sanitize table names
+                raw_conn,
+                if_exists="replace",
+                index=False
+            )
     return engine
 
 def create_datapoints_view(engine):
@@ -354,18 +358,6 @@ def run_migration(file_name, sqlite_db_path):
         # Migrate to SQLite
         print("Migrating data to SQLite...")
         engine = migrate_to_sqlite(data, sqlite_db_path)
-
-        # Create the datapoints view
-        print("Creating datapoints view...")
-        create_datapoints_view(engine)
-
-        # Create the key_components view
-        print("Creating key_components view...")
-        create_key_components_view(engine)
-
-        # Create the open_keys view
-        print("Creating open_keys view...")
-        create_open_keys_view(engine)
 
         print("Migration complete")
         return engine

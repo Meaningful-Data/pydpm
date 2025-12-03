@@ -236,10 +236,17 @@ class SemanticAPI:
     
     def __del__(self):
         """Clean up resources."""
-        if hasattr(self, 'session'):
-            self.session.close()
-        if hasattr(self, 'engine') and self.engine is not None:
-            self.engine.dispose()
+        try:
+            if hasattr(self, 'session') and self.session:
+                self.session.close()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, 'engine') and self.engine is not None:
+                self.engine.dispose()
+        except Exception:
+            pass
 
 
 # Convenience functions for direct usage

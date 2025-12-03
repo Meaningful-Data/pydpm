@@ -1,8 +1,12 @@
 from abc import ABC
 
 import pandas as pd
+import warnings
 
-from py_dpm.AST.ASTObjects import Dimension, OperationRef, PersistentAssignment, PreconditionItem, \
+# Suppress pandas UserWarning about SQLAlchemy connection types
+warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*')
+
+from py_dpm.AST.ASTObjects import Dimension, GetOp, OperationRef, PersistentAssignment, PreconditionItem, \
     Scalar, TemporaryAssignment, VarID, VarRef, WhereClauseOp, WithExpression
 from py_dpm.AST.ASTTemplate import ASTTemplate
 from py_dpm.AST.WhereClauseChecker import WhereClauseChecker
@@ -56,6 +60,53 @@ def format_missing_data(node):
     raise exceptions.SemanticError("1-2", cell_expression=cell_exp)
 
 
+def _has_range_syntax(values):
+    """Check if a list of values contains range syntax (e.g., '0010-0080')."""
+    if not values or not isinstance(values, list):
+        return False
+    return any('-' in str(v) for v in values if v and v != '*')
+
+
+def _expand_ranges_from_data(node, node_data):
+    """
+    Expand range-type values in VarID node's rows/cols/sheets to actual codes from the database.
+
+    When a VarID has range syntax like ['0010-0080'], this function replaces it with
+    the actual codes found in node_data (e.g., ['0010', '0020', '0030', ...]).
+
+    This ensures adam-engine receives scalar values in the JSON output instead of
+    list-type ranges which it cannot parse.
+
+    Args:
+        node: VarID AST node with rows, cols, sheets attributes
+        node_data: DataFrame containing the actual cell data with row_code, column_code, sheet_code
+    """
+    if node_data is None or node_data.empty:
+        return
+
+    # Expand rows if they contain range syntax
+    if _has_range_syntax(node.rows):
+        actual_rows = node_data['row_code'].dropna().unique().tolist()
+        if actual_rows:
+            # Sort to maintain consistent ordering
+            actual_rows = sorted(actual_rows)
+            node.rows = actual_rows
+
+    # Expand cols if they contain range syntax
+    if _has_range_syntax(node.cols):
+        actual_cols = node_data['column_code'].dropna().unique().tolist()
+        if actual_cols:
+            actual_cols = sorted(actual_cols)
+            node.cols = actual_cols
+
+    # Expand sheets if they contain range syntax
+    if _has_range_syntax(node.sheets):
+        actual_sheets = node_data['sheet_code'].dropna().unique().tolist()
+        if actual_sheets:
+            actual_sheets = sorted(actual_sheets)
+            node.sheets = actual_sheets
+
+
 class OperandsChecking(ASTTemplate, ABC):
     def __init__(self, session, expression, ast, release_id, is_scripting=False):
         self.expression = expression
@@ -69,7 +120,10 @@ class OperandsChecking(ASTTemplate, ABC):
         self.items = []
         self.preconditions = False
         self.dimension_codes = []
+        self.dimension_nodes = []  # Store references to Dimension nodes for property_id enrichment
         self.open_keys = None
+        self.getop_components = []  # Store GetOp component codes for property_id lookup
+        self.getop_nodes = []  # Store references to GetOp nodes for property_id enrichment
 
         self.operations = []
         self.operations_data = None
@@ -83,6 +137,7 @@ class OperandsChecking(ASTTemplate, ABC):
         self.check_items()
         self.check_tables()
         self.check_dimensions()
+        self.check_getop_components()
 
         self.check_operations()
 
@@ -110,7 +165,7 @@ class OperandsChecking(ASTTemplate, ABC):
         codes = [f"{code!r}" for code in table_codes]
         query += f"WHERE tv.\"Code\" IN ({', '.join(codes)}) "
         query += "AND tv.\"EndReleaseID\" is null"
-        df_headers = pd.read_sql(query, self.session.connection())
+        df_headers = pd.read_sql(query, self.session.connection().connection)
         for table in table_codes:
             table_headers = df_headers[df_headers['Code'] == table]
             if table_headers.empty:
@@ -141,6 +196,40 @@ class OperandsChecking(ASTTemplate, ABC):
         if len(self.open_keys) < len(self.dimension_codes):
             not_found_dimensions = list(set(self.dimension_codes).difference(self.open_keys['property_code']))
             raise exceptions.SemanticError("1-5", open_keys=not_found_dimensions)
+
+        # Enrich Dimension nodes with property_id from open_keys
+        # This is required by adam-engine for WHERE clause resolution
+        if self.open_keys is not None and not self.open_keys.empty:
+            # Create a mapping from dimension_code to property_id
+            property_id_map = dict(zip(self.open_keys['property_code'], self.open_keys['property_id']))
+            for node in self.dimension_nodes:
+                if node.dimension_code in property_id_map:
+                    node.property_id = int(property_id_map[node.dimension_code])
+
+    def check_getop_components(self):
+        """Check and enrich GetOp nodes with property_id for their component codes.
+
+        GetOp components (like qEGS, qLGS) are property codes that need to be
+        resolved to property_id for adam-engine to process them correctly.
+        """
+        if len(self.getop_components) == 0:
+            return
+
+        # Query property_ids for GetOp components (same query as dimensions)
+        getop_keys = ViewOpenKeys.get_keys(self.session, self.getop_components, self.release_id)
+
+        if len(getop_keys) < len(self.getop_components):
+            not_found_components = list(set(self.getop_components).difference(getop_keys['property_code']))
+            raise exceptions.SemanticError("1-5", open_keys=not_found_components)
+
+        # Enrich GetOp nodes with property_id
+        # This is required by adam-engine for [get ...] operations
+        if getop_keys is not None and not getop_keys.empty:
+            # Create a mapping from component code to property_id
+            property_id_map = dict(zip(getop_keys['property_code'], getop_keys['property_id']))
+            for node in self.getop_nodes:
+                if node.component in property_id_map:
+                    node.property_id = int(property_id_map[node.component])
 
     def check_tables(self):
         for table, value in self.tables.items():
@@ -188,7 +277,14 @@ class OperandsChecking(ASTTemplate, ABC):
                         # Only raise error if rows are truly not needed
                         raise SemanticError("1-19")
                     # else: r* is required even though row_code is NULL, so allow it
-            del node_data
+
+                # Attach node_data to the VarID node for later serialization
+                # This enables the JSON serializer to output actual cell data
+                node.data = node_data
+
+                # Expand range-type values in rows/cols/sheets to actual codes from the database
+                # This ensures adam-engine receives scalar values, not list-type ranges
+                _expand_ranges_from_data(node, node_data)
 
             # Adding data to self.data
             if self.data is None:
@@ -238,6 +334,15 @@ class OperandsChecking(ASTTemplate, ABC):
     def visit_Dimension(self, node: Dimension):
         if node.dimension_code not in self.dimension_codes:
             self.dimension_codes.append(node.dimension_code)
+        # Store reference to node for property_id enrichment
+        self.dimension_nodes.append(node)
+
+    def visit_GetOp(self, node: GetOp):
+        """Visit GetOp nodes to collect component codes for property_id lookup."""
+        if node.component not in self.getop_components:
+            self.getop_components.append(node.component)
+        # Store reference to node for property_id enrichment
+        self.getop_nodes.append(node)
 
     def visit_VarRef(self, node: VarRef):
         if not VariableVersion.check_variable_exists(self.session, node.variable, self.release_id):
