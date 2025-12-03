@@ -41,7 +41,7 @@ Available packages:
 - pydpm.api: Main APIs for migration, syntax, and semantic analysis
 """
 
-__version__ = "0.1.39rc22"
+__version__ = "0.1.39rc23"
 __author__ = "MeaningfulData S.L."
 __email__ = "info@meaningfuldata.eu"
 __license__ = "GPL-3.0-or-later"
@@ -52,10 +52,4 @@ from py_dpm import api
 # Import main classes for direct usage
 from py_dpm.api import MigrationAPI, SyntaxAPI, SemanticAPI
 
-__all__ = [
-    'api',
-    'MigrationAPI',
-    'SyntaxAPI',
-    'SemanticAPI',
-    '__version__'
-]
+__all__ = ["api", "MigrationAPI", "SyntaxAPI", "SemanticAPI", "__version__"]
