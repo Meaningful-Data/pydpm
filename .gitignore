@@ -39,3 +39,4 @@ htmlcov/
 json_scripts/*
 
 docs/*
+development.py
