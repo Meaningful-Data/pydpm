@@ -433,6 +433,8 @@ class OperandsChecking(ASTTemplate, ABC):
             self.getop_components.append(node.component)
         # Store reference to node for property_id enrichment
         self.getop_nodes.append(node)
+        # Visit the operand to ensure it gets processed (e.g., VarID nodes inside GetOp)
+        self.visit(node.operand)
 
     def visit_VarRef(self, node: VarRef):
         if not VariableVersion.check_variable_exists(

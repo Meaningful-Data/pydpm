@@ -9,9 +9,16 @@ from rich.console import Console
 
 console = Console()
 
+# Try to load .env from multiple locations
+# 1. First try py_dpm/.env (same directory as this file)
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 if os.path.exists(env_path):
     load_dotenv(env_path)
+else:
+    # 2. Try project root .env (one directory up from py_dpm)
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
 
 # SQLite configuration
 sqlite_db_path = os.getenv("SQLITE_DB_PATH", "database.db")

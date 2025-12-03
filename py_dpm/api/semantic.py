@@ -17,7 +17,7 @@ from py_dpm.Exceptions.exceptions import SemanticError
 class SemanticValidationResult:
     """
     Result of semantic validation.
-    
+
     Attributes:
         is_valid (bool): Whether the semantic validation passed
         error_message (Optional[str]): Error message if validation failed
@@ -26,6 +26,7 @@ class SemanticValidationResult:
         validation_type (str): Type of validation performed
         results (Optional[Any]): Additional results from semantic analysis
     """
+
     is_valid: bool
     error_message: Optional[str]
     error_code: Optional[str]
@@ -42,7 +43,9 @@ class SemanticAPI:
     including operand checking, data type validation, and structure validation.
     """
 
-    def __init__(self, database_path: Optional[str] = None, connection_url: Optional[str] = None):
+    def __init__(
+        self, database_path: Optional[str] = None, connection_url: Optional[str] = None
+    ):
         """
         Initialize the Semantic API.
 
@@ -88,8 +91,10 @@ class SemanticAPI:
 
         self.error_listener = DPMErrorListener()
         self.visitor = ASTVisitor()
-    
-    def validate_expression(self, expression: str, release_id: Optional[int] = None) -> SemanticValidationResult:
+
+    def validate_expression(
+        self, expression: str, release_id: Optional[int] = None
+    ) -> SemanticValidationResult:
         """
         Perform semantic validation on a DPM-XL expression.
 
@@ -131,14 +136,19 @@ class SemanticAPI:
                     error_message="Syntax errors detected",
                     error_code="SYNTAX_ERROR",
                     expression=expression,
-                    validation_type="SEMANTIC"
+                    validation_type="SEMANTIC",
                 )
 
             # Generate AST
             ast = self.visitor.visit(parse_tree)
 
             # Perform semantic analysis
-            oc = OperandsChecking(session=self.session, expression=expression, ast=ast, release_id=release_id)
+            oc = OperandsChecking(
+                session=self.session,
+                expression=expression,
+                ast=ast,
+                release_id=release_id,
+            )
             semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
             semanticAnalysis.data = oc.data
@@ -154,16 +164,16 @@ class SemanticAPI:
                 error_code=None,
                 expression=expression,
                 validation_type="SEMANTIC",
-                results=results
+                results=results,
             )
 
         except SemanticError as e:
             return SemanticValidationResult(
                 is_valid=False,
                 error_message=str(e),
-                error_code=getattr(e, 'code', None),
+                error_code=getattr(e, "code", None),
                 expression=expression,
-                validation_type="SEMANTIC"
+                validation_type="SEMANTIC",
             )
         except Exception as e:
             return SemanticValidationResult(
@@ -171,10 +181,12 @@ class SemanticAPI:
                 error_message=str(e),
                 error_code="UNKNOWN",
                 expression=expression,
-                validation_type="SEMANTIC"
+                validation_type="SEMANTIC",
             )
-    
-    def analyze_expression(self, expression: str, release_id: Optional[int] = None) -> Dict[str, Any]:
+
+    def analyze_expression(
+        self, expression: str, release_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
         Perform detailed semantic analysis on a DPM-XL expression.
 
@@ -197,22 +209,28 @@ class SemanticAPI:
             >>> analysis = semantic.analyze_expression("{tC_01.00, r0100, c0010}", release_id=5)
         """
         result = self.validate_expression(expression, release_id=release_id)
-        
+
         if not result.is_valid:
             raise Exception(f"Semantic analysis failed: {result.error_message}")
-        
+
         # Extract additional analysis information
         analysis = {
-            'expression': expression,
-            'is_valid': True,
-            'results': result.results,
-            'data_types': getattr(result.results, 'type', None) if result.results else None,
-            'components': getattr(result.results, 'components', None) if result.results else None
+            "expression": expression,
+            "is_valid": True,
+            "results": result.results,
+            "data_types": (
+                getattr(result.results, "type", None) if result.results else None
+            ),
+            "components": (
+                getattr(result.results, "components", None) if result.results else None
+            ),
         }
-        
+
         return analysis
-    
-    def is_valid_semantics(self, expression: str, release_id: Optional[int] = None) -> bool:
+
+    def is_valid_semantics(
+        self, expression: str, release_id: Optional[int] = None
+    ) -> bool:
         """
         Quick check if expression has valid semantics.
 
@@ -233,25 +251,29 @@ class SemanticAPI:
         """
         result = self.validate_expression(expression, release_id=release_id)
         return result.is_valid
-    
+
     def __del__(self):
         """Clean up resources."""
         try:
-            if hasattr(self, 'session') and self.session:
+            if hasattr(self, "session") and self.session:
                 self.session.close()
         except Exception:
             pass
 
         try:
-            if hasattr(self, 'engine') and self.engine is not None:
+            if hasattr(self, "engine") and self.engine is not None:
                 self.engine.dispose()
         except Exception:
             pass
 
 
 # Convenience functions for direct usage
-def validate_expression(expression: str, database_path: Optional[str] = None,
-                       connection_url: Optional[str] = None, release_id: Optional[int] = None) -> SemanticValidationResult:
+def validate_expression(
+    expression: str,
+    database_path: Optional[str] = None,
+    connection_url: Optional[str] = None,
+    release_id: Optional[int] = None,
+) -> SemanticValidationResult:
     """
     Convenience function to validate DPM-XL expression semantics.
 
@@ -278,8 +300,12 @@ def validate_expression(expression: str, database_path: Optional[str] = None,
     return api.validate_expression(expression, release_id=release_id)
 
 
-def is_valid_semantics(expression: str, database_path: Optional[str] = None,
-                      connection_url: Optional[str] = None, release_id: Optional[int] = None) -> bool:
+def is_valid_semantics(
+    expression: str,
+    database_path: Optional[str] = None,
+    connection_url: Optional[str] = None,
+    release_id: Optional[int] = None,
+) -> bool:
     """
     Convenience function to check if expression has valid semantics.
 

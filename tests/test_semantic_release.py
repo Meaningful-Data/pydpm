@@ -198,3 +198,27 @@ def test_EGDQ_0455a_11_release_5():
     assert (
         result.is_valid
     ), f"EGDQ_0455a_11 failed for release_id=5: {result.error_message}"
+
+
+def test_item_versioning_release_3():
+    """Test item versioning expression validation for release_id=3 (Should be INVALID)"""
+    expression = """
+with {tF_40.01}:
+    if {c0095} = [eba_CT:x12] and {c0130} = [eba_RP:x1]
+    then {tF_40.01, c0095}[get qCIN] = [eba_qCO:qx2010] endif
+"""
+    result = validate_expression(expression, release_id=3)
+    assert not result.is_valid, f"Expected invalid for release_id=3, but it was valid"
+
+
+def test_item_versioning_release_5():
+    """Test item versioning expression validation for release_id=5 (Should be VALID)"""
+    expression = """
+with {tF_40.01}:
+    if {c0095} = [eba_CT:x12] and {c0130} = [eba_RP:x1]
+    then {tF_40.01, c0095}[get qCIN] = [eba_qCO:qx2010] endif
+"""
+    result = validate_expression(expression, release_id=5)
+    assert (
+        result.is_valid
+    ), f"Expected valid for release_id=5, but got error: {result.error_message}"

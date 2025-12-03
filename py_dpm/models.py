@@ -509,9 +509,6 @@ class ItemCategory(Base):
             query = query.filter(cls.endreleaseid.is_(None))
 
         # Execute query and convert to DataFrame
-        ## DEBUG - TO UNDO
-        compiled_query = _compile_query_for_pandas(query.statement, session)
-        print(f"SQL Query: {compiled_query}")
         result = query.all()
         if result:
             return pd.DataFrame(
