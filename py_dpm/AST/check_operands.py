@@ -429,6 +429,8 @@ class OperandsChecking(ASTTemplate, ABC):
 
     def visit_GetOp(self, node: GetOp):
         """Visit GetOp nodes to collect component codes for property_id lookup."""
+        # Visit the operand first to ensure it's properly validated
+        self.visit(node.operand)
         if node.component not in self.getop_components:
             self.getop_components.append(node.component)
         # Store reference to node for property_id enrichment
