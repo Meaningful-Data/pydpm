@@ -190,7 +190,8 @@ class ASTToJSONVisitor(NodeVisitor):
                         entries_by_row[row_code] = []
                     entries_by_row[row_code].append(record)
 
-                rows = list(entries_by_row.keys())
+                # Sort rows to ensure consistent numerical ordering for x-coordinate calculation
+                rows = sorted(entries_by_row.keys())
 
                 # Helper function to detect range syntax (e.g., '0010-0080')
                 def _has_range_syntax(values):
@@ -211,6 +212,8 @@ class ASTToJSONVisitor(NodeVisitor):
                         if col and col not in seen_cols:
                             context_cols.append(col)
                             seen_cols.add(col)
+                    # Sort to ensure consistent numerical ordering for y-coordinate calculation
+                    context_cols.sort()
 
                 # Transform the data to match expected JSON structure
                 transformed_data = []
