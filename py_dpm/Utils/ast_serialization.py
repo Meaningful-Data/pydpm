@@ -215,6 +215,17 @@ class ASTToJSONVisitor(NodeVisitor):
                     # Sort to ensure consistent numerical ordering for y-coordinate calculation
                     context_cols.sort()
 
+                # Build sheet order from data for z-coordinate calculation
+                # Extract unique sheets and sort them for consistent ordering
+                context_sheets = []
+                seen_sheets = set()
+                for record in data_records:
+                    sheet = record.get('sheet_code', '')
+                    if sheet and sheet not in seen_sheets:
+                        context_sheets.append(sheet)
+                        seen_sheets.add(sheet)
+                context_sheets.sort()
+
                 # Transform the data to match expected JSON structure
                 transformed_data = []
                 for x_index, row_code in enumerate(rows, 1):
@@ -250,8 +261,11 @@ class ASTToJSONVisitor(NodeVisitor):
 
                             # Add z coordinate if sheet data exists
                             if sheet_code:
-                                # For now, use a simple index; could be enhanced with sheet position logic
-                                transformed_record['z'] = 1  # This could be enhanced with actual sheet indexing
+                                # Find z coordinate based on sheet position in context
+                                z_index = 1  # default
+                                if context_sheets and sheet_code in context_sheets:
+                                    z_index = context_sheets.index(sheet_code) + 1
+                                transformed_record['z'] = z_index
 
                         # Note: column and row are at VarID level, not in data entries
 
