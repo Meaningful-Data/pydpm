@@ -190,7 +190,8 @@ class ASTToJSONVisitor(NodeVisitor):
                         entries_by_row[row_code] = []
                     entries_by_row[row_code].append(record)
 
-                rows = list(entries_by_row.keys())
+                # Sort rows to ensure consistent numerical ordering for x-coordinate calculation
+                rows = sorted(entries_by_row.keys())
 
                 # Helper function to detect range syntax (e.g., '0010-0080')
                 def _has_range_syntax(values):
@@ -211,6 +212,19 @@ class ASTToJSONVisitor(NodeVisitor):
                         if col and col not in seen_cols:
                             context_cols.append(col)
                             seen_cols.add(col)
+                    # Sort to ensure consistent numerical ordering for y-coordinate calculation
+                    context_cols.sort()
+
+                # Build sheet order from data for z-coordinate calculation
+                # Extract unique sheets and sort them for consistent ordering
+                context_sheets = []
+                seen_sheets = set()
+                for record in data_records:
+                    sheet = record.get('sheet_code', '')
+                    if sheet and sheet not in seen_sheets:
+                        context_sheets.append(sheet)
+                        seen_sheets.add(sheet)
+                context_sheets.sort()
 
                 # Transform the data to match expected JSON structure
                 transformed_data = []
@@ -247,8 +261,11 @@ class ASTToJSONVisitor(NodeVisitor):
 
                             # Add z coordinate if sheet data exists
                             if sheet_code:
-                                # For now, use a simple index; could be enhanced with sheet position logic
-                                transformed_record['z'] = 1  # This could be enhanced with actual sheet indexing
+                                # Find z coordinate based on sheet position in context
+                                z_index = 1  # default
+                                if context_sheets and sheet_code in context_sheets:
+                                    z_index = context_sheets.index(sheet_code) + 1
+                                transformed_record['z'] = z_index
 
                         # Note: column and row are at VarID level, not in data entries
 
