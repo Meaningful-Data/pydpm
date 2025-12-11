@@ -240,48 +240,29 @@ class ASTToJSONVisitor(NodeVisitor):
                         if 'cell_id' in record and record['cell_id'] is not None:
                             transformed_record['operand_reference_id'] = int(record['cell_id'])
 
-                        # Check if data type is scalar (no x/y/z coordinates)
-                        # Scalar types: b (boolean), s (string), e (enumeration/item)
-                        # Non-scalar types: i, r, m, p (integer, decimal, monetary, percentage)
-                        data_type = record.get('data_type', '')
-                        is_scalar_type = data_type in ['b', 's', 'e']
-
                         column_code = record.get('column_code', '')
                         sheet_code = record.get('sheet_code', '')
 
-                        # Add x/y/z coordinates for non-scalar types only
-                        if not is_scalar_type:
-                            transformed_record['x'] = x_index
+                        # Add x/y/z coordinates for ALL data types
+                        # Coordinates are added unconditionally, then common ones are removed later
+                        transformed_record['x'] = x_index
 
-                            # Find y coordinate based on column position in context
-                            y_index = 1  # default
-                            if context_cols and column_code in context_cols:
-                                y_index = context_cols.index(column_code) + 1
-                            transformed_record['y'] = y_index
+                        # Find y coordinate based on column position in context
+                        y_index = 1  # default
+                        if context_cols and column_code in context_cols:
+                            y_index = context_cols.index(column_code) + 1
+                        transformed_record['y'] = y_index
 
-                            # Add z coordinate if sheet data exists
-                            if sheet_code:
-                                # Find z coordinate based on sheet position in context
-                                z_index = 1  # default
-                                if context_sheets and sheet_code in context_sheets:
-                                    z_index = context_sheets.index(sheet_code) + 1
-                                transformed_record['z'] = z_index
+                        # Add z coordinate if sheet data exists
+                        if sheet_code:
+                            # Find z coordinate based on sheet position in context
+                            z_index = 1  # default
+                            if context_sheets and sheet_code in context_sheets:
+                                z_index = context_sheets.index(sheet_code) + 1
+                            transformed_record['z'] = z_index
 
-                        # Note: column and row are at VarID level, not in data entries
-
-                        # Add additional fields required by ADAM engine
-                        # CRITICAL: data_type determines how the engine processes values
-                        if 'data_type' in record and record['data_type'] is not None:
-                            transformed_record['data_type'] = record['data_type']
-
-                        # Add metadata fields (cell_code, table_code, table_vid)
-                        # NOTE: row, column, sheet are NOT included in data - they're at VarID level
-                        if 'cell_code' in record and record['cell_code'] is not None:
-                            transformed_record['cell_code'] = record['cell_code']
-                        if 'table_code' in record and record['table_code'] is not None:
-                            transformed_record['table_code'] = record['table_code']
-                        if 'table_vid' in record and record['table_vid'] is not None:
-                            transformed_record['table_vid'] = int(record['table_vid'])
+                        # NOTE: data_type, cell_code, table_code, table_vid are NOT included
+                        # in data entries - working fixtures don't have these fields
 
                         transformed_data.append(transformed_record)
 
@@ -319,19 +300,17 @@ class ASTToJSONVisitor(NodeVisitor):
                         'z': 'sheet'
                     }
 
-                    # Add dimension codes to each data entry
-                    # IMPORTANT: adam-engine requires BOTH row AND column in every data item
-                    # We add all dimension codes (row, column, sheet) when they exist in the original record
-                    # We need to match each transformed record back to its original record
+                    # Add dimension codes only for VARIABLE coordinates
+                    # Working fixtures show dimension codes are only included when that dimension varies
+                    # Example: {c*, s*} with fixed row has y/column, z/sheet but NO x/row
                     record_index = 0
                     for x_index, row_code in enumerate(rows, 1):
                         for original_record in entries_by_row[row_code]:
                             if record_index < len(transformed_data):
                                 transformed_record = transformed_data[record_index]
 
-                                # Add ALL dimension codes (row, column, sheet) to every data item
-                                # This is required by adam-engine even when the coordinate is common
-                                for coord in ['x', 'y', 'z']:
+                                # Only add dimension codes for VARIABLE coordinates
+                                for coord in variable_coords:
                                     dimension_field = coord_to_dimension[coord]
                                     output_field = coord_to_field[coord]
 
