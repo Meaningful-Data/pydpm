@@ -356,11 +356,16 @@ class ASTToJSONVisitor(NodeVisitor):
 
     def visit_AggregationOp(self, node):
         """Visit AggregationOp nodes."""
-        return {
+        result = {
             'class_name': 'AggregationOp',
             'op': node.op,
-            'operand': self.visit(node.operand)
+            'operand': self.visit(node.operand),
+            'grouping_clause': None
         }
+        # Add grouping_clause if present
+        if hasattr(node, 'grouping_clause') and node.grouping_clause is not None:
+            result['grouping_clause'] = self.visit(node.grouping_clause)
+        return result
 
     def visit_ComplexNumericOp(self, node):
         """Visit ComplexNumericOp nodes (max, min)."""
@@ -417,16 +422,10 @@ class ASTToJSONVisitor(NodeVisitor):
 
     def visit_Dimension(self, node):
         """Visit Dimension nodes (used in WHERE clauses)."""
-        result = {
+        return {
             'class_name': 'Dimension',
             'dimension_code': node.dimension_code
         }
-
-        # Include property_id if present
-        if hasattr(node, 'property_id') and node.property_id is not None:
-            result['property_id'] = node.property_id
-
-        return result
 
     def visit_TimeShiftOp(self, node):
         """Visit TimeShiftOp nodes."""
