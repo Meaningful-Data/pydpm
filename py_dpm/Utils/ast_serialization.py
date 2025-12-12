@@ -360,12 +360,25 @@ class ASTToJSONVisitor(NodeVisitor):
             'class_name': 'AggregationOp',
             'op': node.op,
             'operand': self.visit(node.operand),
-            'grouping_clause': None
         }
-        # Add grouping_clause if present
+        # Add grouping_clause if present and has actual components
         if hasattr(node, 'grouping_clause') and node.grouping_clause is not None:
-            result['grouping_clause'] = self.visit(node.grouping_clause)
+            gc = self.visit(node.grouping_clause)
+            # Only include grouping_clause if it has components
+            if gc and gc.get('components'):
+                result['grouping_clause'] = gc
         return result
+
+    def visit_GroupingClause(self, node):
+        """Visit GroupingClause nodes."""
+        components = getattr(node, 'components', None)
+        if components:
+            return {
+                'class_name': 'GroupingClause',
+                'components': components
+            }
+        # Return None for empty grouping clauses (will be filtered out)
+        return None
 
     def visit_ComplexNumericOp(self, node):
         """Visit ComplexNumericOp nodes (max, min)."""
