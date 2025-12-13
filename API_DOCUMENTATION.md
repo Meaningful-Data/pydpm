@@ -429,11 +429,15 @@ poetry run pydpm syntax "{tC_01.00, r0100, c0010}"
 Performs semantic validation on DPM-XL expressions.
 
 ```bash
-poetry run pydpm semantic "{tC_01.00, r0100, c0010} + {tC_01.00, r0200, c0010}"
+poetry run pydpm semantic "{tC_01.00, r0100, c0010} + {tC_01.00, r0200, c0010}" [OPTIONS]
 ```
 
 **Arguments:**
 - `EXPRESSION`: DPM-XL expression to analyze
+
+**Options:**
+- `--release-id INTEGER`: Release ID to use for validation
+- `--dpm-version TEXT`: DPM Version (e.g. "4.2") to use for validation
 
 ---
 

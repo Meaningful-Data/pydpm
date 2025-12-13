@@ -29,7 +29,7 @@ dependencies = [
     "pyodbc>=5.1.0,<5.2.0",
     "click>=8.1.6,<8.2.0",
     "python-dotenv>=1.0.1,<1.1.0",
-    "psycopg2>=2.9.0,<3.0.0"
+    "psycopg2-binary>=2.9.0,<3.0.0"
 ]
 
 [project.optional-dependencies]
@@ -68,7 +68,7 @@ antlr4-python3-runtime = ">=4.9.2,<4.9.3"
 pyodbc = ">=5.1.0,<5.2.0"
 click = ">=8.1.6,<8.2.0"
 python-dotenv = ">=1.0.1,<1.1.0"
-psycopg2 = ">=2.9.0,<3.0.0"
+psycopg2-binary = ">=2.9.0,<3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4.0,<8.0.0"
