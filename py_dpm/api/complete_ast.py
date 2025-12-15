@@ -66,7 +66,7 @@ def generate_complete_ast(
 
         # Perform complete semantic validation with operand checking
         # This should populate all data fields on VarID nodes
-        semantic_result = api.semantic_validation(expression)
+        semantic_result = api.semantic_validation(expression, release_id=release_id)
 
 
         # Force data population if semantic validation completed successfully
