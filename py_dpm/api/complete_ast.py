@@ -14,7 +14,12 @@ from typing import Dict, Any, Optional
 from py_dpm.Utils.ast_serialization import ASTToJSONVisitor
 
 
-def generate_complete_ast(expression: str, database_path: str = None, connection_url: str = None):
+def generate_complete_ast(
+    expression: str,
+    database_path: str = None,
+    connection_url: str = None,
+    release_id: Optional[int] = None
+):
     """
     Generate complete AST with all data fields, exactly like json_scripts examples.
 
@@ -25,6 +30,8 @@ def generate_complete_ast(expression: str, database_path: str = None, connection
         expression: DPM-XL expression string
         database_path: Path to SQLite database file (e.g., "./database.db")
         connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
+        release_id: Optional release ID to filter database lookups by specific release.
+            If None, uses all available data (release-agnostic).
 
     Returns:
         dict: {
@@ -87,7 +94,7 @@ def generate_complete_ast(expression: str, database_path: str = None, connection
                     session=session,
                     expression=expression,
                     ast=inner_ast,
-                    release_id=None
+                    release_id=release_id
                 )
 
                 # Apply the data from operand checker to VarID nodes
@@ -246,7 +253,12 @@ def _check_data_fields_populated(ast_dict):
     return False
 
 
-def generate_complete_batch(expressions: list, database_path: str = None, connection_url: str = None):
+def generate_complete_batch(
+    expressions: list,
+    database_path: str = None,
+    connection_url: str = None,
+    release_id: Optional[int] = None
+):
     """
     Generate complete ASTs for multiple expressions.
 
@@ -254,20 +266,29 @@ def generate_complete_batch(expressions: list, database_path: str = None, connec
         expressions: List of DPM-XL expression strings
         database_path: Path to SQLite database file
         connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
+        release_id: Optional release ID to filter database lookups by specific release.
+            If None, uses all available data (release-agnostic).
 
     Returns:
         list: List of result dictionaries
     """
     results = []
     for i, expr in enumerate(expressions):
-        result = generate_complete_ast(expr, database_path, connection_url)
+        result = generate_complete_ast(
+            expr, database_path, connection_url, release_id=release_id
+        )
         result['batch_index'] = i
         results.append(result)
     return results
 
 
 # Convenience function with cleaner interface
-def parse_with_data_fields(expression: str, database_path: str = None, connection_url: str = None):
+def parse_with_data_fields(
+    expression: str,
+    database_path: str = None,
+    connection_url: str = None,
+    release_id: Optional[int] = None
+):
     """
     Simple function to parse expression and get AST with data fields.
 
@@ -275,11 +296,15 @@ def parse_with_data_fields(expression: str, database_path: str = None, connectio
         expression: DPM-XL expression string
         database_path: Path to SQLite database file
         connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
+        release_id: Optional release ID to filter database lookups by specific release.
+            If None, uses all available data (release-agnostic).
 
     Returns:
         dict: AST dictionary with data fields, or None if failed
     """
-    result = generate_complete_ast(expression, database_path, connection_url)
+    result = generate_complete_ast(
+        expression, database_path, connection_url, release_id=release_id
+    )
     return result['ast'] if result['success'] else None
 
 
@@ -296,6 +321,7 @@ def generate_enriched_ast(
     operation_code: Optional[str] = None,
     table_context: Optional[Dict[str, Any]] = None,
     precondition: Optional[str] = None,
+    release_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate enriched, engine-ready AST from DPM-XL expression.
@@ -311,6 +337,8 @@ def generate_enriched_ast(
         operation_code: Optional operation code (defaults to "default_code")
         table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
         precondition: Optional precondition variable reference (e.g., {v_F_44_04})
+        release_id: Optional release ID to filter database lookups by specific release.
+            If None, uses all available data (release-agnostic).
 
     Returns:
         dict: {
@@ -321,7 +349,9 @@ def generate_enriched_ast(
     """
     try:
         # Generate complete AST first
-        complete_result = generate_complete_ast(expression, database_path, connection_url)
+        complete_result = generate_complete_ast(
+            expression, database_path, connection_url, release_id=release_id
+        )
 
         if not complete_result['success']:
             return {
