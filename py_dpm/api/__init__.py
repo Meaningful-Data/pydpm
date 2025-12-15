@@ -167,10 +167,10 @@ class API:
             cls.visitor = ASTVisitor()
             cls.AST = cls.visitor.visit(cls.CST)
 
-    def semantic_validation(self, expression):
+    def semantic_validation(self, expression, release_id=None):
         self.create_ast(expression=expression)
 
-        oc = OperandsChecking(session=self.session, expression=expression, ast=self.AST, release_id=None)
+        oc = OperandsChecking(session=self.session, expression=expression, ast=self.AST, release_id=release_id)
         semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
         semanticAnalysis.data = oc.data
