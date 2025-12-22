@@ -1,16 +1,16 @@
 import operator
 
 from py_dpm.dpm_xl.types.scalar import Integer, String
-from py_dpm.dpm_xl.operators import Operator
+from py_dpm.dpm_xl.operators.base import Operator, Binary, Unary, Complex
 from py_dpm.dpm_xl.utils import tokens
 
 
-class Unary(Operator.Unary):
+class Unary(Unary):
     op = None
     type_to_check = String
 
 
-class Binary(Operator.Binary):
+class Binary(Binary):
     op = None
     type_to_check = String
 

@@ -10,7 +10,6 @@ from py_dpm.api.dpm_xl import (
     SyntaxAPI,
     SemanticAPI,
     ASTGenerator,
-    CompleteASTAPI,
 )
 
 # Import from general DPM API
@@ -25,13 +24,13 @@ from py_dpm.api.dpm import (
 from py_dpm.api.dpm.operation_scopes import (
     calculate_scopes_from_expression,
     get_existing_scopes,
+    OperationScopeDetailedInfo,
+    OperationScopeResult,
 )
 from py_dpm.api.dpm.types import (
     ModuleVersionInfo,
     TableVersionInfo,
     HeaderVersionInfo,
-    OperationScopeDetailedInfo,
-    OperationScopeResult,
 )
 
 # Import AST generator convenience functions

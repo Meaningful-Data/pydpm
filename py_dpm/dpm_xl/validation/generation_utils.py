@@ -6,8 +6,7 @@ import pandas as pd
 from py_dpm.dpm_xl.utils.tokens import CELL_COMPONENTS, COLUMN, COLUMN_CODE, EXISTENCE_REPORT, \
     HIERARCHY_REPORT, ROW, ROW_CODE, SHEET, SHEET_CODE, \
     SIGN_REPORT
-from py_dpm.ValidationsGeneration.Utils import ExternalDataExistence, ExternalDataHierarchies, \
-    ExternalDataSign
+# from py_dpm.ValidationsGeneration.Utils import ExternalDataExistence, ExternalDataHierarchies, ExternalDataSign
 
 
 def from_generate_to_response(validations):

@@ -19,7 +19,7 @@ from py_dpm.dpm_xl.utils.operator_mapping import AGGR_OP_MAPPING, BIN_OP_MAPPING
     TIME_OPERATORS, UNARY_OP_MAPPING
 from py_dpm.dpm_xl.utils.tokens import DPM, FILTER, GET, IF, RENAME, STANDARD, SUB, TIME_SHIFT, WHERE
 from py_dpm.data_handlers import filter_all_data
-from py_dpm.semantics.Symbols import ConstantOperand, FactComponent, KeyComponent, RecordSet, \
+from py_dpm.dpm_xl.symbols import ConstantOperand, FactComponent, KeyComponent, RecordSet, \
     Scalar, \
     ScalarSet, Structure
 

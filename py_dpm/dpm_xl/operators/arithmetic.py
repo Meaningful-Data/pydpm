@@ -2,11 +2,11 @@ import math
 import operator
 
 from py_dpm.dpm_xl.types.scalar import Number
-from py_dpm.dpm_xl.operators import Operator
+from py_dpm.dpm_xl.operators.base import Operator, Binary, Unary, Complex
 from py_dpm.dpm_xl.utils import tokens
 
 
-class Unary(Operator.Unary):
+class Unary(Unary):
     op = None
     type_to_check = Number
     return_type = None
@@ -49,7 +49,7 @@ class SquareRoot(Unary):
     interval_allowed: bool = False
 
 
-class NumericBinary(Operator.Binary):
+class NumericBinary(Binary):
     type_to_check = Number
     interval_allowed:bool = True
 
@@ -88,7 +88,7 @@ class Logarithm(NumericBinary):
     interval_allowed:bool = False
 
 
-class NumericComplex(Operator.Complex):
+class NumericComplex(Complex):
     type_to_check = Number
     interval_allowed:bool = True
 

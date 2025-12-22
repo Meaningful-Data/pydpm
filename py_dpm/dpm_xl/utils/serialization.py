@@ -545,7 +545,7 @@ class ASTToJSONVisitor(NodeVisitor):
 
 # Original serialization functions (kept for backward compatibility)
 import json
-from py_dpm.dpm_xl.ast import ASTObjects
+from py_dpm.dpm_xl.ast import nodes
 
 
 def expand_with_expression(node):

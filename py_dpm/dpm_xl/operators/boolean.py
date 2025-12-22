@@ -1,11 +1,11 @@
 import operator
 
 from py_dpm.dpm_xl.types.scalar import Boolean
-from py_dpm.dpm_xl.operators import Operator
+from py_dpm.dpm_xl.operators.base import Operator, Binary, Unary, Complex
 from py_dpm.dpm_xl.utils import tokens
 
 
-class Binary(Operator.Binary):
+class Binary(Binary):
     type_to_check = Boolean
 
 
@@ -24,7 +24,7 @@ class Xor(Binary):
     py_op = operator.xor
 
 
-class Not(Operator.Unary):
+class Not(Unary):
     type_to_check = Boolean
     op = tokens.NOT
     py_op = operator.not_

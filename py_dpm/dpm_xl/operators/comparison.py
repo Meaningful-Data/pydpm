@@ -2,18 +2,18 @@ import operator
 import re
 
 from py_dpm.dpm_xl.types.scalar import Boolean, String
-from py_dpm.dpm_xl.operators import Operator
+from py_dpm.dpm_xl.operators.base import Operator, Binary, Unary, Complex
 from py_dpm.dpm_xl.utils import tokens
 
 
-class IsNull(Operator.Unary):
+class IsNull(Unary):
     op = tokens.ISNULL
     py_op = operator.truth
     do_not_check_with_return_type = True
     return_type = Boolean
 
 
-class Binary(Operator.Binary):
+class Binary(Binary):
     do_not_check_with_return_type = True
     return_type = Boolean
 
