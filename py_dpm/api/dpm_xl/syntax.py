@@ -123,7 +123,7 @@ class SyntaxAPI:
     
     def is_valid_syntax(self, expression: str) -> bool:
         """
-        Quick check if expression has valid syntax.
+            Quick check if expression has valid syntax.
         
         Args:
             expression (str): The DPM-XL expression to check
@@ -180,3 +180,4 @@ def is_valid_syntax(expression: str) -> bool:
     """
     api = SyntaxAPI()
     return api.is_valid_syntax(expression)
+

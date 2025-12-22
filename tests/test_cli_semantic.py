@@ -2,7 +2,7 @@ import pytest
 from click.testing import CliRunner
 from py_dpm.cli.main import main, semantic
 from unittest.mock import patch, MagicMock, MagicMock
-from py_dpm.api.semantic import SemanticValidationResult
+from py_dpm.api.dpm_xl.semantic import SemanticValidationResult
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def test_semantic_no_release_id(runner):
     """Test semantic command without release_id (valid case)"""
     expression = "{tC_01.00, r0100, c0010}"
 
-    with patch("py_dpm.client.SemanticAPI") as MockAPI:
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
         mock_api_instance.validate_expression.return_value = SemanticValidationResult(
             is_valid=True,
@@ -49,7 +49,7 @@ def test_semantic_with_release_id(runner):
     expression = "{tC_01.00, r0100, c0010}"
     release_id = 5
 
-    with patch("py_dpm.client.SemanticAPI") as MockAPI:
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
         mock_api_instance.validate_expression.return_value = SemanticValidationResult(
             is_valid=True,
@@ -79,7 +79,7 @@ def test_semantic_invalid_validation(runner):
     expression = "invalid_expression"
     release_id = 3
 
-    with patch("py_dpm.client.SemanticAPI") as MockAPI:
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
         mock_api_instance.validate_expression.return_value = SemanticValidationResult(
             is_valid=False,
@@ -110,7 +110,7 @@ def test_semantic_exception(runner):
     """Test semantic command when an exception occurs"""
     expression = "{tC_01.00}"
 
-    with patch("py_dpm.client.SemanticAPI") as MockAPI:
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
         mock_api_instance.validate_expression.side_effect = Exception(
             "Unexpected error"
@@ -127,7 +127,7 @@ def test_semantic_with_dpm_version(runner):
     dpm_version = "4.2"
     release_id = 5
 
-    with patch("py_dpm.client.SemanticAPI") as MockAPI:
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
 
         # Mock session query results
@@ -167,7 +167,7 @@ def test_semantic_dpm_version_not_found(runner):
     expression = "{}"
     dpm_version = "99.9"
 
-    with patch("py_dpm.client.SemanticAPI") as MockAPI:
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
         # Mock finding nothing (scalar returns None)
         mock_api_instance.session.query.return_value.filter.return_value.scalar.return_value = (

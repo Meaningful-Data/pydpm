@@ -330,3 +330,4 @@ def is_valid_semantics(
     """
     api = SemanticAPI(database_path=database_path, connection_url=connection_url)
     return api.is_valid_semantics(expression, release_id=release_id)
+
