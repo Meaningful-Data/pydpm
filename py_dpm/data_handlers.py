@@ -1,7 +1,7 @@
 import pandas as pd
 
-from py_dpm.Exceptions.exceptions import SemanticError
-from py_dpm.Utils.tokens import *
+from py_dpm.exceptions.exceptions import SemanticError
+from py_dpm.dpm_xl.utils.tokens import *
 
 
 def filter_data_by_cell_element(series, cell_elements, element_name, table_code):

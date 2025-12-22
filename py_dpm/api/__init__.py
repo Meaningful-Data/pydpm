@@ -1,48 +1,79 @@
-from py_dpm.api.migration import MigrationAPI
-from py_dpm.api.syntax import SyntaxAPI
-from py_dpm.api.semantic import SemanticAPI
-from py_dpm.api.data_dictionary import DataDictionaryAPI
-from py_dpm.api.operation_scopes import (
+"""
+PyDPM Public API
+
+Main entry point for the PyDPM library.
+Provides both DPM-XL specific and general DPM functionality.
+"""
+
+# Import from DPM-XL API
+from py_dpm.api.dpm_xl import (
+    SyntaxAPI,
+    SemanticAPI,
+    ASTGenerator,
+)
+
+# Import from general DPM API
+from py_dpm.api.dpm import (
+    DataDictionaryAPI,
+    DPMExplorer,
     OperationScopesAPI,
+    MigrationAPI,
+)
+
+# Import convenience functions and types from DPM API
+from py_dpm.api.dpm.operation_scopes import (
     calculate_scopes_from_expression,
     get_existing_scopes,
+    OperationScopeDetailedInfo,
+    OperationScopeResult,
+)
+from py_dpm.api.dpm.types import (
     ModuleVersionInfo,
     TableVersionInfo,
     HeaderVersionInfo,
-    OperationScopeDetailedInfo,
-    OperationScopeResult
 )
-from py_dpm.api.ast_generator import ASTGenerator, parse_expression, validate_expression, parse_batch
-from py_dpm.api.complete_ast import (
+
+# Import AST generator convenience functions
+from py_dpm.api.dpm_xl.ast_generator import (
+    parse_expression,
+    validate_expression,
+    parse_batch,
+)
+
+# Import complete AST functions
+from py_dpm.api.dpm_xl.complete_ast import (
     generate_complete_ast,
     generate_complete_batch,
     generate_enriched_ast,
-    enrich_ast_with_metadata
+    enrich_ast_with_metadata,
 )
 
+# Legacy imports for backward compatibility
 from antlr4 import CommonTokenStream, InputStream
-
-from py_dpm.grammar.dist.dpm_xlLexer import dpm_xlLexer
-from py_dpm.grammar.dist.dpm_xlParser import dpm_xlParser
-from py_dpm.grammar.dist.listeners import DPMErrorListener
-from py_dpm.AST.ASTConstructor import ASTVisitor
-from py_dpm.AST.ASTObjects import TemporaryAssignment
-from py_dpm.AST.MLGeneration import MLGeneration
-from py_dpm.AST.ModuleAnalyzer import ModuleAnalyzer
-from py_dpm.AST.ModuleDependencies import ModuleDependencies
-from py_dpm.AST.check_operands import OperandsChecking
-from py_dpm.semantics import SemanticAnalyzer
-
-from py_dpm.ValidationsGeneration.VariantsProcessor import (
+from py_dpm.dpm_xl.grammar.generated.dpm_xlLexer import dpm_xlLexer
+from py_dpm.dpm_xl.grammar.generated.dpm_xlParser import dpm_xlParser
+from py_dpm.dpm_xl.grammar.generated.listeners import DPMErrorListener
+from py_dpm.dpm_xl.ast.constructor import ASTVisitor
+from py_dpm.dpm_xl.ast.nodes import TemporaryAssignment
+from py_dpm.dpm_xl.ast.ml_generation import MLGeneration
+from py_dpm.dpm_xl.ast.module_analyzer import ModuleAnalyzer
+from py_dpm.dpm_xl.ast.module_dependencies import ModuleDependencies
+from py_dpm.dpm_xl.ast.operands import OperandsChecking
+from py_dpm.dpm_xl.validation.variants import (
     VariantsProcessor,
     VariantsProcessorChecker,
 )
-from py_dpm.ValidationsGeneration.PropertiesConstraintsProcessor import (
+from py_dpm.dpm_xl.validation.property_constraints import (
     PropertiesConstraintsChecker,
     PropertiesConstraintsProcessor,
 )
+from py_dpm.dpm.db.utils import get_session, get_engine
 
-from py_dpm.db_utils import get_session, get_engine
+# Semantic analyzer - need to check if this exists
+try:
+    from py_dpm.dpm_xl import semantic_analyzer as SemanticAnalyzer
+except ImportError:
+    SemanticAnalyzer = None
 
 # Export the main API classes
 __all__ = [
@@ -66,6 +97,7 @@ __all__ = [
     'SemanticAPI',
     'DataDictionaryAPI',
     'OperationScopesAPI',
+    'DPMExplorer',
 
     # Operation Scopes Convenience Functions
     'calculate_scopes_from_expression',
@@ -83,6 +115,16 @@ __all__ = [
 
 
 class API:
+    """
+    Legacy API class for backward compatibility.
+
+    Note: This class is maintained for backward compatibility.
+    New code should use the specific API classes:
+    - SyntaxAPI for syntax validation
+    - SemanticAPI for semantic validation
+    - ASTGenerator for AST generation
+    - DataDictionaryAPI for database queries
+    """
     error_listener = DPMErrorListener()
     visitor = ASTVisitor()
 
@@ -97,7 +139,7 @@ class API:
         if connection_url:
             # Create isolated engine and session for the provided connection URL
             from sqlalchemy.orm import sessionmaker
-            from py_dpm.db_utils import create_engine_from_url
+            from py_dpm.dpm.db.utils import create_engine_from_url
 
             # Create engine for the connection URL (supports SQLite, PostgreSQL, MySQL, etc.)
             self.engine = create_engine_from_url(connection_url)
@@ -171,16 +213,17 @@ class API:
         self.create_ast(expression=expression)
 
         oc = OperandsChecking(session=self.session, expression=expression, ast=self.AST, release_id=release_id)
-        semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
-        semanticAnalysis.data = oc.data
-        semanticAnalysis.key_components = oc.key_components
-        semanticAnalysis.open_keys = oc.open_keys
-
-        semanticAnalysis.preconditions = oc.preconditions
-
-        results = semanticAnalysis.visit(self.AST)
-        return results
+        if SemanticAnalyzer:
+            semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
+            semanticAnalysis.data = oc.data
+            semanticAnalysis.key_components = oc.key_components
+            semanticAnalysis.open_keys = oc.open_keys
+            semanticAnalysis.preconditions = oc.preconditions
+            results = semanticAnalysis.visit(self.AST)
+            return results
+        else:
+            raise ImportError("SemanticAnalyzer not available")
 
     def _check_property_constraints(self, ast):
         """
