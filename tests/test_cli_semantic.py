@@ -1,6 +1,6 @@
 import pytest
 from click.testing import CliRunner
-from py_dpm.client import main, semantic
+from py_dpm.cli.main import main, semantic
 from unittest.mock import patch, MagicMock, MagicMock
 from py_dpm.api.semantic import SemanticValidationResult
 
