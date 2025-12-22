@@ -81,20 +81,3 @@ pydpm = "py_dpm.cli.main:main"
 "py_dpm.dpm_xl.grammar" = ["*.g4"]
 "py_dpm.dpm_xl.grammar.generated" = ["*"]
 "py_dpm.dpm.db.views" = ["*.sql"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "-v",
-    "--strict-markers",
-    "--cov=py_dpm",
-    "--cov-report=term-missing",
-    "--cov-report=html"
-]
-markers = [
-    "integration: marks tests as integration tests (requiring database)",
-    "unit: marks tests as unit tests"
-]

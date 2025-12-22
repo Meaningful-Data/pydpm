@@ -150,14 +150,14 @@ def test_EGDQ_0362e_release_5():
 def test_EGDQ_0532_release_5():
     """Test EGDQ_0532 expression validation for release_id=5"""
     expression = """with {tC_22.00, c0080, default: 0}: {r0010} = {r0020}"""
-    result = validate_expression(expression, release_id=5)
+    result = validate_expression(expression, release_id=5, **_semantic_db_kwargs())
     assert result.is_valid, f"EGDQ_0532 failed for release_id=5: {result.error_message}"
 
 
 def test_EGDQ_0774_release_5():
     """Test EGDQ_0774 expression validation for release_id=5"""
     expression = """if {tC_47.00, r0300, c0010} > 0 then {tC_47.00, r0440, c0010} = {tC_47.00, r0420, c0010} + {tC_47.00, r0370, c0010} / {tC_47.00, r0300, c0010} endif"""
-    result = validate_expression(expression, release_id=5)
+    result = validate_expression(expression, release_id=5, **_semantic_db_kwargs())
     assert result.is_valid, f"EGDQ_0774 failed for release_id=5: {result.error_message}"
 
 
@@ -165,7 +165,7 @@ def test_EGDQ_0921a_release_5():
     """Test EGDQ_0921a expression validation for release_id=5"""
     expression = """with {tJ_05.00.b, (r0010, r0030, r0040, r0050, r0060, r0070, r0090, r0100, r0110, r0120, r0180, r0190, r0200, r0220, r0230, r0240, r0260, r0270, r0290, r0300, r0310, r0330, r0340, r0350, r0370, r0380, r0390, r0410, r0420, r0440, r0450, r0460, r0510, r0520)}:
     if {c0010, default:0} != 0 then not(isnull({c0050})) and {c0050} < 0.5 endif"""
-    result = validate_expression(expression, release_id=5)
+    result = validate_expression(expression, release_id=5, **_semantic_db_kwargs())
     assert (
         result.is_valid
     ), f"EGDQ_0921a failed for release_id=5: {result.error_message}"

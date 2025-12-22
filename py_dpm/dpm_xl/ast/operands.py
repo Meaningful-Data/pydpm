@@ -214,10 +214,10 @@ class OperandsChecking(ASTTemplate, ABC):
         )
 
         # Execute query and convert to DataFrame
-        from py_dpm.dpm.db.models import _compile_query_for_pandas
+        from py_dpm.dpm.db.models import _compile_query_for_pandas, _read_sql_with_connection
 
         compiled_query = _compile_query_for_pandas(query.statement, self.session)
-        df_headers = pd.read_sql(compiled_query, self.session.connection().connection)
+        df_headers = _read_sql_with_connection(compiled_query, self.session)
 
         for table in table_codes:
             table_headers = df_headers[df_headers["Code"] == table]
