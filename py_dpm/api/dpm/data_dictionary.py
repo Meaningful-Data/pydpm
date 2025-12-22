@@ -35,6 +35,7 @@ from py_dpm.api.dpm.types import (
     TableVersionInfo,
     ItemCategoryInfo,
     OpenKeyInfo,
+    ReleaseInfo,
 )
 
 
@@ -64,6 +65,42 @@ class DataDictionaryAPI:
         """
         engine = get_engine(database_path=database_path, connection_url=connection_url)
         self.session = get_session()
+
+        self.session = get_session()
+
+    # ==================== Release Query Methods ====================
+
+    def get_releases(self) -> List[ReleaseInfo]:
+        """
+        Fetch list of available releases from database.
+
+        Returns:
+            List of ReleaseInfo objects
+        """
+        results = (
+            self.session.query(
+                Release.releaseid,
+                Release.code,
+                Release.date,
+                Release.description,
+                Release.status,
+                Release.iscurrent,
+            )
+            .order_by(Release.date.desc())
+            .all()
+        )
+
+        return [
+            ReleaseInfo(
+                release_id=r.releaseid,
+                code=r.code,
+                date=r.date,
+                description=r.description,
+                status=r.status,
+                is_current=r.iscurrent,
+            )
+            for r in results
+        ]
 
     # ==================== Reference Query Methods ====================
 

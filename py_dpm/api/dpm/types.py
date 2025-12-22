@@ -120,3 +120,17 @@ class OpenKeyInfo(APIModel):
     table_version_code: str
     property_code: str
     data_type_name: str
+
+
+@dataclass
+class ReleaseInfo(APIModel):
+    """
+    Information about a release version.
+    """
+
+    release_id: int
+    code: str
+    date: date
+    description: str
+    status: str
+    is_current: bool
