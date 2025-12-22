@@ -9,8 +9,8 @@ from py_dpm.dpm_xl.types.promotion import binary_implicit_type_promotion, binary
 from py_dpm.exceptions import exceptions
 from py_dpm.exceptions.exceptions import SemanticError
 from py_dpm.dpm_xl.operators.base import Binary, Operator
-from py_dpm.Utils import tokens
-from py_dpm.semantics.Symbols import ConstantOperand, RecordSet, Scalar, Structure
+from py_dpm.dpm_xl.utils import tokens
+from py_dpm.dpm_xl.symbols import ConstantOperand, RecordSet, Scalar, Structure
 
 
 class ConditionalOperator(Operator):

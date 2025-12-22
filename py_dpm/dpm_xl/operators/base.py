@@ -9,7 +9,7 @@ from py_dpm.dpm_xl.types.promotion import binary_implicit_type_promotion, binary
     unary_implicit_type_promotion, unary_implicit_type_promotion_with_mixed_types
 from py_dpm.exceptions.exceptions import SemanticError
 from py_dpm.dpm_xl.utils.operands_mapping import generate_new_label, set_operand_label
-from py_dpm.semantics.Symbols import ConstantOperand, FactComponent, RecordSet, Scalar, ScalarSet, Structure
+from py_dpm.dpm_xl.symbols import ConstantOperand, FactComponent, RecordSet, Scalar, ScalarSet, Structure
 
 
 class Operator:

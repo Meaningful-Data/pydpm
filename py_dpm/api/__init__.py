@@ -72,7 +72,7 @@ from py_dpm.dpm.db.utils import get_session, get_engine
 
 # Semantic analyzer - need to check if this exists
 try:
-    from py_dpm.semantics import SemanticAnalyzer
+    from py_dpm.dpm_xl import semantic_analyzer as SemanticAnalyzer
 except ImportError:
     SemanticAnalyzer = None
 

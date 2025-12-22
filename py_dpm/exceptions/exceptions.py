@@ -1,5 +1,4 @@
 from py_dpm.exceptions.messages import centralised_messages
-from py_dpm.dpm_xl.utils.operands_mapping import LabelHandler, get_type_from_label
 
 """
 Exceptions management.
@@ -34,6 +33,9 @@ class SyntaxError(DrrException):
 
 
 def gather_expression(operand):
+    # Lazy import to avoid circular dependency
+    from py_dpm.dpm_xl.utils.operands_mapping import LabelHandler
+
     operands_labels = LabelHandler().operands_labels
 
     expression = operand
@@ -52,6 +54,9 @@ class SemanticError(DrrException):
     """
 
     def __init__(self, code, **kwargs):
+        # Lazy import to avoid circular dependency
+        from py_dpm.dpm_xl.utils.operands_mapping import LabelHandler, get_type_from_label
+
         operands_labels = LabelHandler().operands_labels
         message = centralised_messages[code].format(**kwargs)
         for operand in reversed(operands_labels):

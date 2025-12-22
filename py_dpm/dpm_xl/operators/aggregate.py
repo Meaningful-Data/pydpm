@@ -6,8 +6,8 @@ from py_dpm.dpm_xl.types.scalar import Integer, Number, ScalarFactory
 from py_dpm.dpm_xl.types.promotion import unary_implicit_type_promotion
 from py_dpm.exceptions import exceptions
 from py_dpm.dpm_xl.operators import Operator
-from py_dpm.Utils import tokens
-from py_dpm.semantics.Symbols import RecordSet
+from py_dpm.dpm_xl.utils import tokens
+from py_dpm.dpm_xl.symbols import RecordSet
 
 
 class AggregateOperator(Operator.Unary):

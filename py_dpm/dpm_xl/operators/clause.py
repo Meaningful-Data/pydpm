@@ -5,9 +5,9 @@ from py_dpm.dpm_xl.types.promotion import unary_implicit_type_promotion
 from py_dpm.exceptions import exceptions
 from py_dpm.dpm_xl.operators.conditional import ConditionalOperator
 from py_dpm.dpm_xl.operators.base import Binary, Operator
-from py_dpm.Utils import tokens
+from py_dpm.dpm_xl.utils import tokens
 from py_dpm.dpm_xl.utils.operands_mapping import generate_new_label, set_operand_label
-from py_dpm.semantics.Symbols import FactComponent, RecordSet
+from py_dpm.dpm_xl.symbols import FactComponent, RecordSet
 
 
 class ClauseOperator(Operator):

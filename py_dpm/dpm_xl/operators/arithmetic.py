@@ -3,7 +3,7 @@ import operator
 
 from py_dpm.dpm_xl.types.scalar import Number
 from py_dpm.dpm_xl.operators import Operator
-from py_dpm.Utils import tokens
+from py_dpm.dpm_xl.utils import tokens
 
 
 class Unary(Operator.Unary):

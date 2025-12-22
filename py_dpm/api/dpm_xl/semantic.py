@@ -8,7 +8,7 @@ from py_dpm.dpm_xl.grammar.generated.dpm_xlParser import dpm_xlParser
 from py_dpm.dpm_xl.grammar.generated.listeners import DPMErrorListener
 from py_dpm.dpm_xl.ast.constructor import ASTVisitor
 from py_dpm.dpm_xl.ast.operands import OperandsChecking
-from py_dpm.semantics import SemanticAnalyzer
+from py_dpm.dpm_xl import semantic_analyzer as SemanticAnalyzer
 from py_dpm.dpm.db.utils import get_session, get_engine
 from py_dpm.exceptions.exceptions import SemanticError
 
