@@ -22,13 +22,15 @@ from sqlalchemy import func
 import pandas as pd
 import warnings
 
-Base = declarative_base()
+from py_dpm.dpm.db.mixins import SerializationMixin
+
+Base = declarative_base(cls=SerializationMixin)
 
 
 def _read_sql_with_connection(sql, session):
     """
     Execute pd.read_sql with proper connection handling to avoid pandas warnings.
-    
+
     Uses the raw DBAPI connection which works reliably with compiled SQL strings,
     while suppressing the pandas warning about DBAPI2 connections.
     """
@@ -2252,9 +2254,7 @@ class ViewDatapoints(Base):
     def get_datapoints_sample(cls, session, limit=1000):
         """Get a sample of datapoints"""
         query = cls.create_view_query(session)
-        return pd.read_sql_query(
-            query.limit(limit).statement, session.get_bind()
-        )
+        return pd.read_sql_query(query.limit(limit).statement, session.get_bind())
 
     @classmethod
     def export_datapoints_query(cls, session):
@@ -3082,9 +3082,7 @@ class ViewOperationFromModule(Base):
             not_errors = session.query(
                 OperationNode.nodeid.label("operation_version_id")
             ).distinct()
-            not_errors = pd.read_sql_query(
-                not_errors.statement, session.get_bind()
-            )
+            not_errors = pd.read_sql_query(not_errors.statement, session.get_bind())
             not_errors = list(not_errors["operation_version_id"])
             reference = reference[reference["operation_version_id"].isin(not_errors)]
         if not with_preconditions:

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -21,11 +21,6 @@ from py_dpm.dpm.db.models import (
 )
 from py_dpm.dpm.db.utils import get_session, get_engine
 from py_dpm.exceptions.exceptions import SemanticError
-from py_dpm.api.dpm.types import (
-    ModuleVersionInfo,
-    TableVersionInfo,
-    HeaderVersionInfo,
-)
 
 
 @dataclass
@@ -93,7 +88,7 @@ class OperationScopeDetailedInfo:
     is_active: int
     severity: str
     from_submission_date: Optional[date]
-    module_versions: List[ModuleVersionInfo] = field(default_factory=list)
+    module_versions: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class OperationScopesAPI:
@@ -531,15 +526,15 @@ class OperationScopesAPI:
                 )
                 if module:
                     module_infos.append(
-                        ModuleVersionInfo(
-                            module_vid=module.modulevid,
-                            code=module.code or "",
-                            name=module.name or "",
-                            description=module.description or "",
-                            version_number=module.versionnumber or "",
-                            from_reference_date=module.fromreferencedate,
-                            to_reference_date=module.toreferencedate,
-                        )
+                        {
+                            "module_vid": module.modulevid,
+                            "code": module.code or "",
+                            "name": module.name or "",
+                            "description": module.description or "",
+                            "version_number": module.versionnumber or "",
+                            "from_reference_date": module.fromreferencedate,
+                            "to_reference_date": module.toreferencedate,
+                        }
                     )
 
             result.append(
@@ -601,15 +596,15 @@ class OperationScopesAPI:
                 )
                 if module:
                     module_infos.append(
-                        ModuleVersionInfo(
-                            module_vid=module.modulevid,
-                            code=module.code or "",
-                            name=module.name or "",
-                            description=module.description or "",
-                            version_number=module.versionnumber or "",
-                            from_reference_date=module.fromreferencedate,
-                            to_reference_date=module.toreferencedate,
-                        )
+                        {
+                            "module_vid": module.modulevid,
+                            "code": module.code or "",
+                            "name": module.name or "",
+                            "description": module.description or "",
+                            "version_number": module.versionnumber or "",
+                            "from_reference_date": module.fromreferencedate,
+                            "to_reference_date": module.toreferencedate,
+                        }
                     )
 
             result.append(
@@ -627,7 +622,7 @@ class OperationScopesAPI:
 
     def get_tables_with_metadata(
         self, operation_version_id: int
-    ) -> List[TableVersionInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Get all tables involved in operation scopes with metadata.
 
@@ -635,14 +630,14 @@ class OperationScopesAPI:
             operation_version_id (int): Operation version ID
 
         Returns:
-            List[TableVersionInfo]: List of unique tables with metadata
+            List[Dict[str, Any]]: List of unique tables with metadata
 
         Example:
             >>> from py_dpm.api import OperationScopesAPI
             >>> api = OperationScopesAPI()
             >>> tables = api.get_tables_with_metadata(operation_version_id=1)
             >>> for table in tables:
-            ...     print(f"{table.code}: {table.name}")
+            ...     print(f"{table['code']}: {table['name']}")
         """
         scopes = self.get_existing_scopes(operation_version_id)
 
@@ -688,23 +683,23 @@ class OperationScopesAPI:
             module_version,
         ) in tables_query.all():
             result.append(
-                TableVersionInfo(
-                    table_vid=table.tablevid,
-                    code=table.code or "",
-                    name=table.name or "",
-                    description=table.description or "",
-                    module_vid=module_vid,
-                    module_code=module_code or "",
-                    module_name=module_name or "",
-                    module_version=module_version or "",
-                )
+                {
+                    "table_vid": table.tablevid,
+                    "code": table.code or "",
+                    "name": table.name or "",
+                    "description": table.description or "",
+                    "module_vid": module_vid,
+                    "module_code": module_code or "",
+                    "module_name": module_name or "",
+                    "module_version": module_version or "",
+                }
             )
 
         return result
 
     def get_tables_with_metadata_from_expression(
         self, expression: str, release_id: Optional[int] = None
-    ) -> List[TableVersionInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Get tables from expression with metadata.
 
@@ -716,7 +711,7 @@ class OperationScopesAPI:
             release_id (Optional[int]): Specific release ID to filter modules
 
         Returns:
-            List[TableVersionInfo]: List of tables referenced in the expression with metadata
+            List[Dict[str, Any]]: List of tables referenced in the expression with metadata
 
         Example:
             >>> from py_dpm.api import OperationScopesAPI
@@ -792,16 +787,16 @@ class OperationScopesAPI:
                 module_version,
             ) in tables_query.all():
                 result.append(
-                    TableVersionInfo(
-                        table_vid=table.tablevid,
-                        code=table.code or "",
-                        name=table.name or "",
-                        description=table.description or "",
-                        module_vid=module_vid,
-                        module_code=module_code or "",
-                        module_name=module_name or "",
-                        module_version=module_version or "",
-                    )
+                    {
+                        "table_vid": table.tablevid,
+                        "code": table.code or "",
+                        "name": table.name or "",
+                        "description": table.description or "",
+                        "module_vid": module_vid,
+                        "module_code": module_code or "",
+                        "module_name": module_name or "",
+                        "module_version": module_version or "",
+                    }
                 )
 
             return result
@@ -813,7 +808,7 @@ class OperationScopesAPI:
 
     def get_headers_with_metadata(
         self, operation_version_id: int, table_vid: Optional[int] = None
-    ) -> List[HeaderVersionInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Get headers from tables in operation scopes with metadata.
 
@@ -822,7 +817,7 @@ class OperationScopesAPI:
             table_vid (Optional[int]): Filter by specific table VID. If None, returns all headers.
 
         Returns:
-            List[HeaderVersionInfo]: List of headers with metadata
+            List[Dict[str, Any]]: List of headers with metadata
 
         Example:
             >>> from py_dpm.api import OperationScopesAPI
@@ -896,14 +891,16 @@ class OperationScopesAPI:
             header_type = header_type_map.get(direction, direction or "Unknown")
 
             result.append(
-                HeaderVersionInfo(
-                    header_vid=header_version.headervid,
-                    code=header_version.code or "",
-                    label=header_version.label or "",
-                    header_type=header_type,
-                    table_vid=table_vid_val,
-                    table_code=table_code or "",
-                    table_name=table_name or "",
+                result.append(
+                    {
+                        "header_vid": header_version.headervid,
+                        "code": header_version.code or "",
+                        "label": header_version.label or "",
+                        "header_type": header_type,
+                        "table_vid": table_vid_val,
+                        "table_code": table_code or "",
+                        "table_name": table_name or "",
+                    }
                 )
             )
 
@@ -914,7 +911,7 @@ class OperationScopesAPI:
         expression: str,
         table_vid: Optional[int] = None,
         release_id: Optional[int] = None,
-    ) -> List[HeaderVersionInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Get headers from expression with metadata.
 
@@ -928,7 +925,7 @@ class OperationScopesAPI:
             release_id (Optional[int]): Specific release ID to filter modules
 
         Returns:
-            List[HeaderVersionInfo]: List of headers referenced in the expression with metadata
+            List[Dict[str, Any]]: List of headers referenced in the expression with metadata
 
         Example:
             >>> from py_dpm.api import OperationScopesAPI
@@ -1010,8 +1007,10 @@ class OperationScopesAPI:
             all_header_codes = set(code_usage.keys())
 
             # Query headers - get all headers with matching codes
+            # Query headers - get all headers with matching codes
             # Note: We don't filter by Header.direction because tables may be transposed
             from py_dpm.dpm.db.models import Header
+            from sqlalchemy import and_
 
             headers_query = (
                 self.session.query(
@@ -1060,16 +1059,17 @@ class OperationScopesAPI:
                         seen.add(key)
 
                         # Return header with usage type from expression, not catalog direction
+                        # Return header with usage type from expression, not catalog direction
                         result.append(
-                            HeaderVersionInfo(
-                                header_vid=header_version.headervid,
-                                code=code,
-                                label=header_version.label or "",
-                                header_type=usage_type,  # Usage in expression: Row, Column, or Sheet
-                                table_vid=table_vid_val,
-                                table_code=table_code or "",
-                                table_name=table_name or "",
-                            )
+                            {
+                                "header_vid": header_version.headervid,
+                                "code": code,
+                                "label": header_version.label or "",
+                                "header_type": usage_type,  # Usage in expression: Row, Column, or Sheet
+                                "table_vid": table_vid_val,
+                                "table_code": table_code or "",
+                                "table_name": table_name or "",
+                            }
                         )
                         break  # Only add each header once per code (we'll get multiple if used in multiple dims)
 

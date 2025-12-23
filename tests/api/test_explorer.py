@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
 from py_dpm.api.explorer import DPMExplorer
-from py_dpm.api.common_types import TableVersionInfo, OpenKeyInfo
 
 
 # Mock models to avoid importing actual DB models which require DB connection
@@ -60,8 +59,9 @@ class TestDPMExplorer(unittest.TestCase):
         results = self.explorer.search_table("TABLE", release_id=1)
 
         self.assertEqual(len(results), 1)
-        self.assertIsInstance(results[0], TableVersionInfo)
-        self.assertEqual(results[0].code, "TABLE_A")
+        self.assertEqual(len(results), 1)
+        self.assertIsInstance(results[0], dict)
+        self.assertEqual(results[0]["code"], "TABLE_A")
 
     @patch("sqlalchemy.orm.aliased")
     @patch("py_dpm.models.Category")
@@ -90,17 +90,20 @@ class TestDPMExplorer(unittest.TestCase):
 
     def test_audit_table(self):
         # Setup mock values for dependent API calls
-        mock_table_info = TableVersionInfo(
-            table_vid=1, code="TABLE_X", name="Table X", description="Desc"
-        )
+        mock_table_info = {
+            "table_vid": 1,
+            "code": "TABLE_X",
+            "name": "Table X",
+            "description": "Desc",
+        }
         self.mock_api.get_table_version.return_value = mock_table_info
 
         mock_open_keys = [
-            OpenKeyInfo(
-                table_version_code="TABLE_X",
-                property_code="P1",
-                data_type_name="String",
-            )
+            {
+                "table_version_code": "TABLE_X",
+                "property_code": "P1",
+                "data_type_name": "String",
+            }
         ]
         self.mock_api.get_open_keys_for_table.return_value = mock_open_keys
 

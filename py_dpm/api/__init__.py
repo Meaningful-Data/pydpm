@@ -27,11 +27,7 @@ from py_dpm.api.dpm.operation_scopes import (
     OperationScopeDetailedInfo,
     OperationScopeResult,
 )
-from py_dpm.api.dpm.types import (
-    ModuleVersionInfo,
-    TableVersionInfo,
-    HeaderVersionInfo,
-)
+
 
 # Import AST generator convenience functions
 from py_dpm.api.dpm_xl.ast_generator import (
@@ -78,39 +74,33 @@ except ImportError:
 # Export the main API classes
 __all__ = [
     # Complete AST API (recommended - includes data fields)
-    'generate_complete_ast',
-    'generate_complete_batch',
-
+    "generate_complete_ast",
+    "generate_complete_batch",
     # Enriched AST API (engine-ready with framework structure)
-    'generate_enriched_ast',
-    'enrich_ast_with_metadata',
-
+    "generate_enriched_ast",
+    "enrich_ast_with_metadata",
     # Simple AST API
-    'ASTGenerator',
-    'parse_expression',
-    'validate_expression',
-    'parse_batch',
-
+    "ASTGenerator",
+    "parse_expression",
+    "validate_expression",
+    "parse_batch",
     # Advanced APIs
-    'MigrationAPI',
-    'SyntaxAPI',
-    'SemanticAPI',
-    'DataDictionaryAPI',
-    'OperationScopesAPI',
-    'DPMExplorer',
-
+    "MigrationAPI",
+    "SyntaxAPI",
+    "SemanticAPI",
+    "DataDictionaryAPI",
+    "OperationScopesAPI",
+    "DPMExplorer",
     # Operation Scopes Convenience Functions
-    'calculate_scopes_from_expression',
-    'get_existing_scopes',
-
+    "calculate_scopes_from_expression",
+    "get_existing_scopes",
     # Operation Scopes Data Classes
-    'ModuleVersionInfo',
-    'TableVersionInfo',
-    'HeaderVersionInfo',
-    'OperationScopeDetailedInfo',
-    'OperationScopeResult',
-
-    'API'  # Keep for backward compatibility
+    "ModuleVersionInfo",
+    "TableVersionInfo",
+    "HeaderVersionInfo",
+    "OperationScopeDetailedInfo",
+    "OperationScopeResult",
+    "API",  # Keep for backward compatibility
 ]
 
 
@@ -125,6 +115,7 @@ class API:
     - ASTGenerator for AST generation
     - DataDictionaryAPI for database queries
     """
+
     error_listener = DPMErrorListener()
     visitor = ASTVisitor()
 
@@ -212,7 +203,12 @@ class API:
     def semantic_validation(self, expression, release_id=None):
         self.create_ast(expression=expression)
 
-        oc = OperandsChecking(session=self.session, expression=expression, ast=self.AST, release_id=release_id)
+        oc = OperandsChecking(
+            session=self.session,
+            expression=expression,
+            ast=self.AST,
+            release_id=release_id,
+        )
 
         if SemanticAnalyzer:
             semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)

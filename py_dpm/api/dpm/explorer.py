@@ -1,6 +1,5 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
-from py_dpm.api.dpm.types import TableVersionInfo
 
 
 class DPMExplorer:
@@ -62,7 +61,7 @@ class DPMExplorer:
 
     def search_table(
         self, query: str, release_id: Optional[int] = None
-    ) -> List[TableVersionInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Search for tables by code or name substring.
 
@@ -71,7 +70,7 @@ class DPMExplorer:
             release_id: Optional release ID
 
         Returns:
-            List of matching TableVersionInfo objects
+            List of matching dictionaries with table info
         """
         from py_dpm.dpm.db.models import TableVersion
         from sqlalchemy import or_
@@ -102,12 +101,12 @@ class DPMExplorer:
 
         results = db_query.all()
         return [
-            TableVersionInfo(
-                table_vid=r.tablevid,
-                code=r.code,
-                name=r.name,
-                description=r.description,
-            )
+            {
+                "table_vid": r.tablevid,
+                "code": r.code,
+                "name": r.name,
+                "description": r.description,
+            }
             for r in results
         ]
 

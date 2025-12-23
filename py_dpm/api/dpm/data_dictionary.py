@@ -30,13 +30,6 @@ from py_dpm.dpm.db.models import (
     TableVersionHeader,
     TableVersionCell,
 )
-from py_dpm.api.dpm.types import (
-    DatapointInfo,
-    TableVersionInfo,
-    ItemCategoryInfo,
-    OpenKeyInfo,
-    ReleaseInfo,
-)
 
 
 class DataDictionaryAPI:
@@ -70,37 +63,16 @@ class DataDictionaryAPI:
 
     # ==================== Release Query Methods ====================
 
-    def get_releases(self) -> List[ReleaseInfo]:
+    def get_releases(self) -> List[Dict[str, Any]]:
         """
         Fetch list of available releases from database.
 
         Returns:
-            List of ReleaseInfo objects
+            List of dictionaries containing release info
         """
-        results = (
-            self.session.query(
-                Release.releaseid,
-                Release.code,
-                Release.date,
-                Release.description,
-                Release.status,
-                Release.iscurrent,
-            )
-            .order_by(Release.date.desc())
-            .all()
-        )
+        results = self.session.query(Release).order_by(Release.date.desc()).all()
 
-        return [
-            ReleaseInfo(
-                release_id=r.releaseid,
-                code=r.code,
-                date=r.date,
-                description=r.description,
-                status=r.status,
-                is_current=r.iscurrent,
-            )
-            for r in results
-        ]
+        return [r.to_dict() for r in results]
 
     # ==================== Reference Query Methods ====================
 
@@ -564,7 +536,7 @@ class DataDictionaryAPI:
 
     def get_open_keys_for_table(
         self, table_code: str, release_id: Optional[int] = None
-    ) -> List[OpenKeyInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Get open key information for a table.
 
@@ -573,7 +545,7 @@ class DataDictionaryAPI:
             release_id: Optional release ID to filter by
 
         Returns:
-            List of OpenKeyInfo objects
+            List of dictionaries with open key info
         """
         query = (
             self.session.query(
@@ -613,11 +585,11 @@ class DataDictionaryAPI:
         results = query.distinct().order_by(TableVersion.code, ItemCategory.code).all()
 
         return [
-            OpenKeyInfo(
-                table_version_code=r.table_version_code,
-                property_code=r.property_code,
-                data_type_name=r.data_type_name,
-            )
+            {
+                "table_version_code": r.table_version_code,
+                "property_code": r.property_code,
+                "data_type_name": r.data_type_name,
+            }
             for r in results
         ]
 
@@ -665,7 +637,7 @@ class DataDictionaryAPI:
 
     def get_available_items_for_key(
         self, property_code: str, release_id: Optional[int] = None
-    ) -> List[ItemCategoryInfo]:
+    ) -> List[Dict[str, Any]]:
         """
         Get available items (code, signature) for an open key property.
 
@@ -674,7 +646,7 @@ class DataDictionaryAPI:
             release_id: Optional release ID to filter by
 
         Returns:
-            List of ItemCategoryInfo objects (code, signature)
+            List of dictionaries with item info (code, signature)
         """
         ic_alias1 = ItemCategory
         ic_alias2 = ItemCategory.__table__.alias("ic2")
@@ -702,7 +674,7 @@ class DataDictionaryAPI:
             )
 
         results = query.order_by(ic_alias2.c.Code).all()
-        return [ItemCategoryInfo(code=r[0], signature=r[1]) for r in results]
+        return [{"code": r[0], "signature": r[1]} for r in results]
 
     # ==================== Metadata Query Methods ====================
 
@@ -713,7 +685,7 @@ class DataDictionaryAPI:
         column_code: str,
         sheet_code: Optional[str] = None,
         release_id: Optional[int] = None,
-    ) -> Optional[DatapointInfo]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Get metadata for a specific datapoint.
         Always uses ViewDatapoints class methods for database compatibility.
@@ -726,7 +698,7 @@ class DataDictionaryAPI:
             release_id: Optional release ID to filter by
 
         Returns:
-            DatapointInfo object or None
+            Dictionary with datapoint metadata or None
         """
         # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
         base_query = ViewDatapoints.create_view_query(self.session)
@@ -750,28 +722,28 @@ class DataDictionaryAPI:
         result = query.first()
 
         if result:
-            return DatapointInfo(
-                cell_code=result.cell_code,
-                table_code=result.table_code,
-                row_code=result.row_code,
-                column_code=result.column_code,
-                sheet_code=result.sheet_code,
-                variable_id=result.variable_id,
-                data_type=result.data_type,
-                table_vid=result.table_vid,
-                property_id=result.property_id,
-                start_release=result.start_release,
-                end_release=result.end_release,
-                cell_id=result.cell_id,
-                context_id=result.context_id,
-                variable_vid=result.variable_vid,
-            )
+            return {
+                "cell_code": result.cell_code,
+                "table_code": result.table_code,
+                "row_code": result.row_code,
+                "column_code": result.column_code,
+                "sheet_code": result.sheet_code,
+                "variable_id": result.variable_id,
+                "data_type": result.data_type,
+                "table_vid": result.table_vid,
+                "property_id": result.property_id,
+                "start_release": result.start_release,
+                "end_release": result.end_release,
+                "cell_id": result.cell_id,
+                "context_id": result.context_id,
+                "variable_vid": result.variable_vid,
+            }
 
         return None
 
     def get_table_version(
         self, table_code: str, release_id: Optional[int] = None
-    ) -> Optional[TableVersionInfo]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Get table version information.
 
@@ -780,7 +752,7 @@ class DataDictionaryAPI:
             release_id: Optional release ID to filter by
 
         Returns:
-            TableVersionInfo object or None
+            Dictionary with table version info or None
         """
         query = self.session.query(TableVersion.tablevid, TableVersion.code).filter(
             TableVersion.code == table_code
@@ -798,12 +770,12 @@ class DataDictionaryAPI:
         result = query.first()
 
         if result:
-            return TableVersionInfo(
-                table_vid=result.tablevid,
-                code=result.code,
-                name="",  # Not fetched in first query
-                description="",  # Not fetched in first query
-            )
+            return {
+                "table_vid": result.tablevid,
+                "code": result.code,
+                "name": "",  # Not fetched in first query
+                "description": "",  # Not fetched in first query
+            }
 
         # Fallback with LIKE pattern
         pattern = f"{table_code}%"
@@ -823,12 +795,12 @@ class DataDictionaryAPI:
         result = query.first()
 
         if result:
-            return TableVersionInfo(
-                table_vid=result.tablevid,
-                code=result.code,
-                name="",  # Not fetched in fallback
-                description="",  # Not fetched in fallback
-            )
+            return {
+                "table_vid": result.tablevid,
+                "code": result.code,
+                "name": "",  # Not fetched in fallback
+                "description": "",  # Not fetched in fallback
+            }
 
         return None
 

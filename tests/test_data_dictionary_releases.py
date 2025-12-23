@@ -2,7 +2,6 @@ import pytest
 from datetime import date
 from sqlalchemy.orm import sessionmaker
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
-from py_dpm.api.dpm.types import ReleaseInfo
 from py_dpm.dpm.db.models import Release, Base
 
 
@@ -52,10 +51,10 @@ def api_with_data():
 
 
 def test_get_releases_returns_correct_type(api_with_data):
-    """Test that get_releases returns a list of ReleaseInfo objects."""
+    """Test that get_releases returns a list of dictionaries."""
     releases = api_with_data.get_releases()
     assert isinstance(releases, list)
-    assert all(isinstance(r, ReleaseInfo) for r in releases)
+    assert all(isinstance(r, dict) for r in releases)
 
 
 def test_get_releases_returns_all_releases(api_with_data):
@@ -67,24 +66,24 @@ def test_get_releases_returns_all_releases(api_with_data):
 def test_get_releases_ordered_by_date_desc(api_with_data):
     """Test that releases are ordered by date descending."""
     releases = api_with_data.get_releases()
-    dates = [r.date for r in releases]
+    dates = [r["date"] for r in releases]
     assert dates == sorted(dates, reverse=True)
-    assert releases[0].code == "R3"
-    assert releases[1].code == "R2"
-    assert releases[2].code == "R1"
+    assert releases[0]["code"] == "R3"
+    assert releases[1]["code"] == "R2"
+    assert releases[2]["code"] == "R1"
 
 
 def test_get_releases_content_mapping(api_with_data):
-    """Test that ReleaseInfo fields are correctly mapped from the database."""
+    """Test that dictionary fields are correctly mapped from the database."""
     releases = api_with_data.get_releases()
-    r2 = next(r for r in releases if r.code == "R2")
+    r2 = next(r for r in releases if r["code"] == "R2")
 
-    assert r2.release_id == 2
-    assert r2.code == "R2"
-    assert r2.date == date(2023, 6, 1)
-    assert r2.description == "Current Release"
-    assert r2.status == "active"
-    assert r2.is_current is True
+    assert r2["releaseid"] == 2
+    assert r2["code"] == "R2"
+    assert r2["date"] == date(2023, 6, 1)
+    assert r2["description"] == "Current Release"
+    assert r2["status"] == "active"
+    assert r2["iscurrent"] is True
 
 
 def test_get_releases_empty_db():
