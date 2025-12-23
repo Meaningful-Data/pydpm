@@ -1,6 +1,6 @@
 import pytest
 from datetime import date
-from sqlalchemy.orm import sessionmaker
+
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
 from py_dpm.dpm.models import Release, Base
 
@@ -95,3 +95,18 @@ def test_get_releases_empty_db():
     releases = api.get_releases()
     assert releases == []
     api.session.close()
+
+
+def test_get_release_by_id_returns_correct_release(api_with_data):
+    """Test that get_release_by_id returns the correct release."""
+    release = api_with_data.get_release_by_id(2)
+    assert release is not None
+    assert release["releaseid"] == 2
+    assert release["code"] == "R2"
+    assert release["description"] == "Current Release"
+
+
+def test_get_release_by_id_returns_none_if_not_found(api_with_data):
+    """Test that get_release_by_id returns None for non-existent ID."""
+    release = api_with_data.get_release_by_id(999)
+    assert release is None

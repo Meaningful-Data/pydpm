@@ -32,6 +32,7 @@ from py_dpm.dpm.models import (
 )
 from py_dpm.dpm.queries.reference import ReferenceQuery
 from py_dpm.dpm.queries.item import ItemQuery
+from py_dpm.dpm.queries.basic_objects import ReleaseQuery
 
 
 class DataDictionaryAPI:
@@ -72,9 +73,23 @@ class DataDictionaryAPI:
         Returns:
             List of dictionaries containing release info
         """
-        results = self.session.query(Release).order_by(Release.date.desc()).all()
+        # Use ReleaseQuery
+        query = ReleaseQuery.get_all_releases(self.session)
+        return query.to_dict()
 
-        return [r.to_dict() for r in results]
+    def get_release_by_id(self, release_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a specific release by its ID.
+
+        Args:
+            release_id: The ID of the release to fetch
+
+        Returns:
+            Dictionary with release info or None if not found
+        """
+        query = ReleaseQuery.get_release_by_id(self.session, release_id)
+        result = query.to_dict()
+        return result[0] if result else None
 
     # ==================== Reference Query Methods ====================
 
