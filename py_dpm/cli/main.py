@@ -6,7 +6,7 @@ import os
 import sys
 import pandas as pd
 
-from py_dpm.api import API, SemanticAPI
+from py_dpm.api import SemanticAPI
 from py_dpm.api.dpm_xl.semantic import SemanticValidationResult
 from py_dpm.api.dpm.operation_scopes import OperationScopesAPI
 from py_dpm.dpm.db.migration import run_migration
