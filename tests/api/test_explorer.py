@@ -21,7 +21,7 @@ class TestDPMExplorer(unittest.TestCase):
         self.explorer = DPMExplorer(data_dict_api=self.mock_api)
 
     @patch("sqlalchemy.or_")
-    @patch("py_dpm.api.explorer.TableVersion")
+    @patch("py_dpm.dpm.models.TableVersion")
     def test_search_table(self, mock_table_version, mock_or):
         # Setup mock return values
 
@@ -63,10 +63,10 @@ class TestDPMExplorer(unittest.TestCase):
         self.assertIsInstance(results[0], dict)
         self.assertEqual(results[0]["code"], "TABLE_A")
 
-    @patch("py_dpm.api.explorer.aliased")
-    @patch("py_dpm.api.explorer.Category")
-    @patch("py_dpm.api.explorer.PropertyCategory")
-    @patch("py_dpm.api.explorer.ItemCategory")
+    @patch("sqlalchemy.orm.aliased")
+    @patch("py_dpm.dpm.models.Category")
+    @patch("py_dpm.dpm.models.PropertyCategory")
+    @patch("py_dpm.dpm.models.ItemCategory")
     def test_get_properties_using_item(self, mock_ic, mock_pc, mock_cat, mock_aliased):
         # Setup mock return values
         mock_result = MagicMock()

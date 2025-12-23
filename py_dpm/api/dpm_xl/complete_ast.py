@@ -545,7 +545,7 @@ def _get_release_info(dpm_version: Optional[str], engine) -> Dict[str, Any]:
     Returns:
         dict: {'release': str, 'publication_date': str}
     """
-    from py_dpm.dpm.db.models import Release
+    from py_dpm.dpm.models import Release
     from sqlalchemy.orm import sessionmaker
 
     Session = sessionmaker(bind=engine)
@@ -608,7 +608,7 @@ def _get_table_info(table_code: str, engine) -> Optional[Dict[str, Any]]:
     Returns:
         dict: {'table_vid': int, 'code': str} or None if not found
     """
-    from py_dpm.dpm.db.models import TableVersion
+    from py_dpm.dpm.models import TableVersion
     from sqlalchemy.orm import sessionmaker
     import re
 

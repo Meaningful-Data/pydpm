@@ -6,7 +6,7 @@ import pandas as pd
 from py_dpm.dpm_xl.ast.nodes import VarID, WithExpression
 from py_dpm.dpm_xl.ast.template import ASTTemplate
 from py_dpm.exceptions import exceptions
-from py_dpm.dpm.db.models import (
+from py_dpm.dpm.models import (
     ModuleVersionComposition,
     TableGroup,
     TableGroupComposition,

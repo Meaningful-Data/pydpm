@@ -2,7 +2,7 @@ import pytest
 from datetime import date
 from sqlalchemy.orm import sessionmaker
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
-from py_dpm.dpm.db.models import Release, Base
+from py_dpm.dpm.models import Release, Base
 
 
 # Fixture to set up the in-memory database and API

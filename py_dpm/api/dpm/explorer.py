@@ -72,7 +72,7 @@ class DPMExplorer:
         Returns:
             List of matching dictionaries with table info
         """
-        from py_dpm.dpm.db.models import TableVersion
+        from py_dpm.dpm.models import TableVersion
         from sqlalchemy import or_
 
         session = self.api.session

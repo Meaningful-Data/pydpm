@@ -1,8 +1,8 @@
 import pytest
 from datetime import date
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
-from py_dpm.dpm.db.models import Base, TableVersion, ItemCategory
-from py_dpm.dpm.db.queries.reference import ReferenceQuery
+from py_dpm.dpm.models import Base, TableVersion, ItemCategory
+from py_dpm.dpm.queries.reference import ReferenceQuery
 
 
 @pytest.fixture
