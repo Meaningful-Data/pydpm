@@ -1,8 +1,11 @@
 from typing import Optional
-from sqlalchemy import distinct, or_, func
+from datetime import datetime
+from sqlalchemy import distinct, or_, func, and_
 from py_dpm.dpm.models import (
     TableVersion,
     ViewDatapoints,
+    ModuleVersion,
+    ModuleVersionComposition,
 )
 from py_dpm.dpm.queries.base import BaseQuery
 from py_dpm.dpm.queries.filters import filter_by_release
@@ -14,14 +17,41 @@ class TableQuery:
     """
 
     @staticmethod
-    def get_available_tables(session, release_id: Optional[int] = None) -> BaseQuery:
+    def get_available_tables(
+        session, release_id: Optional[int] = None, date: Optional[str] = None
+    ) -> BaseQuery:
         """Get all available table codes."""
+        if release_id and date:
+            raise ValueError("Specify either release or date, not both.")
+
         q = session.query(distinct(TableVersion.code).label("code")).filter(
             TableVersion.code.isnot(None)
         )
-        q = filter_by_release(
-            q, release_id, TableVersion.startreleaseid, TableVersion.endreleaseid
-        )
+
+        if date:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+            q = (
+                q.join(
+                    ModuleVersionComposition,
+                    TableVersion.tablevid == ModuleVersionComposition.tablevid,
+                )
+                .join(
+                    ModuleVersion,
+                    ModuleVersionComposition.modulevid == ModuleVersion.modulevid,
+                )
+                .filter(
+                    ModuleVersion.fromreferencedate <= target_date,
+                    or_(
+                        ModuleVersion.toreferencedate.is_(None),
+                        ModuleVersion.toreferencedate > target_date,
+                    ),
+                )
+            )
+        else:
+            q = filter_by_release(
+                q, release_id, TableVersion.startreleaseid, TableVersion.endreleaseid
+            )
+
         q = q.order_by(TableVersion.code)
 
         return BaseQuery(session, q)
