@@ -1386,8 +1386,6 @@ class Release(Base):
     iscurrent = Column("IsCurrent", Boolean)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
     latestvariablegentime = Column("LatestVariableGenTime", DateTime)
-    name = Column("Name", String(50))
-
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     changelogs = relationship("Changelog", back_populates="release")

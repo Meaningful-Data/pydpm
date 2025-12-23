@@ -30,6 +30,8 @@ from py_dpm.dpm.db.models import (
     TableVersionHeader,
     TableVersionCell,
 )
+from py_dpm.dpm.db.queries.reference import ReferenceQuery
+from py_dpm.dpm.db.queries.item import ItemQuery
 
 
 class DataDictionaryAPI:
@@ -86,21 +88,16 @@ class DataDictionaryAPI:
         Returns:
             List of table codes
         """
-        query = self.session.query(distinct(TableVersion.code)).filter(
-            TableVersion.code.isnot(None)
-        )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(
-                    TableVersion.endreleaseid.is_(None),
-                    TableVersion.endreleaseid > release_id,
-                ),
-                TableVersion.startreleaseid <= release_id,
-            )
-
-        results = query.order_by(TableVersion.code).all()
-        return [r[0] for r in results]
+        # Use ReferenceQuery
+        query = ReferenceQuery.get_available_tables(self.session, release_id)
+        # Return flattened list for backward compatibility
+        result = query.to_dict()
+        # handle list of scalars or dicts depending on implementation
+        # BaseQuery.to_dict() with distinct(col) -> list of single values or dicts
+        # Let's check how BaseQuery handles it
+        # It calls .all(). If single entity, returns scalar list.
+        # Wait, BaseQuery 'dict(row)'?
+        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
     def get_available_tables_from_datapoints(
         self, release_id: Optional[int] = None
@@ -115,22 +112,12 @@ class DataDictionaryAPI:
         Returns:
             List of table codes
         """
-        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
-        base_query = ViewDatapoints.create_view_query(self.session)
-        subq = base_query.subquery()
-
-        query = self.session.query(distinct(subq.c.table_code)).filter(
-            subq.c.table_code.isnot(None)
+        # Use ReferenceQuery
+        query = ReferenceQuery.get_available_tables_from_datapoints(
+            self.session, release_id
         )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(subq.c.end_release.is_(None), subq.c.end_release > release_id),
-                subq.c.start_release <= release_id,
-            )
-
-        results = query.order_by(subq.c.table_code).all()
-        return [r[0] for r in results]
+        result = query.to_dict()
+        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
     def get_available_rows(
         self, table_code: str, release_id: Optional[int] = None
@@ -146,22 +133,10 @@ class DataDictionaryAPI:
         Returns:
             List of row codes
         """
-        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
-        base_query = ViewDatapoints.create_view_query(self.session)
-        subq = base_query.subquery()
-
-        query = self.session.query(distinct(subq.c.row_code)).filter(
-            subq.c.table_code == table_code, subq.c.row_code.isnot(None)
-        )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(subq.c.end_release.is_(None), subq.c.end_release > release_id),
-                subq.c.start_release <= release_id,
-            )
-
-        results = query.order_by(subq.c.row_code).all()
-        return [r[0] for r in results]
+        # Use ReferenceQuery
+        query = ReferenceQuery.get_available_rows(self.session, table_code, release_id)
+        result = query.to_dict()
+        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
     def get_available_columns(
         self, table_code: str, release_id: Optional[int] = None
@@ -177,22 +152,12 @@ class DataDictionaryAPI:
         Returns:
             List of column codes
         """
-        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
-        base_query = ViewDatapoints.create_view_query(self.session)
-        subq = base_query.subquery()
-
-        query = self.session.query(distinct(subq.c.column_code)).filter(
-            subq.c.table_code == table_code, subq.c.column_code.isnot(None)
+        # Use ReferenceQuery
+        query = ReferenceQuery.get_available_columns(
+            self.session, table_code, release_id
         )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(subq.c.end_release.is_(None), subq.c.end_release > release_id),
-                subq.c.start_release <= release_id,
-            )
-
-        results = query.order_by(subq.c.column_code).all()
-        return [r[0] for r in results]
+        result = query.to_dict()
+        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
     def get_reference_statistics(
         self, release_id: Optional[int] = None
@@ -207,34 +172,13 @@ class DataDictionaryAPI:
         Returns:
             Dictionary with row_count and column_count
         """
-        # Use ViewDatapoints class method (works for both SQLite and PostgreSQL)
-        base_query = ViewDatapoints.create_view_query(self.session)
-        subq = base_query.subquery()
-
-        # Base query for filtering
-        base = self.session.query(subq)
-
-        if release_id is not None:
-            base = base.filter(
-                or_(subq.c.end_release.is_(None), subq.c.end_release > release_id),
-                subq.c.start_release <= release_id,
-            )
-
-        # Count distinct rows
-        row_count = (
-            base.filter(subq.c.row_code.isnot(None))
-            .with_entities(func.count(distinct(subq.c.row_code)))
-            .scalar()
-        )
-
-        # Count distinct columns
-        column_count = (
-            base.filter(subq.c.column_code.isnot(None))
-            .with_entities(func.count(distinct(subq.c.column_code)))
-            .scalar()
-        )
-
-        return {"row_count": row_count or 0, "column_count": column_count or 0}
+        # Use ReferenceQuery
+        query = ReferenceQuery.get_reference_statistics(self.session, release_id)
+        # to_dict returns list of dicts: [{'row_count': X, 'column_count': Y}]
+        result = query.to_dict()
+        if result:
+            return result[0]
+        return {"row_count": 0, "column_count": 0}
 
     # ==================== Item Query Methods ====================
 
@@ -248,23 +192,10 @@ class DataDictionaryAPI:
         Returns:
             List of item signatures
         """
-        query = self.session.query(distinct(ItemCategory.signature)).filter(
-            ItemCategory.signature.isnot(None)
-        )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(
-                    ItemCategory.endreleaseid.is_(None),
-                    ItemCategory.endreleaseid > release_id,
-                )
-            )
-        else:
-            # Default: only active items (no end release)
-            query = query.filter(ItemCategory.endreleaseid.is_(None))
-
-        results = query.order_by(ItemCategory.signature).all()
-        return [r[0] for r in results]
+        # Use ItemQuery
+        query = ItemQuery.get_all_item_signatures(self.session, release_id)
+        result = query.to_dict()
+        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
     def get_item_categories(
         self, release_id: Optional[int] = None
@@ -278,20 +209,17 @@ class DataDictionaryAPI:
         Returns:
             List of tuples (code, signature)
         """
-        query = self.session.query(ItemCategory.code, ItemCategory.signature).filter(
-            ItemCategory.code.isnot(None), ItemCategory.signature.isnot(None)
+        # Use ItemQuery
+        query = ItemQuery.get_item_categories(self.session, release_id)
+        result = query.to_dict()
+        # Expecting tuples (code, signature)
+        # to_dict might return [{'code': 'x', 'signature': 'y'}]
+        # Original: [(r[0], r[1])]
+        return (
+            [(r["Code"], r["Signature"]) for r in result]
+            if result and isinstance(result[0], dict)
+            else result
         )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(
-                    ItemCategory.endreleaseid.is_(None),
-                    ItemCategory.endreleaseid > release_id,
-                )
-            )
-
-        results = query.order_by(ItemCategory.code, ItemCategory.signature).all()
-        return [(r[0], r[1]) for r in results]
 
     # ==================== Sheet Query Methods ====================
 
@@ -346,20 +274,12 @@ class DataDictionaryAPI:
         base_query = ViewDatapoints.create_view_query(self.session)
         subq = base_query.subquery()
 
-        query = self.session.query(distinct(subq.c.sheet_code)).filter(
-            subq.c.table_code == table_code,
-            subq.c.sheet_code.isnot(None),
-            subq.c.sheet_code != "",
+        # Use ReferenceQuery
+        query = ReferenceQuery.get_available_sheets(
+            self.session, table_code, release_id
         )
-
-        if release_id is not None:
-            query = query.filter(
-                or_(subq.c.end_release.is_(None), subq.c.end_release > release_id),
-                subq.c.start_release <= release_id,
-            )
-
-        results = query.order_by(subq.c.sheet_code).all()
-        return [r[0] for r in results]
+        result = query.to_dict()
+        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
     def check_cell_exists(
         self,

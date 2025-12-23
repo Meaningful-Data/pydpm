@@ -9,16 +9,14 @@ from rich.console import Console
 
 console = Console()
 
-# Try to load .env from multiple locations
-# 1. First try py_dpm/.env (same directory as this file)
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(env_path):
-    load_dotenv(env_path)
-else:
-    # 2. Try project root .env (one directory up from py_dpm)
-    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+# Try to load .env from parent directories
+current_dir = os.path.dirname(os.path.abspath(__file__))
+while current_dir != os.path.dirname(current_dir):  # Stop at root
+    env_path = os.path.join(current_dir, ".env")
     if os.path.exists(env_path):
         load_dotenv(env_path)
+        break
+    current_dir = os.path.dirname(current_dir)
 
 # SQLite configuration
 sqlite_db_path = os.getenv("SQLITE_DB_PATH", "database.db")
@@ -40,16 +38,18 @@ database_name = os.getenv("DATABASE_NAME", None)
 use_postgres = os.getenv("USE_POSTGRES", "false").lower() == "true"
 use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true" and not use_postgres
 
-if use_postgres and not (postgres_host and postgres_user and postgres_pass and postgres_db):
+if use_postgres and not (
+    postgres_host and postgres_user and postgres_pass and postgres_db
+):
     console.print(f"Warning: PostgreSQL credentials not provided", style="bold yellow")
 elif not use_sqlite and not use_postgres and not (server and username and password):
     console.print(f"Warning: Database credentials not provided", style="bold yellow")
 elif not use_sqlite and not use_postgres:
     # Handling special characters in password for SQL Server
-    password = password.replace('}', '}}')
-    for x in '%&.@#/\\=;':
+    password = password.replace("}", "}}")
+    for x in "%&.@#/\\=;":
         if x in password:
-            password = '{' + password + '}'
+            password = "{" + password + "}"
             break
 
 engine = None
@@ -80,7 +80,7 @@ def create_engine_from_url(connection_url):
     global engine, sessionMakerObject
 
     # Detect database type from URL scheme
-    is_sqlite = connection_url.startswith('sqlite://')
+    is_sqlite = connection_url.startswith("sqlite://")
 
     if is_sqlite:
         # SQLite doesn't support connection pooling
@@ -92,7 +92,7 @@ def create_engine_from_url(connection_url):
             pool_size=20,
             max_overflow=10,
             pool_recycle=180,
-            pool_pre_ping=True
+            pool_pre_ping=True,
         )
 
     # Initialize global sessionMakerObject
@@ -110,14 +110,15 @@ def create_engine_object(url):
     url_str = str(url)
 
     # Detect database type from URL scheme (not from environment variables)
-    is_sqlite = url_str.startswith('sqlite://')
+    is_sqlite = url_str.startswith("sqlite://")
 
     if is_sqlite:
         engine = create_engine(url, pool_pre_ping=True)
     else:
         # Server-based databases (PostgreSQL, MySQL, SQL Server, etc.) with connection pooling
-        engine = create_engine(url, pool_size=20, max_overflow=10,
-                               pool_recycle=180, pool_pre_ping=True)
+        engine = create_engine(
+            url, pool_size=20, max_overflow=10, pool_recycle=180, pool_pre_ping=True
+        )
 
     global sessionMakerObject
     if sessionMakerObject is not None:
@@ -169,7 +170,7 @@ def get_engine(owner=None, database_path=None, connection_url=None):
         # If owner is specified, append it to the filename
         if owner:
             base_name = os.path.splitext(sqlite_db_path)[0]
-            extension = os.path.splitext(sqlite_db_path)[1] or '.db'
+            extension = os.path.splitext(sqlite_db_path)[1] or ".db"
             db_path = f"{base_name}_{owner}{extension}"
         else:
             db_path = sqlite_db_path
@@ -181,7 +182,7 @@ def get_engine(owner=None, database_path=None, connection_url=None):
         if owner is None:
             raise Exception("Cannot generate engine. No owner used.")
 
-        if owner not in ('EBA', 'EIOPA'):
+        if owner not in ("EBA", "EIOPA"):
             raise Exception("Invalid owner, must be EBA or EIOPA")
 
         if database_name is None:
@@ -189,18 +190,23 @@ def get_engine(owner=None, database_path=None, connection_url=None):
         else:
             database = database_name
 
-        if os.name == 'nt':
+        if os.name == "nt":
             driver = "{SQL Server}"
         else:
-            driver = os.getenv('SQL_DRIVER', "{ODBC Driver 18 for SQL Server}")
+            driver = os.getenv("SQL_DRIVER", "{ODBC Driver 18 for SQL Server}")
 
         connection_string = (
-            f"DRIVER={driver}", f"SERVER={server}",
-            f"DATABASE={database}", f"UID={username}",
+            f"DRIVER={driver}",
+            f"SERVER={server}",
+            f"DATABASE={database}",
+            f"UID={username}",
             f"PWD={password}",
-            "TrustServerCertificate=yes")
-        connection_string = ';'.join(connection_string)
-        connection_url = URL.create("mssql+pyodbc", query={"odbc_connect": quote_plus(connection_string)})
+            "TrustServerCertificate=yes",
+        )
+        connection_string = ";".join(connection_string)
+        connection_url = URL.create(
+            "mssql+pyodbc", query={"odbc_connect": quote_plus(connection_string)}
+        )
         return create_engine_object(connection_url)
 
 
