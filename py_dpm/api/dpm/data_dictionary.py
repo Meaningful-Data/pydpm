@@ -30,8 +30,8 @@ from py_dpm.dpm.models import (
     TableVersionHeader,
     TableVersionCell,
 )
-from py_dpm.dpm.queries.reference import ReferenceQuery
-from py_dpm.dpm.queries.item import ItemQuery
+from py_dpm.dpm.queries.tables import TableQuery
+from py_dpm.dpm.queries.glossary import ItemQuery
 from py_dpm.dpm.queries.basic_objects import ReleaseQuery
 
 
@@ -103,8 +103,8 @@ class DataDictionaryAPI:
         Returns:
             List of table codes
         """
-        # Use ReferenceQuery
-        query = ReferenceQuery.get_available_tables(self.session, release_id)
+        # Use TableQuery
+        query = TableQuery.get_available_tables(self.session, release_id)
         # Return flattened list for backward compatibility
         result = query.to_dict()
         # handle list of scalars or dicts depending on implementation
@@ -127,8 +127,8 @@ class DataDictionaryAPI:
         Returns:
             List of table codes
         """
-        # Use ReferenceQuery
-        query = ReferenceQuery.get_available_tables_from_datapoints(
+        # Use TableQuery
+        query = TableQuery.get_available_tables_from_datapoints(
             self.session, release_id
         )
         result = query.to_dict()
@@ -148,8 +148,8 @@ class DataDictionaryAPI:
         Returns:
             List of row codes
         """
-        # Use ReferenceQuery
-        query = ReferenceQuery.get_available_rows(self.session, table_code, release_id)
+        # Use TableQuery
+        query = TableQuery.get_available_rows(self.session, table_code, release_id)
         result = query.to_dict()
         return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
@@ -167,10 +167,8 @@ class DataDictionaryAPI:
         Returns:
             List of column codes
         """
-        # Use ReferenceQuery
-        query = ReferenceQuery.get_available_columns(
-            self.session, table_code, release_id
-        )
+        # Use TableQuery
+        query = TableQuery.get_available_columns(self.session, table_code, release_id)
         result = query.to_dict()
         return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 
@@ -187,8 +185,8 @@ class DataDictionaryAPI:
         Returns:
             Dictionary with row_count and column_count
         """
-        # Use ReferenceQuery
-        query = ReferenceQuery.get_reference_statistics(self.session, release_id)
+        # Use TableQuery
+        query = TableQuery.get_reference_statistics(self.session, release_id)
         # to_dict returns list of dicts: [{'row_count': X, 'column_count': Y}]
         result = query.to_dict()
         if result:
@@ -289,10 +287,8 @@ class DataDictionaryAPI:
         base_query = ViewDatapoints.create_view_query(self.session)
         subq = base_query.subquery()
 
-        # Use ReferenceQuery
-        query = ReferenceQuery.get_available_sheets(
-            self.session, table_code, release_id
-        )
+        # Use TableQuery
+        query = TableQuery.get_available_sheets(self.session, table_code, release_id)
         result = query.to_dict()
         return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
 

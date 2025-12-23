@@ -4,11 +4,11 @@ from py_dpm.dpm.models import (
     TableVersion,
     ViewDatapoints,
 )
-from py_dpm.dpm.queries.query import BaseQuery
+from py_dpm.dpm.queries.base import BaseQuery
 from py_dpm.dpm.queries.filters import filter_by_release
 
 
-class ReferenceQuery:
+class TableQuery:
     """
     Queries related to data structure references (Tables, Rows, Columns, Sheets).
     """
@@ -24,9 +24,6 @@ class ReferenceQuery:
         )
         q = q.order_by(TableVersion.code)
 
-        # We need to flatten the result usually (list of strings), but BaseQuery.to_dict/to_df handles structure.
-        # However, for a list of scalars (strings), to_dict might return [{'anon_1': 'TableCode'}] or similar.
-        # BaseQuery.to_dict handles scalar results if they are not Rows.
         return BaseQuery(session, q)
 
     @staticmethod

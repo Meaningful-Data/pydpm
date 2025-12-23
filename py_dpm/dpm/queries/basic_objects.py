@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from py_dpm.dpm.models import Release
-from py_dpm.dpm.queries.query import BaseQuery
+from py_dpm.dpm.queries.base import BaseQuery
 
 
 class ReleaseQuery:

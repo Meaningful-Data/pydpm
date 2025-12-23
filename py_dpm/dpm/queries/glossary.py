@@ -1,7 +1,7 @@
 from typing import Optional, List
 from sqlalchemy import distinct, or_
 from py_dpm.dpm.models import ItemCategory
-from py_dpm.dpm.queries.query import BaseQuery
+from py_dpm.dpm.queries.base import BaseQuery
 from py_dpm.dpm.queries.filters import filter_by_release, filter_active_only
 
 
@@ -22,7 +22,6 @@ class ItemQuery:
                 q, release_id, ItemCategory.startreleaseid, ItemCategory.endreleaseid
             )
         else:
-            # Replicating original logic: default to active only if no release specified
             q = filter_active_only(q, ItemCategory.endreleaseid)
 
         q = q.order_by(ItemCategory.signature)
@@ -40,10 +39,6 @@ class ItemQuery:
                 q, release_id, ItemCategory.startreleaseid, ItemCategory.endreleaseid
             )
         else:
-            # Original logic did NOT imply active-only default here in get_item_categories?
-            # Checking original code...
-            # L290: if release_id is not None: filter...
-            # It did NOT have the 'else' block for active only.
             pass
 
         q = q.order_by(ItemCategory.code, ItemCategory.signature)

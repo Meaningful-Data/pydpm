@@ -2,7 +2,7 @@ import pytest
 from datetime import date
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
 from py_dpm.dpm.models import Base, TableVersion, ItemCategory
-from py_dpm.dpm.queries.reference import ReferenceQuery
+from py_dpm.dpm.queries.tables import TableQuery
 
 
 @pytest.fixture
@@ -33,10 +33,10 @@ def test_get_available_tables_all(api_with_data):
     assert "T2" in tables
     assert "T3" in tables
     # Logic note: if release_id is None, it returns all in the new implementation?
-    # ReferenceQuery implementation: if release_id is None, filter_by_release returns query unmodified (all).
+    # TableQuery implementation: if release_id is None, filter_by_release returns query unmodified (all).
     # Original implementation: if release_id is None, it did NOT filter. So same behavior.
 
-    # Wait, my logic for ReferenceQuery filter_by_release: "if release_id is None: return query"
+    # Wait, my logic for TableQuery filter_by_release: "if release_id is None: return query"
     # So yes, it returns all.
 
 
@@ -68,8 +68,8 @@ def test_get_available_tables_filtered(api_with_data):
 
 
 def test_new_query_objects_direct_usage(api_with_data):
-    # Test using ReferenceQuery directly and to_df
-    q = ReferenceQuery.get_available_tables(api_with_data.session, release_id=1)
+    # Test using TableQuery directly and to_df
+    q = TableQuery.get_available_tables(api_with_data.session, release_id=1)
     df = q.to_df()
     # df should have column matching the query
     # distinct(TableVersion.code) -> label might be 'code' or anon
