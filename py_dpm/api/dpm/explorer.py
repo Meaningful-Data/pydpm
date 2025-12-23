@@ -27,7 +27,7 @@ class DPMExplorer:
         Returns:
             List of property codes (e.g. ['sCRNCY', 'sTRNS_CRNCY'])
         """
-        from py_dpm.dpm.db.models import ItemCategory, PropertyCategory, Category
+        from py_dpm.dpm.models import ItemCategory, PropertyCategory, Category
         from sqlalchemy.orm import aliased
 
         session = self.api.session

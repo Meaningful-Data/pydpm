@@ -22,7 +22,7 @@ from sqlalchemy import func
 import pandas as pd
 import warnings
 
-from py_dpm.dpm.db.mixins import SerializationMixin
+from py_dpm.dpm.mixins import SerializationMixin
 
 Base = declarative_base(cls=SerializationMixin)
 
@@ -783,7 +783,7 @@ class ModuleVersion(Base):
                 ]
             )
 
-        from py_dpm.dpm.db.models import TableVersion
+        from py_dpm.dpm.models import TableVersion
 
         query = (
             session.query(

@@ -1,10 +1,23 @@
 import pandas as pd
 
-from py_dpm.dpm_xl.ast.nodes import AggregationOp, BinOp, ComplexNumericOp, CondExpr, FilterOp, GetOp, PropertyReference, RenameOp, Scalar, \
-    TimeShiftOp, UnaryOp, VarID, WhereClauseOp
+from py_dpm.dpm_xl.ast.nodes import (
+    AggregationOp,
+    BinOp,
+    ComplexNumericOp,
+    CondExpr,
+    FilterOp,
+    GetOp,
+    PropertyReference,
+    RenameOp,
+    Scalar,
+    TimeShiftOp,
+    UnaryOp,
+    VarID,
+    WhereClauseOp,
+)
 from py_dpm.dpm_xl.ast.template import ASTTemplate
 from py_dpm.exceptions import exceptions
-from py_dpm.dpm.db.models import ItemCategory, ViewDatapoints
+from py_dpm.dpm.models import ItemCategory, ViewDatapoints
 from py_dpm.dpm_xl.validation.generation_utils import ValidationsGenerationUtils
 from py_dpm.dpm_xl.utils.tokens import *
 
@@ -41,7 +54,9 @@ class PropertiesConstraintsChecker(ASTTemplate):
             pass  # signature should have : to be a property constraint
         signature = node.code
         # look for property in models
-        property_query = ItemCategory.get_property_from_signature(signature, self.session)
+        property_query = ItemCategory.get_property_from_signature(
+            signature, self.session
+        )
         if property_query is None:
             raise exceptions.SemanticError("5-1-4", ref=signature)
         self.has_property = True
@@ -55,13 +70,17 @@ class PropertiesConstraintsChecker(ASTTemplate):
         if not self.has_property:
             if getattr(node, "scalar_type", None) == "Item":
                 # go to models and check if item exists and is a property
-                property_query = ItemCategory.get_property_from_signature(signature, self.session)
+                property_query = ItemCategory.get_property_from_signature(
+                    signature, self.session
+                )
                 if property_query:
                     self.has_property = True
                 # other assumption could be always first scalar is a property but this is not true
                 # self.has_property = True
         else:
-            other_property_query = ItemCategory.get_property_from_signature(signature, self.session)
+            other_property_query = ItemCategory.get_property_from_signature(
+                signature, self.session
+            )
             if other_property_query:
                 raise exceptions.SemanticError("5-1-2")
 
@@ -96,12 +115,21 @@ class PropertiesConstraintsProcessor(ASTTemplate):
             raise exceptions.SemanticError("5-1-1")
 
         item_category = ItemCategory.get_property_from_signature(
-                signature=self.property_constraint, session=self.session, release_id=self.release_id)
+            signature=self.property_constraint,
+            session=self.session,
+            release_id=self.release_id,
+        )
         if item_category is None:
-            raise exceptions.SemanticError("1-7", property_code=self.property_constraint)
-        variables: pd.DataFrame = ViewDatapoints.get_from_property(self.session, item_category.ItemID, self.release_id)
-        for table_code, group_df in variables.groupby(['table_code']):
-            datapoints = ViewDatapoints.get_table_data(session=self.session, table=str(table_code))
+            raise exceptions.SemanticError(
+                "1-7", property_code=self.property_constraint
+            )
+        variables: pd.DataFrame = ViewDatapoints.get_from_property(
+            self.session, item_category.ItemID, self.release_id
+        )
+        for table_code, group_df in variables.groupby(["table_code"]):
+            datapoints = ViewDatapoints.get_table_data(
+                session=self.session, table=str(table_code)
+            )
             self.generate_expressions(table_code, group_df, datapoints)
 
     def generate_expressions(self, table_code, data, datapoints_table):
@@ -111,12 +139,17 @@ class PropertiesConstraintsProcessor(ASTTemplate):
         :param data: dataframe with operand datapoints
         :param datapoints_table: table datapoints
         """
-        groups = ValidationsGenerationUtils.group_cells(datapoints_variable=data,
-                                                        datapoints_table=datapoints_table)
+        groups = ValidationsGenerationUtils.group_cells(
+            datapoints_variable=data, datapoints_table=datapoints_table
+        )
         for rows, cols, sheets in groups:
-            operand = ValidationsGenerationUtils.write_cell(table_code, rows, cols, sheets)
+            operand = ValidationsGenerationUtils.write_cell(
+                table_code, rows, cols, sheets
+            )
             new_expression = self.expression
-            new_expression = new_expression.replace(f"[{self.property_constraint}]", operand)
+            new_expression = new_expression.replace(
+                f"[{self.property_constraint}]", operand
+            )
             self.new_expressions.append(new_expression)
 
     def create_validation(self, expression, status):
@@ -133,7 +166,7 @@ class PropertiesConstraintsProcessor(ASTTemplate):
         return {
             VALIDATION_CODE: validation_code,
             EXPRESSION: expression,
-            STATUS: status
+            STATUS: status,
         }
 
     def visit_PropertyReference(self, node: PropertyReference):
@@ -148,7 +181,9 @@ class PropertiesConstraintsProcessor(ASTTemplate):
     def visit_Scalar(self, node: Scalar):
         if getattr(node, "scalar_type", None) == "Item":
             signature = node.item
-            property_query = ItemCategory.get_property_from_signature(signature, self.session)
+            property_query = ItemCategory.get_property_from_signature(
+                signature, self.session
+            )
             if property_query:
                 if not self.property_constraint:
                     self.property_constraint = signature

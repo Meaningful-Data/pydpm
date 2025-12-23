@@ -9,7 +9,7 @@ from py_dpm.dpm_xl.grammar.generated.listeners import DPMErrorListener
 from py_dpm.dpm_xl.ast.constructor import ASTVisitor
 from py_dpm.dpm_xl.ast.operands import OperandsChecking
 from py_dpm.dpm_xl import semantic_analyzer as SemanticAnalyzer
-from py_dpm.dpm.db.utils import get_session, get_engine
+from py_dpm.dpm.utils import get_session, get_engine
 from py_dpm.exceptions.exceptions import SemanticError
 
 
@@ -60,7 +60,7 @@ class SemanticAPI:
         if connection_url:
             # Create isolated engine and session for the provided connection URL
             from sqlalchemy.orm import sessionmaker
-            from py_dpm.dpm.db.utils import create_engine_from_url
+            from py_dpm.dpm.utils import create_engine_from_url
 
             # Create engine for the connection URL (supports SQLite, PostgreSQL, MySQL, etc.)
             self.engine = create_engine_from_url(connection_url)
@@ -330,4 +330,3 @@ def is_valid_semantics(
     """
     api = SemanticAPI(database_path=database_path, connection_url=connection_url)
     return api.is_valid_semantics(expression, release_id=release_id)
-

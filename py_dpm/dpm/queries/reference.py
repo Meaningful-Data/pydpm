@@ -1,11 +1,11 @@
 from typing import Optional
 from sqlalchemy import distinct, or_, func
-from py_dpm.dpm.db.models import (
+from py_dpm.dpm.models import (
     TableVersion,
     ViewDatapoints,
 )
-from py_dpm.dpm.db.query import BaseQuery
-from py_dpm.dpm.db.filters import filter_by_release
+from py_dpm.dpm.query import BaseQuery
+from py_dpm.dpm.filters import filter_by_release
 
 
 class ReferenceQuery:

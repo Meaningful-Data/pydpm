@@ -1,8 +1,8 @@
 from typing import Optional, List
 from sqlalchemy import distinct, or_
-from py_dpm.dpm.db.models import ItemCategory
-from py_dpm.dpm.db.query import BaseQuery
-from py_dpm.dpm.db.filters import filter_by_release, filter_active_only
+from py_dpm.dpm.models import ItemCategory
+from py_dpm.dpm.query import BaseQuery
+from py_dpm.dpm.filters import filter_by_release, filter_active_only
 
 
 class ItemQuery:

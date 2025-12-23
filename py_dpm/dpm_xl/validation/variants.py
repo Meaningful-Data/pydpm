@@ -6,17 +6,30 @@ import pandas as pd
 from py_dpm.dpm_xl.ast.nodes import VarID, WithExpression
 from py_dpm.dpm_xl.ast.template import ASTTemplate
 from py_dpm.exceptions import exceptions
-from py_dpm.dpm.db.models import ModuleVersionComposition, TableGroup, TableGroupComposition, TableVersion, ViewDatapoints
-from py_dpm.dpm_xl.utils.tokens import EXPRESSION, STATUS, STATUS_CORRECT, STATUS_INCOMPLETE, STATUS_INCORRECT, VALIDATION_CODE
-from py_dpm.data_handlers import filter_all_data
+from py_dpm.dpm.db.models import (
+    ModuleVersionComposition,
+    TableGroup,
+    TableGroupComposition,
+    TableVersion,
+    ViewDatapoints,
+)
+from py_dpm.dpm_xl.utils.tokens import (
+    EXPRESSION,
+    STATUS,
+    STATUS_CORRECT,
+    STATUS_INCOMPLETE,
+    STATUS_INCORRECT,
+    VALIDATION_CODE,
+)
+from py_dpm.dpm_xl.utils.data_handlers import filter_all_data
 
-cell_components = ['table', 'rows', 'cols', 'sheets']
-TABLE_ID = 'TableID'
-MODULE_VID = 'ModuleVID'
-TABLE_CODE = 'Code'
-GROUP = 'group'
-MODULE_VERSION_ID = 'module_version_id'
-MODULE_CODE = 'module_code'
+cell_components = ["table", "rows", "cols", "sheets"]
+TABLE_ID = "TableID"
+MODULE_VID = "ModuleVID"
+TABLE_CODE = "Code"
+GROUP = "group"
+MODULE_VERSION_ID = "module_version_id"
+MODULE_CODE = "module_code"
 
 
 class VariantsProcessorChecker(ASTTemplate):
@@ -73,11 +86,15 @@ class VariantsProcessor(ASTTemplate):
         :return: True if table has cells, False otherwise.
         """
         if table_code not in self.table_data:
-            datapoints = ViewDatapoints.get_table_data(session=self.session, table=table_code, release_id=self.release_id)
+            datapoints = ViewDatapoints.get_table_data(
+                session=self.session, table=table_code, release_id=self.release_id
+            )
             self.table_data[table_code] = datapoints
         else:
             datapoints = self.table_data[table_code]
-        data = filter_all_data(data=datapoints, table_code=table_code, rows=rows, cols=cols, sheets=sheets)
+        data = filter_all_data(
+            data=datapoints, table_code=table_code, rows=rows, cols=cols, sheets=sheets
+        )
         return not data.empty
 
     def check_table_from_module(self, node, table_module_id, is_abstract):
@@ -89,13 +106,17 @@ class VariantsProcessor(ASTTemplate):
         :return: table version if table version has cells, None otherwise.
         """
 
-        table_versions = TableVersion.get_tables_versions_of_table_group_compositions(session=self.session,
-                                                                                      table_id=table_module_id,
-                                                                                      is_abstract=is_abstract,
-                                                                                      release_id=self.release_id)
+        table_versions = TableVersion.get_tables_versions_of_table_group_compositions(
+            session=self.session,
+            table_id=table_module_id,
+            is_abstract=is_abstract,
+            release_id=self.release_id,
+        )
 
         for table_version in table_versions:
-            table_with_cells = self.check_if_table_has_cells(table_version.Code, node.rows, node.cols, node.sheets)
+            table_with_cells = self.check_if_table_has_cells(
+                table_version.Code, node.rows, node.cols, node.sheets
+            )
             if table_with_cells:
                 return table_version
             else:
@@ -109,10 +130,10 @@ class VariantsProcessor(ASTTemplate):
         :param group_code: Group code.
         :param table_code: Table code.
         """
-        groups = re.search("(" + re.escape(group_code) + '[^.$]' + ")", self.expression)
+        groups = re.search("(" + re.escape(group_code) + "[^.$]" + ")", self.expression)
         if f"g{group_code}" in self.expression and groups:
             group = groups.group(0)
-            suffix = table_code[-(len(table_code)-len(group_code)):]
+            suffix = table_code[-(len(table_code) - len(group_code)) :]
             if group:
                 if not self.children_suffix:
                     self.children_suffix = suffix
@@ -120,7 +141,11 @@ class VariantsProcessor(ASTTemplate):
                     if self.children_suffix != suffix:
                         self.equal_children_suffix = False
                         return
-                self.expression = re.sub(re.escape(f"g{group_code}") + '[^.$]', f"t{table_code}" + group[-1], self.expression)
+                self.expression = re.sub(
+                    re.escape(f"g{group_code}") + "[^.$]",
+                    f"t{table_code}" + group[-1],
+                    self.expression,
+                )
 
     def generate_child_expressions(self):
         """
@@ -135,25 +160,44 @@ class VariantsProcessor(ASTTemplate):
             df_tables.drop_duplicates(inplace=True)
 
             table_ids = df_tables[TABLE_ID].tolist()
-            modules_df = ModuleVersionComposition.get_modules_from_table_ids(session=self.session, table_ids=table_ids,
-                                                                             release_id=self.release_id)
+            modules_df = ModuleVersionComposition.get_modules_from_table_ids(
+                session=self.session, table_ids=table_ids, release_id=self.release_id
+            )
 
             data = pd.merge(df_tables, modules_df, on=[TABLE_ID])
 
             expression = copy.deepcopy(self.expression)
             for module, modules_tables in data.groupby(MODULE_VID):
-                modules_tables.apply(lambda x: self.generate_child_expression(x[GROUP], x[TABLE_CODE]), axis=1)
+                modules_tables.apply(
+                    lambda x: self.generate_child_expression(x[GROUP], x[TABLE_CODE]),
+                    axis=1,
+                )
                 module_code = modules_tables[MODULE_CODE].unique().tolist()[0]
                 if len(modules_tables) < len(self.table_groups_compositions):
                     final_expressions_with_errors.append(
-                        {EXPRESSION: self.expression, MODULE_VERSION_ID: module, MODULE_CODE: module_code})
+                        {
+                            EXPRESSION: self.expression,
+                            MODULE_VERSION_ID: module,
+                            MODULE_CODE: module_code,
+                        }
+                    )
                 else:
                     if self.equal_children_suffix:
                         final_expressions.append(
-                            {EXPRESSION: self.expression, MODULE_VERSION_ID: module, MODULE_CODE: module_code})
+                            {
+                                EXPRESSION: self.expression,
+                                MODULE_VERSION_ID: module,
+                                MODULE_CODE: module_code,
+                            }
+                        )
                     else:
                         final_expressions_with_errors.append(
-                            {EXPRESSION: self.expression, MODULE_VERSION_ID: module, MODULE_CODE: module_code})
+                            {
+                                EXPRESSION: self.expression,
+                                MODULE_VERSION_ID: module,
+                                MODULE_CODE: module_code,
+                            }
+                        )
                         self.equal_children_suffix = True
                 self.expression = copy.deepcopy(expression)
                 self.children_suffix = None
@@ -170,13 +214,17 @@ class VariantsProcessor(ASTTemplate):
         :return: Validation with code, expression and status
         """
 
-        validation_code = self.generate_child_validation_code() if status == STATUS_CORRECT else None
+        validation_code = (
+            self.generate_child_validation_code() if status == STATUS_CORRECT else None
+        )
 
-        validation = {VALIDATION_CODE: validation_code,
-                      EXPRESSION: expression_info[EXPRESSION],
-                      STATUS: status,
-                      MODULE_VERSION_ID: expression_info[MODULE_VERSION_ID],
-                      MODULE_CODE: expression_info[MODULE_CODE]}
+        validation = {
+            VALIDATION_CODE: validation_code,
+            EXPRESSION: expression_info[EXPRESSION],
+            STATUS: status,
+            MODULE_VERSION_ID: expression_info[MODULE_VERSION_ID],
+            MODULE_CODE: expression_info[MODULE_CODE],
+        }
         return validation
 
     def create_validation_new_format(self, expressions_dict):
@@ -190,23 +238,49 @@ class VariantsProcessor(ASTTemplate):
         correct_expressions = expressions_dict[STATUS_CORRECT]
         incomplete_expressions = expressions_dict[STATUS_INCOMPLETE]
         incorrect_expressions = expressions_dict[STATUS_INCORRECT]
-        unique_correct_expressions = pd.DataFrame.from_records(correct_expressions)['expression'].unique().tolist() if correct_expressions else []
-        unique_incomplete_expressions = pd.DataFrame.from_records(incomplete_expressions)['expression'].unique().tolist() if incomplete_expressions else []
-        unique_incorrect_expressions = pd.DataFrame.from_records(incorrect_expressions)['expression'].unique().tolist() if incorrect_expressions else []
+        unique_correct_expressions = (
+            pd.DataFrame.from_records(correct_expressions)["expression"]
+            .unique()
+            .tolist()
+            if correct_expressions
+            else []
+        )
+        unique_incomplete_expressions = (
+            pd.DataFrame.from_records(incomplete_expressions)["expression"]
+            .unique()
+            .tolist()
+            if incomplete_expressions
+            else []
+        )
+        unique_incorrect_expressions = (
+            pd.DataFrame.from_records(incorrect_expressions)["expression"]
+            .unique()
+            .tolist()
+            if incorrect_expressions
+            else []
+        )
         validations = []
         if correct_expressions:
-            v = self._aux_create_validation_new_format(correct_expressions, unique_correct_expressions, STATUS_CORRECT)
+            v = self._aux_create_validation_new_format(
+                correct_expressions, unique_correct_expressions, STATUS_CORRECT
+            )
             validations.extend(v)
         if incomplete_expressions:
-            v = self._aux_create_validation_new_format(incomplete_expressions, unique_incomplete_expressions, STATUS_INCOMPLETE)
+            v = self._aux_create_validation_new_format(
+                incomplete_expressions, unique_incomplete_expressions, STATUS_INCOMPLETE
+            )
             validations.extend(v)
         if incorrect_expressions:
-            v = self._aux_create_validation_new_format(incorrect_expressions, unique_incorrect_expressions, STATUS_INCORRECT)
+            v = self._aux_create_validation_new_format(
+                incorrect_expressions, unique_incorrect_expressions, STATUS_INCORRECT
+            )
             validations.extend(v)
 
         return validations
 
-    def _aux_create_validation_new_format(self, expressions, unique_expressions, status):
+    def _aux_create_validation_new_format(
+        self, expressions, unique_expressions, status
+    ):
         validations = []
         for expr in unique_expressions:
             aux = {}
@@ -216,12 +290,13 @@ class VariantsProcessor(ASTTemplate):
                 aux[VALIDATION_CODE] = self.generate_child_validation_code()
             else:
                 aux[VALIDATION_CODE] = None
-            aux['scopes'] = []
+            aux["scopes"] = []
             for elto in expressions:
                 if elto[EXPRESSION] == aux[EXPRESSION]:
-                    aux['scopes'].append(
-                        {"module_versions_ids": [elto[MODULE_VERSION_ID]],
-                        "module_code": elto[MODULE_CODE]
+                    aux["scopes"].append(
+                        {
+                            "module_versions_ids": [elto[MODULE_VERSION_ID]],
+                            "module_code": elto[MODULE_CODE],
                         }
                     )
             validations.append(aux)
@@ -244,22 +319,41 @@ class VariantsProcessor(ASTTemplate):
     def visit_VarID(self, node: VarID):
         if self.partial_selection:
             for attribute in cell_components:
-                if not getattr(node, attribute, False) and hasattr(self.partial_selection, attribute):
+                if not getattr(node, attribute, False) and hasattr(
+                    self.partial_selection, attribute
+                ):
                     setattr(node, attribute, getattr(self.partial_selection, attribute))
 
         if node.is_table_group or self.partial_selection.is_table_group:
             if node.table:
                 if node.table not in self.table_groups_compositions:
-                    group: TableGroup = TableGroup.get_group_from_code(session=self.session, group_code=node.table)
+                    group: TableGroup = TableGroup.get_group_from_code(
+                        session=self.session, group_code=node.table
+                    )
                     if not group:
                         raise exceptions.SemanticError("1-6", table_group=node.table)
-                    table_groups_compositions = TableGroupComposition.get_from_parent_table_code(code=node.table, session=self.session)
-                    self.table_groups_compositions[node.table] = table_groups_compositions
+                    table_groups_compositions = (
+                        TableGroupComposition.get_from_parent_table_code(
+                            code=node.table, session=self.session
+                        )
+                    )
+                    self.table_groups_compositions[node.table] = (
+                        table_groups_compositions
+                    )
                 else:
-                    table_groups_compositions = self.table_groups_compositions[node.table]
+                    table_groups_compositions = self.table_groups_compositions[
+                        node.table
+                    ]
 
                 for table_id, is_abstract in table_groups_compositions:
-                    table_version = self.check_table_from_module(node, table_id, is_abstract)
+                    table_version = self.check_table_from_module(
+                        node, table_id, is_abstract
+                    )
                     if table_version:
                         self.group_tables.append(
-                            {GROUP: node.table, TABLE_CODE: table_version.Code, TABLE_ID: table_version.TableID})
+                            {
+                                GROUP: node.table,
+                                TABLE_CODE: table_version.Code,
+                                TABLE_ID: table_version.TableID,
+                            }
+                        )

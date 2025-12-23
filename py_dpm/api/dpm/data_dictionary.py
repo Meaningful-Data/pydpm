@@ -9,8 +9,8 @@ from typing import List, Optional, Dict, Tuple, Any
 from sqlalchemy import and_, or_, func, distinct, text
 from sqlalchemy.orm import Session
 
-from py_dpm.dpm.db.utils import get_session, get_engine
-from py_dpm.dpm.db.models import (
+from py_dpm.dpm.utils import get_session, get_engine
+from py_dpm.dpm.models import (
     ViewDatapoints,
     TableVersion,
     ItemCategory,
@@ -30,8 +30,8 @@ from py_dpm.dpm.db.models import (
     TableVersionHeader,
     TableVersionCell,
 )
-from py_dpm.dpm.db.queries.reference import ReferenceQuery
-from py_dpm.dpm.db.queries.item import ItemQuery
+from py_dpm.dpm.queries.reference import ReferenceQuery
+from py_dpm.dpm.queries.item import ItemQuery
 
 
 class DataDictionaryAPI:

@@ -9,8 +9,8 @@ from py_dpm.dpm_xl.grammar.generated.listeners import DPMErrorListener
 from py_dpm.dpm_xl.ast.constructor import ASTVisitor
 from py_dpm.dpm_xl.ast.operands import OperandsChecking
 from py_dpm.dpm_xl.ast.nodes import PreconditionItem
-from py_dpm.dpm.scopes.calculator import OperationScopeService
-from py_dpm.dpm.db.models import (
+from py_dpm.dpm_xl.utils.scopes_calculator import OperationScopeService
+from py_dpm.dpm.models import (
     ModuleVersion,
     OperationScope,
     TableVersion,
@@ -19,7 +19,7 @@ from py_dpm.dpm.db.models import (
     Framework,
     Module,
 )
-from py_dpm.dpm.db.utils import get_session, get_engine
+from py_dpm.dpm.utils import get_session, get_engine
 from py_dpm.exceptions.exceptions import SemanticError
 
 
@@ -116,7 +116,7 @@ class OperationScopesAPI:
         if connection_url:
             # Create isolated engine and session for the provided connection URL
             from sqlalchemy.orm import sessionmaker
-            from py_dpm.dpm.db.utils import create_engine_from_url
+            from py_dpm.dpm.utils import create_engine_from_url
 
             # Create engine for the connection URL (supports SQLite, PostgreSQL, MySQL, etc.)
             self.engine = create_engine_from_url(connection_url)
@@ -278,7 +278,7 @@ class OperationScopesAPI:
 
             # If requested, also extract table codes for cross-version scope calculation
             if extract_codes and table_vids:
-                from py_dpm.dpm.db.models import TableVersion
+                from py_dpm.dpm.models import TableVersion
 
                 # Get table codes for the VIDs
                 table_codes_query = (
@@ -651,7 +651,7 @@ class OperationScopesAPI:
             return []
 
         # Query tables from these modules
-        from py_dpm.dpm.db.models import ModuleVersionComposition
+        from py_dpm.dpm.models import ModuleVersionComposition
 
         tables_query = (
             self.session.query(
@@ -755,7 +755,7 @@ class OperationScopesAPI:
                 return []
 
             # Query only the specific tables referenced in the expression
-            from py_dpm.dpm.db.models import ModuleVersionComposition
+            from py_dpm.dpm.models import ModuleVersionComposition
 
             tables_query = (
                 self.session.query(
@@ -839,7 +839,7 @@ class OperationScopesAPI:
             return []
 
         # Get table VIDs from modules
-        from py_dpm.dpm.db.models import ModuleVersionComposition, Header
+        from py_dpm.dpm.models import ModuleVersionComposition, Header
 
         table_vids_query = (
             self.session.query(ModuleVersionComposition.tablevid)
@@ -1009,7 +1009,7 @@ class OperationScopesAPI:
             # Query headers - get all headers with matching codes
             # Query headers - get all headers with matching codes
             # Note: We don't filter by Header.direction because tables may be transposed
-            from py_dpm.dpm.db.models import Header
+            from py_dpm.dpm.models import Header
             from sqlalchemy import and_
 
             headers_query = (
