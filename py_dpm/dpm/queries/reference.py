@@ -4,8 +4,8 @@ from py_dpm.dpm.models import (
     TableVersion,
     ViewDatapoints,
 )
-from py_dpm.dpm.query import BaseQuery
-from py_dpm.dpm.filters import filter_by_release
+from py_dpm.dpm.queries.query import BaseQuery
+from py_dpm.dpm.queries.filters import filter_by_release
 
 
 class ReferenceQuery:

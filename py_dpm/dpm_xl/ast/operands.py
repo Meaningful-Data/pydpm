@@ -36,7 +36,7 @@ from py_dpm.dpm.models import (
     TableVersionHeader,
     Header,
 )
-from py_dpm.dpm.filters import filter_by_release
+from py_dpm.dpm.queries.filters import filter_by_release
 from py_dpm.dpm_xl.utils.operands_mapping import generate_new_label, set_operand_label
 from py_dpm.dpm_xl.utils.data_handlers import filter_all_data
 
