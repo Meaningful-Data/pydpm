@@ -23,3 +23,11 @@ class ReleaseQuery:
         """
         q = session.query(Release).filter(Release.releaseid == release_id)
         return BaseQuery(session, q)
+
+    @staticmethod
+    def get_release_by_code(session: Session, release_code: str) -> BaseQuery:
+        """
+        Fetch release by code.
+        """
+        q = session.query(Release).filter(Release.code == release_code)
+        return BaseQuery(session, q)

@@ -1,8 +1,57 @@
-from typing import Optional, Any
+from typing import Optional
+from datetime import datetime
 from sqlalchemy import or_, and_
 
 
-def filter_by_release(query, release_id: Optional[int], start_col, end_col):
+def filter_by_date(query, date, start_col, end_col):
+    """
+    Filter a query by a date range.
+
+    Args:
+        query: SQLAlchemy Query object
+        date: Date string (YYYY-MM-DD) or date object
+        start_col: Column representing start date
+        end_col: Column representing end date
+    """
+    if not date:
+        return query
+
+    if isinstance(date, str):
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+    else:
+        target_date = date
+
+    from sqlalchemy import cast, Date
+
+    # Check dialect to apply CAST only for Postgres where type mismatch occurs
+    is_postgres = False
+    if hasattr(query, "session") and query.session:
+        bind = query.session.get_bind()
+        if bind.dialect.name == "postgresql":
+            is_postgres = True
+
+    if is_postgres:
+        start_expr = cast(start_col, Date)
+        end_expr = cast(end_col, Date)
+    else:
+        start_expr = start_col
+        end_expr = end_col
+
+    return query.filter(
+        and_(
+            start_expr <= target_date,
+            or_(end_col.is_(None), end_expr > target_date),
+        )
+    )
+
+
+def filter_by_release(
+    query,
+    start_col,
+    end_col,
+    release_id: Optional[int] = None,
+    release_code: Optional[str] = None,
+):
     """
     Filter a query by DPM release versioning logic.
 
@@ -30,12 +79,33 @@ def filter_by_release(query, release_id: Optional[int], start_col, end_col):
     If release_id IS None:
         Return query unmodified (fetch all history? or active? Caller decides by not calling this or passing optional arg)
     """
-    if release_id is None:
-        return query
+    if release_id is not None and release_code is not None:
+        raise ValueError("Specify a maximum of one of release_id or release_code.")
 
-    return query.filter(
-        and_(start_col <= release_id, or_(end_col.is_(None), end_col > release_id))
-    )
+    if release_id is None and release_code is None:
+        return query
+    elif release_id:
+        return query.filter(
+            and_(start_col <= release_id, or_(end_col.is_(None), end_col > release_id))
+        )
+    elif release_code:
+        # Resolve release_code to release_id using the session from the query
+        if hasattr(query, "session") and query.session:
+            from py_dpm.dpm.queries.basic_objects import ReleaseQuery
+
+            release_q = ReleaseQuery.get_release_by_code(query.session, release_code)
+            results = release_q.to_dict()
+            if results:
+                release_id = results[0]["releaseid"]
+            else:
+                raise ValueError(f"Release code '{release_code}' not found.")
+        else:
+            raise ValueError("Query has no session, cannot resolve release_code.")
+        print(release_id)
+
+        return query.filter(
+            and_(start_col <= release_id, or_(end_col.is_(None), end_col > release_id))
+        )
 
 
 def filter_active_only(query, end_col):

@@ -1,6 +1,6 @@
 from typing import Optional
-from datetime import datetime
-from sqlalchemy import distinct, or_, func, and_
+
+from sqlalchemy import distinct
 from py_dpm.dpm.models import (
     TableVersion,
     ViewDatapoints,
@@ -8,7 +8,7 @@ from py_dpm.dpm.models import (
     ModuleVersionComposition,
 )
 from py_dpm.dpm.queries.base import BaseQuery
-from py_dpm.dpm.queries.filters import filter_by_release
+from py_dpm.dpm.queries.filters import filter_by_release, filter_by_date
 
 
 class TableQuery:
@@ -18,38 +18,44 @@ class TableQuery:
 
     @staticmethod
     def get_tables(
-        session, release_id: Optional[int] = None, date: Optional[str] = None
+        session,
+        release_id: Optional[int] = None,
+        date: Optional[str] = None,
+        release_code: Optional[str] = None,
     ) -> BaseQuery:
         """Get all available table codes."""
-        if release_id and date:
-            raise ValueError("Specify either release or date, not both.")
 
-        q = session.query(distinct(TableVersion.code).label("code")).filter(
-            TableVersion.code.isnot(None)
-        )
+        if sum(bool(x) for x in [release_id, date, release_code]) > 1:
+            raise ValueError(
+                "Specify a maximum of one of release_id, release_code or date."
+            )
+
+        q = session.query(TableVersion)
 
         if date:
-            target_date = datetime.strptime(date, "%Y-%m-%d").date()
-            q = (
-                q.join(
-                    ModuleVersionComposition,
-                    TableVersion.tablevid == ModuleVersionComposition.tablevid,
-                )
-                .join(
-                    ModuleVersion,
-                    ModuleVersionComposition.modulevid == ModuleVersion.modulevid,
-                )
-                .filter(
-                    ModuleVersion.fromreferencedate <= target_date,
-                    or_(
-                        ModuleVersion.toreferencedate.is_(None),
-                        ModuleVersion.toreferencedate > target_date,
-                    ),
-                )
+            q = q.join(
+                ModuleVersionComposition,
+                TableVersion.tablevid == ModuleVersionComposition.tablevid,
+            ).join(
+                ModuleVersion,
+                ModuleVersionComposition.modulevid == ModuleVersion.modulevid,
             )
-        else:
+            q = filter_by_date(
+                q, date, ModuleVersion.fromreferencedate, ModuleVersion.toreferencedate
+            )
+        elif release_id:
             q = filter_by_release(
-                q, release_id, TableVersion.startreleaseid, TableVersion.endreleaseid
+                q,
+                release_id=release_id,
+                start_col=TableVersion.startreleaseid,
+                end_col=TableVersion.endreleaseid,
+            )
+        elif release_code:
+            q = filter_by_release(
+                q,
+                release_code=release_code,
+                start_col=TableVersion.startreleaseid,
+                end_col=TableVersion.endreleaseid,
             )
 
         q = q.order_by(TableVersion.code)
@@ -123,83 +129,5 @@ class TableQuery:
 
         q = filter_by_release(q, release_id, subq.c.start_release, subq.c.end_release)
         q = q.order_by(subq.c.sheet_code)
-
-        return BaseQuery(session, q)
-
-    @staticmethod
-    def get_reference_statistics(
-        session, release_id: Optional[int] = None
-    ) -> BaseQuery:
-        """Get row and column counts."""
-        base_query = ViewDatapoints.create_view_query(session)
-        subq = base_query.subquery()
-
-        # Note: This returns a single row with 2 columns, not a list of items.
-        # BaseQuery.to_dict should handle this as returning [{'row_count': X, 'column_count': Y}]
-
-        # Base query for filtering context
-        # We can't filter the aggregations directly inside the same query easily if we want to reuse the filter logic on the View
-        # But here we are building a new query.
-
-        # Let's apply filter to subquery alias context
-        # Logic from original:
-        # base = session.query(subq).filter(...)
-        # row_count = base...scalar()
-
-        # To return a BaseQuery that produces validity, we should construct a query that selects the counts.
-
-        # Applying filter first
-        filter_condition = []
-        if release_id is not None:
-            filter_condition.append(subq.c.start_release <= release_id)
-            filter_condition.append(
-                or_(subq.c.end_release.is_(None), subq.c.end_release > release_id)
-            )
-
-        # Construct main query with conditional aggregation or filtered subquery
-        # Efficient way:
-        q = session.query(
-            func.count(distinct(subq.c.row_code)).label("row_count"),
-            func.count(distinct(subq.c.column_code)).label("column_count"),
-        )
-
-        if filter_condition:
-            q = q.filter(*filter_condition)
-
-        # We add filter for not None codes too?
-        # Original: base.filter(subq.c.row_code.isnot(None)) for row count
-        # Combining them in one query is tricky if conditions differ.
-        # Original did 2 separate queries.
-        # "row_count = base.filter(subq.c.row_code.isnot(None))...scalar()"
-
-        # If we want a unified query object, we can use CASE or just separate columns with filters if SQL supported it easily (FILTER clause in PG).
-        # Since we use ORM for compat...
-
-        # Let's replicate exact behavior using 2 scalar subqueries in 1 select if possible, or just return the query objects?
-        # The user wants "Output as DF or Dict".
-
-        # I will build a query that returns the single row of stats.
-
-        # Using Filtered aggregations (standard SQL pattern) or just common filter.
-        # In this dataset, row_code/col_code are columns in the view.
-
-        from sqlalchemy import case
-
-        q = session.query(
-            func.count(
-                distinct(
-                    case((subq.c.row_code.isnot(None), subq.c.row_code), else_=None)
-                )
-            ).label("row_count"),
-            func.count(
-                distinct(
-                    case(
-                        (subq.c.column_code.isnot(None), subq.c.column_code), else_=None
-                    )
-                )
-            ).label("column_count"),
-        )
-
-        q = filter_by_release(q, release_id, subq.c.start_release, subq.c.end_release)
 
         return BaseQuery(session, q)

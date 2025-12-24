@@ -91,10 +91,27 @@ class DataDictionaryAPI:
         result = query.to_dict()
         return result[0] if result else None
 
+    def get_release_by_code(self, release_code: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a specific release by its code.
+
+        Args:
+            release_code: The code of the release to fetch
+
+        Returns:
+            Dictionary with release info or None if not found
+        """
+        query = ReleaseQuery.get_release_by_code(self.session, release_code)
+        result = query.to_dict()
+        return result[0] if result else None
+
     # ==================== Reference Query Methods ====================
 
     def get_tables(
-        self, release_id: Optional[int] = None, date: Optional[str] = None
+        self,
+        release_id: Optional[int] = None,
+        date: Optional[str] = None,
+        release_code: Optional[str] = None,
     ) -> List[str]:
         """
         Get all available table codes from TableVersion.
@@ -107,15 +124,9 @@ class DataDictionaryAPI:
             List of table codes
         """
         # Use TableQuery
-        query = TableQuery.get_tables(self.session, release_id, date)
-        # Return flattened list for backward compatibility
-        result = query.to_dict()
-        # handle list of scalars or dicts depending on implementation
-        # BaseQuery.to_dict() with distinct(col) -> list of single values or dicts
-        # Let's check how BaseQuery handles it
-        # It calls .all(). If single entity, returns scalar list.
-        # Wait, BaseQuery 'dict(row)'?
-        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
+        query = TableQuery.get_tables(self.session, release_id, date, release_code)
+
+        return query.to_dict()
 
     def get_available_tables_from_datapoints(
         self, release_id: Optional[int] = None
@@ -134,8 +145,7 @@ class DataDictionaryAPI:
         query = TableQuery.get_available_tables_from_datapoints(
             self.session, release_id
         )
-        result = query.to_dict()
-        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
+        return query.to_dict()
 
     def get_available_rows(
         self, table_code: str, release_id: Optional[int] = None
@@ -153,8 +163,7 @@ class DataDictionaryAPI:
         """
         # Use TableQuery
         query = TableQuery.get_available_rows(self.session, table_code, release_id)
-        result = query.to_dict()
-        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
+        return query.to_dict()
 
     def get_available_columns(
         self, table_code: str, release_id: Optional[int] = None
@@ -172,29 +181,7 @@ class DataDictionaryAPI:
         """
         # Use TableQuery
         query = TableQuery.get_available_columns(self.session, table_code, release_id)
-        result = query.to_dict()
-        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
-
-    def get_reference_statistics(
-        self, release_id: Optional[int] = None
-    ) -> Dict[str, int]:
-        """
-        Get statistics about rows and columns in the data dictionary.
-        Always uses ViewDatapoints class methods for database compatibility.
-
-        Args:
-            release_id: Optional release ID to filter by
-
-        Returns:
-            Dictionary with row_count and column_count
-        """
-        # Use TableQuery
-        query = TableQuery.get_reference_statistics(self.session, release_id)
-        # to_dict returns list of dicts: [{'row_count': X, 'column_count': Y}]
-        result = query.to_dict()
-        if result:
-            return result[0]
-        return {"row_count": 0, "column_count": 0}
+        return query.to_dict()
 
     # ==================== Item Query Methods ====================
 
@@ -210,8 +197,7 @@ class DataDictionaryAPI:
         """
         # Use ItemQuery
         query = ItemQuery.get_all_item_signatures(self.session, release_id)
-        result = query.to_dict()
-        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
+        return query.to_dict()
 
     def get_item_categories(
         self, release_id: Optional[int] = None
@@ -227,15 +213,7 @@ class DataDictionaryAPI:
         """
         # Use ItemQuery
         query = ItemQuery.get_item_categories(self.session, release_id)
-        result = query.to_dict()
-        # Expecting tuples (code, signature)
-        # to_dict might return [{'code': 'x', 'signature': 'y'}]
-        # Original: [(r[0], r[1])]
-        return (
-            [(r["Code"], r["Signature"]) for r in result]
-            if result and isinstance(result[0], dict)
-            else result
-        )
+        return query.to_dict()
 
     # ==================== Sheet Query Methods ====================
 
@@ -292,8 +270,7 @@ class DataDictionaryAPI:
 
         # Use TableQuery
         query = TableQuery.get_available_sheets(self.session, table_code, release_id)
-        result = query.to_dict()
-        return [list(r.values())[0] if isinstance(r, dict) else r for r in result]
+        return query.to_dict()
 
     def check_cell_exists(
         self,
