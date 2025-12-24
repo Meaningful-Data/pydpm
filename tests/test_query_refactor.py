@@ -28,7 +28,7 @@ def api_with_data():
 
 
 def test_get_available_tables_all(api_with_data):
-    tables = api_with_data.get_available_tables()
+    tables = api_with_data.get_tables()
     assert "T1" in tables
     assert "T2" in tables
     assert "T3" in tables
@@ -42,7 +42,7 @@ def test_get_available_tables_all(api_with_data):
 
 def test_get_available_tables_filtered(api_with_data):
     # Release 1
-    tables_r1 = api_with_data.get_available_tables(release_id=1)
+    tables_r1 = api_with_data.get_tables(release_id=1)
     # T1: start 1, end None -> Valid
     # T2: start 2 -> Invalid
     # T3: start 1, end 1 -> Invalid (end > release_id check: 1 > 1 False). Wait.
@@ -61,7 +61,7 @@ def test_get_available_tables_filtered(api_with_data):
     assert "T3" not in tables_r1  # EndRelease 1 > 1 False.
 
     # Release 2
-    tables_r2 = api_with_data.get_available_tables(release_id=2)
+    tables_r2 = api_with_data.get_tables(release_id=2)
     assert "T1" in tables_r2
     assert "T2" in tables_r2  # Start 2<=2, End 3>2.
     assert "T3" not in tables_r2
@@ -69,7 +69,7 @@ def test_get_available_tables_filtered(api_with_data):
 
 def test_new_query_objects_direct_usage(api_with_data):
     # Test using TableQuery directly and to_df
-    q = TableQuery.get_available_tables(api_with_data.session, release_id=1)
+    q = TableQuery.get_tables(api_with_data.session, release_id=1)
     df = q.to_df()
     # df should have column matching the query
     # distinct(TableVersion.code) -> label might be 'code' or anon

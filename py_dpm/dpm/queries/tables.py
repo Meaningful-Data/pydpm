@@ -17,7 +17,7 @@ class TableQuery:
     """
 
     @staticmethod
-    def get_available_tables(
+    def get_tables(
         session, release_id: Optional[int] = None, date: Optional[str] = None
     ) -> BaseQuery:
         """Get all available table codes."""

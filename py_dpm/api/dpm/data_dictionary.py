@@ -93,7 +93,7 @@ class DataDictionaryAPI:
 
     # ==================== Reference Query Methods ====================
 
-    def get_available_tables(
+    def get_tables(
         self, release_id: Optional[int] = None, date: Optional[str] = None
     ) -> List[str]:
         """
@@ -107,7 +107,7 @@ class DataDictionaryAPI:
             List of table codes
         """
         # Use TableQuery
-        query = TableQuery.get_available_tables(self.session, release_id, date)
+        query = TableQuery.get_tables(self.session, release_id, date)
         # Return flattened list for backward compatibility
         result = query.to_dict()
         # handle list of scalars or dicts depending on implementation
