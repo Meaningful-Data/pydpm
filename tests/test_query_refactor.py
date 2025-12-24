@@ -29,9 +29,9 @@ def api_with_data():
 
 def test_get_available_tables_all(api_with_data):
     tables = api_with_data.get_tables()
-    assert "T1" in tables
-    assert "T2" in tables
-    assert "T3" in tables
+    assert any(t["code"] == "T1" for t in tables)
+    assert any(t["code"] == "T2" for t in tables)
+    assert any(t["code"] == "T3" for t in tables)
     # Logic note: if release_id is None, it returns all in the new implementation?
     # TableQuery implementation: if release_id is None, filter_by_release returns query unmodified (all).
     # Original implementation: if release_id is None, it did NOT filter. So same behavior.
@@ -56,15 +56,15 @@ def test_get_available_tables_filtered(api_with_data):
     # Implementation: EndReleaseID is the release WHERE IT STOPPED existing (or was replaced).
     # So valid in [Start, End).
 
-    assert "T1" in tables_r1
-    assert "T2" not in tables_r1
-    assert "T3" not in tables_r1  # EndRelease 1 > 1 False.
+    assert any(t["code"] == "T1" for t in tables_r1)
+    assert not any(t["code"] == "T2" for t in tables_r1)
+    assert not any(t["code"] == "T3" for t in tables_r1)  # EndRelease 1 > 1 False.
 
     # Release 2
     tables_r2 = api_with_data.get_tables(release_id=2)
-    assert "T1" in tables_r2
-    assert "T2" in tables_r2  # Start 2<=2, End 3>2.
-    assert "T3" not in tables_r2
+    assert any(t["code"] == "T1" for t in tables_r2)
+    assert any(t["code"] == "T2" for t in tables_r2)  # Start 2<=2, End 3>2.
+    assert not any(t["code"] == "T3" for t in tables_r2)
 
 
 def test_new_query_objects_direct_usage(api_with_data):
