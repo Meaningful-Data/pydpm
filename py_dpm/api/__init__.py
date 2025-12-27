@@ -18,6 +18,7 @@ from py_dpm.api.dpm import (
     DPMExplorer,
     OperationScopesAPI,
     MigrationAPI,
+    HierarchicalQueryAPI,
 )
 
 # Import convenience functions and types from DPM API

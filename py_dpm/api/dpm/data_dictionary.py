@@ -62,8 +62,6 @@ class DataDictionaryAPI:
         engine = get_engine(database_path=database_path, connection_url=connection_url)
         self.session = get_session()
 
-        self.session = get_session()
-
     # ==================== Release Query Methods ====================
 
     def get_releases(self) -> List[Dict[str, Any]]:

@@ -694,6 +694,12 @@ class ModuleVersion(Base):
     module_version_compositions = relationship(
         "ModuleVersionComposition", back_populates="module_version"
     )
+
+    table_versions = relationship(
+        "TableVersion",
+        secondary="ModuleVersionComposition",
+        viewonly=True,
+    )
     operation_scope_compositions = relationship(
         "OperationScopeComposition", back_populates="module_version"
     )
