@@ -516,8 +516,40 @@ class HierarchicalQuery:
             .filter(TableVersion.tablevid == table_version.tablevid)
         )
 
-        # Return list of dictionaries, similar to other hierarchical queries.
-        return [dict(row._mapping) for row in q.all()]
+        # Group by header and reshape into the requested structure:
+        # {
+        #   <header_id>: [
+        #       {"main_property_code": ..., "main_property_name": ...},
+        #       {"context_item_code": ..., "context_item_name": ...},
+        #       ...
+        #   ],
+        #   ...
+        # }
+        modelling: dict[int, list[dict]] = {}
+        for row in q.all():
+            header_id = row.header_id
+            if header_id not in modelling:
+                modelling[header_id] = []
+
+            # Main property pair (if present)
+            if row.main_property_code is not None or row.main_property_name is not None:
+                modelling[header_id].append(
+                    {
+                        "main_property_code": row.main_property_code,
+                        "main_property_name": row.main_property_name,
+                    }
+                )
+
+            # Context item pair (always present in the query)
+            if row.context_item_code is not None or row.context_item_name is not None:
+                modelling[header_id].append(
+                    {
+                        "context_item_code": row.context_item_code,
+                        "context_item_name": row.context_item_name,
+                    }
+                )
+
+        return modelling
 
     @staticmethod
     def _fetch_header_and_cells(session, table_vid):
