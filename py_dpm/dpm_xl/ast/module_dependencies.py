@@ -4,35 +4,47 @@ from py_dpm.dpm_xl.ast.nodes import *
 from py_dpm.dpm_xl.ast.template import ASTTemplate
 from py_dpm.dpm_xl.ast.where_clause import WhereClauseChecker
 from py_dpm.exceptions import exceptions
-from py_dpm.dpm.db.models import TableVersion, VariableVersion, ViewDatapoints, ViewModules, ItemCategory
+from py_dpm.dpm.models import (
+    TableVersion,
+    VariableVersion,
+    ViewDatapoints,
+    ViewModules,
+    ItemCategory,
+)
 
-operand_elements = ['table', 'rows', 'cols', 'sheets', 'default', 'interval']
+operand_elements = ["table", "rows", "cols", "sheets", "default", "interval"]
 
-def filter_datapoints_df(df, table, table_info:dict, release_id:int=None):
-    """
-    """
-    mapping_dictionary = {'rows': 'row_code', 'cols': 'column_code', 'sheets': 'sheet_code'}
-    df = df[df['table_code'] == table]
+
+def filter_datapoints_df(df, table, table_info: dict, release_id: int = None):
+    """ """
+    mapping_dictionary = {
+        "rows": "row_code",
+        "cols": "column_code",
+        "sheets": "sheet_code",
+    }
+    df = df[df["table_code"] == table]
     for k, v in table_info.items():
         if v is not None:
-            if '-' in v[0]:
-                low_limit, high_limit = v[0].split('-')
+            if "-" in v[0]:
+                low_limit, high_limit = v[0].split("-")
                 df = df[(df[mapping_dictionary[k]].between(low_limit, high_limit))]
-            elif v[0] == '*':
+            elif v[0] == "*":
                 continue
             else:
                 df = df[(df[mapping_dictionary[k]].isin(v))]
 
     if release_id:
-        df = df[df['release_id'] == release_id]
+        df = df[df["release_id"] == release_id]
     return df
+
 
 def filter_module_by_table_df(df, table):
     """
     Returns a list of modules that contain the table
     """
-    module_list = df[df['table_code'] == table]['module_code'].tolist()
+    module_list = df[df["table_code"] == table]["module_code"].tolist()
     return module_list
+
 
 class ModuleDependencies(ASTTemplate, ABC):
     def __init__(self, session, ast, release_id, date, module_ref, is_scripting=False):
@@ -55,14 +67,13 @@ class ModuleDependencies(ASTTemplate, ABC):
         self.is_scripting = is_scripting
 
         self.session = session
-        self.time_period = 't'  # TODO
+        self.time_period = "t"  # TODO
         self.date = date
         self.modules = {}
         self.from_time_shift = False
 
         super().__init__()
         self.visit(self.AST)
-
 
     # Start of visiting nodes
     def visit_WithExpression(self, node: WithExpression):
@@ -78,17 +89,16 @@ class ModuleDependencies(ASTTemplate, ABC):
 
         if self.partial_selection:
             for attribute in operand_elements:
-                if getattr(node, attribute, None) is None and not getattr(self.partial_selection, attribute, None) is None:
+                if (
+                    getattr(node, attribute, None) is None
+                    and not getattr(self.partial_selection, attribute, None) is None
+                ):
                     setattr(node, attribute, getattr(self.partial_selection, attribute))
 
         if not node.table:
             raise exceptions.SemanticError("1-4", table=node.table)
 
-        table_info = {
-            'rows': node.rows,
-            'cols': node.cols,
-            'sheets': node.sheets
-        }
+        table_info = {"rows": node.rows, "cols": node.cols, "sheets": node.sheets}
 
         if node.table not in self.tables:
             self.tables[node.table] = table_info
@@ -100,17 +110,16 @@ class ModuleDependencies(ASTTemplate, ABC):
                 # self.operands[node.table].append(node)
 
         # Variables full
-        variables_full = ViewDatapoints.get_filtered_datapoints(self.session,
-                                                                node.table,
-                                                                table_info,
-                                                                release_id=self.release_id)
+        variables_full = ViewDatapoints.get_filtered_datapoints(
+            self.session, node.table, table_info, release_id=self.release_id
+        )
         # variables_full = ViewDatapoints.get_table_data(self.session, node.table, table_info['rows'], table_info['cols'], table_info['sheets'],
         #                                              self.release_id)
 
         if variables_full.empty:
             raise exceptions.SemanticError("1-5", open_keys=table_info)
 
-        final_list = variables_full['variable_id'].to_list()
+        final_list = variables_full["variable_id"].to_list()
         # Here change table for module or modules
         modules = ViewModules().get_all_modules(self.session)  # TODO
         modules = filter_module_by_table_df(modules, node.table)
@@ -137,34 +146,40 @@ class ModuleDependencies(ASTTemplate, ABC):
             full_name = f"{node.table}:{self.time_period}"
             self.full_operands[full_name] = final_list
 
-
     def visit_Dimension(self, node: Dimension):
         if node.dimension_code not in self.dimension_codes:
             self.dimension_codes.append(node.dimension_code)
-            if not ItemCategory.get_property_from_code(node.dimension_code, self.session):
+            if not ItemCategory.get_property_from_code(
+                node.dimension_code, self.session
+            ):
                 raise exceptions.SemanticError("1-5", open_keys=node.dimension_code)
 
     def visit_VarRef(self, node: VarRef):
-        if not VariableVersion.check_variable_exists(self.session, node.variable, self.release_id):
-            raise exceptions.SemanticError('1-3', variable=node.variable)
+        if not VariableVersion.check_variable_exists(
+            self.session, node.variable, self.release_id
+        ):
+            raise exceptions.SemanticError("1-3", variable=node.variable)
 
     def visit_PreconditionItem(self, node: PreconditionItem):
 
         if self.is_scripting:
-            raise exceptions.SemanticError('6-3', precondition=node.variable_id)
+            raise exceptions.SemanticError("6-3", precondition=node.variable_id)
 
-        if not TableVersion.check_table_exists(self.session, node.variable_id, self.release_id):
+        if not TableVersion.check_table_exists(
+            self.session, node.variable_id, self.release_id
+        ):
             raise exceptions.SemanticError("1-3", variable=node.variable_id)
 
         self.preconditions = True
 
     def visit_Scalar(self, node: Scalar):
-        if node.item and node.scalar_type == 'Item':
+        if node.item and node.scalar_type == "Item":
             if node.item not in self.items:
                 self.items.append(node.item)
-                if not ItemCategory.get_item_category_id_from_signature(node.item, self.session):
+                if not ItemCategory.get_item_category_id_from_signature(
+                    node.item, self.session
+                ):
                     raise exceptions.SemanticError("1-1", items=node.item)
-
 
     def visit_WhereClauseOp(self, node: WhereClauseOp):
         self.visit(node.operand)
@@ -178,7 +193,7 @@ class ModuleDependencies(ASTTemplate, ABC):
         period_indicator = node.period_indicator
         shift_number = node.shift_number
         # compute new time period
-        if period_indicator not in ('A', 'Q', 'M', 'W', 'D'):
+        if period_indicator not in ("A", "Q", "M", "W", "D"):
             raise ValueError("Period indicator is not valid")
         if "-" in shift_number:
             new_time_period = f"t+{period_indicator}{shift_number}"

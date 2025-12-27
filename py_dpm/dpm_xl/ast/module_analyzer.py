@@ -1,6 +1,6 @@
 from py_dpm.dpm_xl.ast.nodes import Start, VarID, WithExpression
 from py_dpm.dpm_xl.ast.template import ASTTemplate
-from py_dpm.dpm.db.models import ViewModules
+from py_dpm.dpm.models import ViewModules
 from py_dpm.dpm_xl.utils.operands_mapping import LabelHandler
 from py_dpm.dpm_xl.utils.tokens import CROSS_MODULE, INTRA_MODULE, REPEATED_INTRA_MODULE
 
@@ -25,7 +25,7 @@ class ModuleAnalyzer(ASTTemplate):
         unique_modules = []
 
         for operand_info in self.module_info.values():
-            if operand_info == 'Module not found':
+            if operand_info == "Module not found":
                 print(f"Module not found: {self.module_info}")
                 return
             unique_modules += operand_info
@@ -58,7 +58,7 @@ class ModuleAnalyzer(ASTTemplate):
         if len(modules) > 0:
             self.module_info[self.new_label()] = modules
         else:
-            self.module_info[self.new_label()] = 'Module not found'
+            self.module_info[self.new_label()] = "Module not found"
 
     def find_common_modules(self, unique_modules):
         common_modules = []

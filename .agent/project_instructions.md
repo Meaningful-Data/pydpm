@@ -1,5 +1,8 @@
 # pyDPM Project Context & Instructions
 
+Always run with poetry.
+
+
 ## Strategic Objective
 **pyDPM** is designed to be a comprehensive, open-source **Data Point Model (DPM)** library. While its current implementation focuses heavily on **DPM-XL** (Data Point Model eXtensible Language), its strategic goal is to serve as a general-purpose toolkit for all DPM-related operations.
 

@@ -24,7 +24,7 @@ from py_dpm.dpm_xl.ast.where_clause import WhereClauseChecker
 from py_dpm.dpm_xl.types.scalar import Integer, Mixed, Number, ScalarFactory
 from py_dpm.exceptions import exceptions
 from py_dpm.exceptions.exceptions import SemanticError
-from py_dpm.dpm.db.models import (
+from py_dpm.dpm.models import (
     ItemCategory,
     Operation,
     VariableVersion,
@@ -35,10 +35,10 @@ from py_dpm.dpm.db.models import (
     TableVersion,
     TableVersionHeader,
     Header,
-    filter_by_release,
 )
+from py_dpm.dpm.queries.filters import filter_by_release
 from py_dpm.dpm_xl.utils.operands_mapping import generate_new_label, set_operand_label
-from py_dpm.data_handlers import filter_all_data
+from py_dpm.dpm_xl.utils.data_handlers import filter_all_data
 
 operand_elements = ["table", "rows", "cols", "sheets", "default", "interval"]
 
@@ -208,13 +208,16 @@ class OperandsChecking(ASTTemplate, ABC):
         # Apply release filter
         query = filter_by_release(
             query,
+            self.release_id,
             TableVersion.startreleaseid,
             TableVersion.endreleaseid,
-            self.release_id,
         )
 
         # Execute query and convert to DataFrame
-        from py_dpm.dpm.db.models import _compile_query_for_pandas, _read_sql_with_connection
+        from py_dpm.dpm.models import (
+            _compile_query_for_pandas,
+            _read_sql_with_connection,
+        )
 
         compiled_query = _compile_query_for_pandas(query.statement, self.session)
         df_headers = _read_sql_with_connection(compiled_query, self.session)

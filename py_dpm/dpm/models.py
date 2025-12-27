@@ -22,13 +22,24 @@ from sqlalchemy import func
 import pandas as pd
 import warnings
 
-Base = declarative_base()
+from sqlalchemy.inspection import inspect
+
+
+class SerializationMixin:
+    """Mixin to add serialization capabilities to SQLAlchemy models."""
+
+    def to_dict(self):
+        """Convert the model instance to a dictionary."""
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}
+
+
+Base = declarative_base(cls=SerializationMixin)
 
 
 def _read_sql_with_connection(sql, session):
     """
     Execute pd.read_sql with proper connection handling to avoid pandas warnings.
-    
+
     Uses the raw DBAPI connection which works reliably with compiled SQL strings,
     while suppressing the pandas warning about DBAPI2 connections.
     """
@@ -683,6 +694,12 @@ class ModuleVersion(Base):
     module_version_compositions = relationship(
         "ModuleVersionComposition", back_populates="module_version"
     )
+
+    table_versions = relationship(
+        "TableVersion",
+        secondary="ModuleVersionComposition",
+        viewonly=True,
+    )
     operation_scope_compositions = relationship(
         "OperationScopeComposition", back_populates="module_version"
     )
@@ -781,7 +798,7 @@ class ModuleVersion(Base):
                 ]
             )
 
-        from py_dpm.dpm.db.models import TableVersion
+        from py_dpm.dpm.models import TableVersion
 
         query = (
             session.query(
@@ -1384,8 +1401,6 @@ class Release(Base):
     iscurrent = Column("IsCurrent", Boolean)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
     latestvariablegentime = Column("LatestVariableGenTime", DateTime)
-    name = Column("Name", String(50))
-
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     changelogs = relationship("Changelog", back_populates="release")
@@ -2252,9 +2267,7 @@ class ViewDatapoints(Base):
     def get_datapoints_sample(cls, session, limit=1000):
         """Get a sample of datapoints"""
         query = cls.create_view_query(session)
-        return pd.read_sql_query(
-            query.limit(limit).statement, session.get_bind()
-        )
+        return pd.read_sql_query(query.limit(limit).statement, session.get_bind())
 
     @classmethod
     def export_datapoints_query(cls, session):
@@ -3082,9 +3095,7 @@ class ViewOperationFromModule(Base):
             not_errors = session.query(
                 OperationNode.nodeid.label("operation_version_id")
             ).distinct()
-            not_errors = pd.read_sql_query(
-                not_errors.statement, session.get_bind()
-            )
+            not_errors = pd.read_sql_query(not_errors.statement, session.get_bind())
             not_errors = list(not_errors["operation_version_id"])
             reference = reference[reference["operation_version_id"].isin(not_errors)]
         if not with_preconditions:

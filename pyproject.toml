@@ -29,7 +29,7 @@ dependencies = [
     "pyodbc>=5.1.0,<5.2.0",
     "click>=8.1.6,<8.2.0",
     "python-dotenv>=1.0.1,<1.1.0",
-    "psycopg2-binary>=2.9.0,<3.0.0"
+    "psycopg2-binary>=2.9.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +78,4 @@ pytest-cov = ">=4.1.0,<5.0.0"
 pydpm = "py_dpm.cli.main:main"
 
 [tool.setuptools.package-data]
-"py_dpm.dpm_xl.grammar" = ["*.g4"]
 "py_dpm.dpm_xl.grammar.generated" = ["*"]
-"py_dpm.dpm.db.views" = ["*.sql"]

@@ -6,10 +6,10 @@ import os
 import sys
 import pandas as pd
 
-from py_dpm.api import API, SemanticAPI
+from py_dpm.api import SemanticAPI
 from py_dpm.api.dpm_xl.semantic import SemanticValidationResult
 from py_dpm.api.dpm.operation_scopes import OperationScopesAPI
-from py_dpm.dpm.db.migration import run_migration
+from py_dpm.dpm.migration import run_migration
 from py_dpm.dpm_xl.utils.tokens import (
     CODE,
     ERROR,
@@ -86,7 +86,7 @@ def semantic(expression: str, release_id: int, dpm_version: str):
     semantic_api = SemanticAPI()
 
     if dpm_version:
-        from py_dpm.dpm.db.models import Release
+        from py_dpm.dpm.models import Release
 
         release_id = (
             semantic_api.session.query(Release.releaseid)
@@ -319,7 +319,7 @@ def calculate_scopes(expression, operation_vid, tables, preconditions, release_i
                 modules_table.add_column("From Date", justify="center")
                 modules_table.add_column("To Date", justify="center")
 
-                from py_dpm.dpm.db.models import ModuleVersion
+                from py_dpm.dpm.models import ModuleVersion
 
                 for module_vid in result.module_versions:
                     module_df = ModuleVersion.get_module_version_by_vid(
