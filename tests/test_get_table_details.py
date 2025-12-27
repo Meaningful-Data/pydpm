@@ -6,6 +6,9 @@ from py_dpm.dpm.models import (
     Base,
     Header,
     HeaderVersion,
+    SubCategory,
+    SubCategoryVersion,
+    SubCategoryItem,
     Table,
     TableVersion,
     TableVersionHeader,
@@ -16,6 +19,7 @@ from py_dpm.dpm.models import (
     Property,
     DataType,
     Item,
+    ItemCategory,
     Cell,
     TableVersionCell,
     VariableVersion,
@@ -223,3 +227,117 @@ def test_get_table_details_missing_table_raises_value_error(session):
 
     # Optional: check that the message is the expected one
     assert "Table UNKNOWN_TABLE was not found." in str(excinfo.value)
+
+
+def test_get_table_details_property_code_and_enumerations(session):
+    # Setup minimal framework/module/version so _fetch_header_and_cells can
+    # derive a release_id from ModuleVersion.
+    fw = Framework(frameworkid=1, code="FW1")
+    mod = Module(moduleid=1, frameworkid=1)
+    mv = ModuleVersion(modulevid=10, moduleid=1, startreleaseid=1)
+
+    # Table and version
+    t = Table(tableid=200)
+    tv = TableVersion(
+        tablevid=2000, tableid=200, code="T_ENUM", name="Table Enum", startreleaseid=1
+    )
+    mvc = ModuleVersionComposition(modulevid=10, tablevid=2000, tableid=200)
+
+    # Header with property and subcategory (for enumerations)
+    h = Header(headerid=2, direction="X", iskey=False)
+    hv = HeaderVersion(
+        headervid=20,
+        headerid=2,
+        code="H_ENUM",
+        label="Header Enum",
+        propertyid=1,
+        subcategoryvid=3000,
+    )
+    tvh = TableVersionHeader(
+        tablevid=2000, headervid=20, headerid=2, order=1, isabstract=False
+    )
+
+    # Property / DataType and property ItemCategory
+    dt = DataType(datatypeid=1, name="Monetary")
+    prop_item = Item(itemid=1, name="MainProperty")
+    prop = Property(propertyid=1, datatypeid=1)  # Name from Item
+    ic_prop = ItemCategory(
+        itemid=1,
+        startreleaseid=1,
+        endreleaseid=None,
+        code="P_MAIN",
+        signature="SIG_MAIN",
+    )
+
+    # Enumeration setup: SubCategory -> SubCategoryVersion -> SubCategoryItem
+    subcat = SubCategory(subcategoryid=10, categoryid=None)
+    scv = SubCategoryVersion(
+        subcategoryvid=3000, subcategoryid=10, startreleaseid=1, endreleaseid=None
+    )
+    enum_item = Item(itemid=2, name="EnumItem")
+    ic_enum = ItemCategory(
+        itemid=2,
+        startreleaseid=1,
+        endreleaseid=None,
+        signature="ENUM_SIG",
+    )
+    sci = SubCategoryItem(itemid=2, subcategoryvid=3000, order=1)
+
+    # Cell / Variable linking to the header
+    vv = VariableVersion(variablevid=600, variableid=60, code="V_ENUM")
+    cell = Cell(
+        cellid=901,
+        tableid=200,
+        columnid=2,  # matches header above
+        rowid=None,
+        sheetid=None,
+    )
+    tvc = TableVersionCell(
+        tablevid=2000,
+        cellid=901,
+        variablevid=600,
+        isnullable=True,
+        isvoid=False,
+        isexcluded=False,
+    )
+
+    session.add_all(
+        [
+            fw,
+            mod,
+            mv,
+            t,
+            tv,
+            mvc,
+            h,
+            hv,
+            tvh,
+            dt,
+            prop_item,
+            prop,
+            ic_prop,
+            subcat,
+            scv,
+            enum_item,
+            ic_enum,
+            sci,
+            vv,
+            cell,
+            tvc,
+        ]
+    )
+    session.commit()
+
+    result = HierarchicalQuery.get_table_details(session, table_code="T_ENUM")
+
+    # Verify header contains propertyCode and enumerations
+    assert result["tableCode"] == "T_ENUM"
+    headers = result["headers"]
+    assert len(headers) == 1
+    header = headers[0]
+    assert header["code"] == "H_ENUM"
+    assert header["propertyCode"] == "P_MAIN"
+    assert header["propertyName"] == "MainProperty"
+    assert header["dataTypeName"] == "Monetary"
+    # Enumerations aggregated as "signature - label"
+    assert header["items"] == ["ENUM_SIG - EnumItem"]
