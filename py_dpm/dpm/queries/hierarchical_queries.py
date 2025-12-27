@@ -358,22 +358,20 @@ class HierarchicalQuery:
             result["tableVid"] = table_version.tablevid
             return result
 
-        # Use the first concrete table version for the header structure and
-        # aggregate cells from all matching table versions.
-        header_results, first_cells = HierarchicalQuery._fetch_header_and_cells(
-            session, child_versions[0].tablevid
-        )
-        if not header_results:
-            return {}
-
-        all_cells = list(first_cells)
-        for child_tv in child_versions[1:]:
-            _, child_cells = HierarchicalQuery._fetch_header_and_cells(
+        # Collect headers and cells from all matching child table versions.
+        all_headers = []
+        all_cells = []
+        for child_tv in child_versions:
+            child_headers, child_cells = HierarchicalQuery._fetch_header_and_cells(
                 session, child_tv.tablevid
             )
+            all_headers.extend(child_headers)
             all_cells.extend(child_cells)
 
-        result = HierarchicalQuery._transform_to_dpm_format(header_results, all_cells)
+        if not all_headers:
+            return {}
+
+        result = HierarchicalQuery._transform_to_dpm_format(all_headers, all_cells)
 
         # Represent the consolidated view as belonging to the originally
         # requested (abstract) table version.
