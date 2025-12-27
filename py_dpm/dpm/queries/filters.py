@@ -111,3 +111,29 @@ def filter_by_release(
 def filter_active_only(query, end_col):
     """Filter for currently active records (end_release is None)."""
     return query.filter(end_col.is_(None))
+
+
+def filter_item_version(ref_start_col, item_start_col, item_end_col):
+    """
+    Build a version-range condition for joining versioned items (such as
+    ItemCategory) against a reference start-release column.
+
+    The pattern is:
+        ref_start_col >= item_start_col
+        AND (item_end_col IS NULL OR ref_start_col < item_end_col)
+
+    Args:
+        ref_start_col: Column representing the reference start release
+                       (e.g. TableVersion.startreleaseid).
+        item_start_col: Item's start-release column
+                        (e.g. ItemCategory.startreleaseid).
+        item_end_col: Item's end-release column
+                      (e.g. ItemCategory.endreleaseid).
+
+    Returns:
+        SQLAlchemy boolean expression combining the above conditions.
+    """
+    return and_(
+        ref_start_col >= item_start_col,
+        or_(ref_start_col < item_end_col, item_end_col.is_(None)),
+    )

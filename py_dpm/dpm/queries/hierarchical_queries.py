@@ -28,6 +28,7 @@ from py_dpm.dpm.queries.filters import (
     filter_by_release,
     filter_by_date,
     filter_active_only,
+    filter_item_version,
 )
 
 
@@ -479,10 +480,10 @@ class HierarchicalQuery:
                 iccp,
                 and_(
                     ContextComposition.propertyid == iccp.itemid,
-                    TableVersion.startreleaseid >= iccp.startreleaseid,
-                    or_(
-                        TableVersion.startreleaseid < iccp.endreleaseid,
-                        iccp.endreleaseid.is_(None),
+                    filter_item_version(
+                        TableVersion.startreleaseid,
+                        iccp.startreleaseid,
+                        iccp.endreleaseid,
                     ),
                 ),
             )
@@ -492,10 +493,10 @@ class HierarchicalQuery:
                 icci,
                 and_(
                     ContextComposition.itemid == icci.itemid,
-                    TableVersion.startreleaseid >= icci.startreleaseid,
-                    or_(
-                        TableVersion.startreleaseid < icci.endreleaseid,
-                        icci.endreleaseid.is_(None),
+                    filter_item_version(
+                        TableVersion.startreleaseid,
+                        icci.startreleaseid,
+                        icci.endreleaseid,
                     ),
                 ),
             )
@@ -505,10 +506,10 @@ class HierarchicalQuery:
                 icmp,
                 and_(
                     HeaderVersion.propertyid == icmp.itemid,
-                    TableVersion.startreleaseid >= icmp.startreleaseid,
-                    or_(
-                        TableVersion.startreleaseid < icmp.endreleaseid,
-                        icmp.endreleaseid.is_(None),
+                    filter_item_version(
+                        TableVersion.startreleaseid,
+                        icmp.startreleaseid,
+                        icmp.endreleaseid,
                     ),
                 ),
             )
@@ -598,7 +599,7 @@ class HierarchicalQuery:
                 HeaderVersion.label.label("label"),
                 Header.direction.label("direction"),
                 Header.iskey.label("is_key"),
-                ic_prop.signature.label("property_code"),
+                ic_prop.code.label("property_code"),
                 item_prop.name.label("property_name"),
                 DataType.name.label("data_type_name"),
                 ic_enum.signature.label("item_signature"),
@@ -617,15 +618,17 @@ class HierarchicalQuery:
                 ic_prop,
                 and_(
                     HeaderVersion.propertyid == ic_prop.itemid,
-                    release_id >= ic_prop.startreleaseid,
-                    or_(
-                        release_id < ic_prop.endreleaseid,
-                        ic_prop.endreleaseid.is_(None),
+                    filter_item_version(
+                        release_id,
+                        ic_prop.startreleaseid,
+                        ic_prop.endreleaseid,
                     ),
+                    ic_prop.isdefaultitem != 0,
                 ),
             )
-            .outerjoin(item_prop, ic_prop.itemid == item_prop.itemid)
+            # Property and its Item (for name) do not require an ItemCategory row
             .outerjoin(Property, HeaderVersion.propertyid == Property.propertyid)
+            .outerjoin(item_prop, Property.propertyid == item_prop.itemid)
             .outerjoin(DataType, Property.datatypeid == DataType.datatypeid)
             .outerjoin(
                 SubCategoryVersion,
@@ -640,11 +643,12 @@ class HierarchicalQuery:
                 ic_enum,
                 and_(
                     SubCategoryItem.itemid == ic_enum.itemid,
-                    release_id >= ic_enum.startreleaseid,
-                    or_(
-                        release_id < ic_enum.endreleaseid,
-                        ic_enum.endreleaseid.is_(None),
+                    filter_item_version(
+                        release_id,
+                        ic_enum.startreleaseid,
+                        ic_enum.endreleaseid,
                     ),
+                    ic_enum.isdefaultitem != 0,
                 ),
             )
             .outerjoin(item_enum, ic_enum.itemid == item_enum.itemid)
@@ -686,7 +690,7 @@ class HierarchicalQuery:
                 TableVersionCell.isvoid.label("cell_is_void"),
                 TableVersionCell.sign.label("cell_sign"),
                 func.coalesce(
-                    ic_col.signature, ic_row.signature, ic_sheet.signature
+                    ic_col.code, ic_row.code, ic_sheet.code
                 ).label("property_code"),
                 func.coalesce(
                     dt_col.name, dt_row.name, dt_sheet.name
@@ -706,15 +710,48 @@ class HierarchicalQuery:
                 VariableVersion.variablevid == TableVersionCell.variablevid,
             )
             # Column axis ItemCategory, Property, DataType
-            .outerjoin(ic_col, hv_col.propertyid == ic_col.itemid)
+            .outerjoin(
+                ic_col,
+                and_(
+                    hv_col.propertyid == ic_col.itemid,
+                    filter_item_version(
+                        release_id,
+                        ic_col.startreleaseid,
+                        ic_col.endreleaseid,
+                    ),
+                    ic_col.isdefaultitem != 0,
+                ),
+            )
             .outerjoin(prop_col, hv_col.propertyid == prop_col.propertyid)
             .outerjoin(dt_col, prop_col.datatypeid == dt_col.datatypeid)
             # Row axis ItemCategory, Property, DataType
-            .outerjoin(ic_row, hv_row.propertyid == ic_row.itemid)
+            .outerjoin(
+                ic_row,
+                and_(
+                    hv_row.propertyid == ic_row.itemid,
+                    filter_item_version(
+                        release_id,
+                        ic_row.startreleaseid,
+                        ic_row.endreleaseid,
+                    ),
+                    ic_row.isdefaultitem != 0,
+                ),
+            )
             .outerjoin(prop_row, hv_row.propertyid == prop_row.propertyid)
             .outerjoin(dt_row, prop_row.datatypeid == dt_row.datatypeid)
             # Sheet axis ItemCategory, Property, DataType
-            .outerjoin(ic_sheet, hv_sheet.propertyid == ic_sheet.itemid)
+            .outerjoin(
+                ic_sheet,
+                and_(
+                    hv_sheet.propertyid == ic_sheet.itemid,
+                    filter_item_version(
+                        release_id,
+                        ic_sheet.startreleaseid,
+                        ic_sheet.endreleaseid,
+                    ),
+                    ic_sheet.isdefaultitem != 0,
+                ),
+            )
             .outerjoin(prop_sheet, hv_sheet.propertyid == prop_sheet.propertyid)
             .outerjoin(dt_sheet, prop_sheet.datatypeid == dt_sheet.datatypeid)
             .filter(TableVersionCell.tablevid == table_vid)
