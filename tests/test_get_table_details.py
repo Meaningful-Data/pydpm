@@ -214,3 +214,12 @@ def test_get_table_details_implementation_avoids_func_null_and_text():
     )
     assert "func.null" not in source
     assert "text(" not in source
+
+
+def test_get_table_details_missing_table_raises_value_error(session):
+    # No tables created for this code; should raise a ValueError
+    with pytest.raises(ValueError) as excinfo:
+        HierarchicalQuery.get_table_details(session, table_code="UNKNOWN_TABLE")
+
+    # Optional: check that the message is the expected one
+    assert "Table UNKNOWN_TABLE was not found." in str(excinfo.value)

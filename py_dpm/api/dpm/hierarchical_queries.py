@@ -103,3 +103,24 @@ class HierarchicalQueryAPI:
             date=date,
             release_code=release_code,
         )
+
+    def get_table_modelling(
+        self,
+        table_code: str,
+        release_id: Optional[int] = None,
+        date: Optional[str] = None,
+        release_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Placeholder API for table modelling metadata.
+
+        Mirrors the signature of get_table_details; the underlying query and
+        output format will be provided later.
+        """
+        return HierarchicalQuery.get_table_modelling(
+            self.session,
+            table_code=table_code,
+            release_id=release_id,
+            date=date,
+            release_code=release_code,
+        )
