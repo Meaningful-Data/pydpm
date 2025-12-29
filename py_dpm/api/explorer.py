@@ -1,4 +1,4 @@
-from py_dpm.api.dpm.explorer import DPMExplorer
+from py_dpm.api.dpm.explorer import ExplorerQueryAPI
 
-__all__ = ["DPMExplorer"]
+__all__ = ["ExplorerQueryAPI"]
 

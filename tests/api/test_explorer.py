@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-from py_dpm.api.explorer import DPMExplorer
+from py_dpm.api.explorer import ExplorerQueryAPI
 
 
 # Mock models to avoid importing actual DB models which require DB connection
@@ -18,7 +18,7 @@ class TestDPMExplorer(unittest.TestCase):
         self.mock_api = MagicMock()
         self.mock_session = MagicMock()
         self.mock_api.session = self.mock_session
-        self.explorer = DPMExplorer(data_dict_api=self.mock_api)
+        self.explorer = ExplorerQueryAPI(data_dict_api=self.mock_api)
 
     @patch("sqlalchemy.or_")
     @patch("py_dpm.dpm.models.TableVersion")
@@ -119,3 +119,34 @@ class TestDPMExplorer(unittest.TestCase):
 
         audit = self.explorer.audit_table("NON_EXISTENT")
         self.assertIn("error", audit)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variable_usage")
+    def test_get_variable_usage_delegates_to_query(self, mock_get_variable_usage):
+        # Arrange
+        expected_result = [
+            {
+                "cell_code": "A1",
+                "cell_sign": "+",
+                "table_code": "TBL_X",
+                "table_name": "Table X",
+                "module_code": "MOD_X",
+                "module_name": "Module X",
+            }
+        ]
+        mock_get_variable_usage.return_value = expected_result
+
+        # Act
+        result = self.explorer.get_variable_usage(
+            variable_id=123, release_id=5, date=None, release_code=None
+        )
+
+        # Assert
+        mock_get_variable_usage.assert_called_once_with(
+            self.mock_api.session,
+            variable_id=123,
+            variable_vid=None,
+            release_id=5,
+            date=None,
+            release_code=None,
+        )
+        self.assertEqual(result, expected_result)

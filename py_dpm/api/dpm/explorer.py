@@ -1,8 +1,10 @@
 from typing import List, Optional, Dict, Any
+
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
+from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
 
 
-class DPMExplorer:
+class ExplorerQueryAPI:
     """
     Explorer API for introspection and "inverse" queries of the DPM structure.
     Methods here answer "Where is X used?" or "What relates to Y?".
@@ -12,6 +14,8 @@ class DPMExplorer:
 
     def __init__(self, data_dict_api: Optional[DataDictionaryAPI] = None):
         self.api = data_dict_api or DataDictionaryAPI()
+
+    # ==================== Existing Explorer Methods ====================
 
     def get_properties_using_item(
         self, item_code: str, release_id: Optional[int] = None
@@ -135,3 +139,29 @@ class DPMExplorer:
             "open_keys": open_keys,
             "open_keys_count": len(open_keys),
         }
+
+    # ==================== New Explorer Methods Backed by Query Layer ====================
+
+    def get_variable_usage(
+        self,
+        variable_id: Optional[int] = None,
+        variable_vid: Optional[int] = None,
+        release_id: Optional[int] = None,
+        date: Optional[str] = None,
+        release_code: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Expose ExplorerQuery.get_variable_usage through the Explorer API.
+
+        Exactly one of variable_id or variable_vid must be provided.
+        Release arguments follow the same semantics as hierarchical queries:
+        at most one of release_id, date or release_code may be specified.
+        """
+        return ExplorerQuery.get_variable_usage(
+            self.api.session,
+            variable_id=variable_id,
+            variable_vid=variable_vid,
+            release_id=release_id,
+            date=date,
+            release_code=release_code,
+        )
