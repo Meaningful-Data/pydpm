@@ -621,7 +621,6 @@ class HierarchicalQuery:
                         ic_prop.startreleaseid,
                         ic_prop.endreleaseid,
                     ),
-                    ic_prop.isdefaultitem != 0,
                 ),
             )
             # Property and its Item (for name) do not require an ItemCategory row
@@ -646,7 +645,6 @@ class HierarchicalQuery:
                         ic_enum.startreleaseid,
                         ic_enum.endreleaseid,
                     ),
-                    ic_enum.isdefaultitem != 0,
                 ),
             )
             .outerjoin(item_enum, ic_enum.itemid == item_enum.itemid)
