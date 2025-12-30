@@ -266,6 +266,28 @@ class SemanticAPI:
         except Exception:
             pass
 
+    def close(self):
+        """
+        Explicitly close the underlying SQLAlchemy session and dispose any private engine.
+        """
+        try:
+            if hasattr(self, "session") and self.session:
+                self.session.close()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "engine") and self.engine is not None:
+                self.engine.dispose()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
 
 # Convenience functions for direct usage
 def validate_expression(

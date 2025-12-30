@@ -883,3 +883,21 @@ class DataDictionaryAPI:
         """Clean up resources."""
         if hasattr(self, "session") and self.session:
             self.session.close()
+
+    def close(self):
+        """
+        Explicitly close the underlying SQLAlchemy session.
+
+        This is a no-op if the session is already closed or missing.
+        """
+        if hasattr(self, "session") and self.session:
+            try:
+                self.session.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

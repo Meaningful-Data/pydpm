@@ -15,6 +15,22 @@ class ExplorerQueryAPI:
     def __init__(self, data_dict_api: Optional[DataDictionaryAPI] = None):
         self.api = data_dict_api or DataDictionaryAPI()
 
+    def close(self):
+        """
+        Explicitly close the underlying DataDictionaryAPI (and its session).
+        """
+        if hasattr(self, "api") and hasattr(self.api, "close"):
+            try:
+                self.api.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     # ==================== Existing Explorer Methods ====================
 
     def get_properties_using_item(
