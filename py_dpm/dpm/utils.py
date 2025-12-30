@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import close_all_sessions, sessionmaker
+from contextlib import contextmanager
 from rich.console import Console
 
 console = Console()
@@ -55,6 +56,7 @@ elif not use_sqlite and not use_postgres:
 engine = None
 connection = None
 sessionMakerObject = None
+_current_engine_url = None
 
 
 def create_engine_from_url(connection_url):
@@ -77,10 +79,19 @@ def create_engine_from_url(connection_url):
         >>> engine = create_engine_from_url('sqlite:///database.db')
         >>> engine = create_engine_from_url('postgresql://user:pass@localhost/mydb')
     """
-    global engine, sessionMakerObject
+    global engine, sessionMakerObject, _current_engine_url
 
     # Detect database type from URL scheme
     is_sqlite = connection_url.startswith("sqlite://")
+
+    # For SQLite URLs, always create a fresh engine to avoid
+    # surprising cross-test or cross-call state sharing, especially
+    # for in-memory databases. For server-based databases, reuse the
+    # engine when the URL has not changed.
+    if not is_sqlite and engine is not None and _current_engine_url == str(
+        connection_url
+    ):
+        return engine
 
     if is_sqlite:
         # SQLite doesn't support connection pooling
@@ -99,18 +110,24 @@ def create_engine_from_url(connection_url):
     if sessionMakerObject is not None:
         close_all_sessions()
     sessionMakerObject = sessionmaker(bind=engine)
+    _current_engine_url = str(connection_url)
 
     return engine
 
 
 def create_engine_object(url):
-    global engine
+    global engine, _current_engine_url
 
     # Convert URL to string for type detection if needed
     url_str = str(url)
 
     # Detect database type from URL scheme (not from environment variables)
     is_sqlite = url_str.startswith("sqlite://")
+
+    # Only reuse engines for non-SQLite URLs. SQLite (especially in-memory)
+    # should create independent engines to avoid leaking state between calls.
+    if not is_sqlite and engine is not None and _current_engine_url == url_str:
+        return engine
 
     if is_sqlite:
         engine = create_engine(url, pool_pre_ping=True)
@@ -124,6 +141,7 @@ def create_engine_object(url):
     if sessionMakerObject is not None:
         close_all_sessions()
     sessionMakerObject = sessionmaker(bind=engine)
+    _current_engine_url = url_str
     return engine
 
 
@@ -225,3 +243,24 @@ def get_session():
         raise Exception("Not found Session Maker")
     session = sessionMakerObject()
     return session
+
+
+@contextmanager
+def session_scope():
+    """
+    Provide a transactional scope around a series of operations.
+
+    This helper is intended for short-lived, one-off operations where
+    explicit session closing is desired. It does not commit automatically,
+    leaving transaction control to the caller, but always closes the
+    session in a finally block.
+    """
+    session = get_session()
+    try:
+        yield session
+    finally:
+        try:
+            session.close()
+        except Exception:
+            # Best-effort close; suppress errors on shutdown paths
+            pass

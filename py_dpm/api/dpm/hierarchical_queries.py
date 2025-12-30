@@ -41,6 +41,22 @@ class HierarchicalQueryAPI:
         get_engine(database_path=database_path, connection_url=connection_url)
         self.session = get_session()
 
+    def close(self):
+        """
+        Explicitly close the underlying SQLAlchemy session.
+        """
+        if hasattr(self, "session") and self.session:
+            try:
+                self.session.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def get_module_version(
         self,
         module_code: str,
