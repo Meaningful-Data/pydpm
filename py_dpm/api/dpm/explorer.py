@@ -1,8 +1,10 @@
 from typing import List, Optional, Dict, Any
+
 from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
+from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
 
 
-class DPMExplorer:
+class ExplorerQueryAPI:
     """
     Explorer API for introspection and "inverse" queries of the DPM structure.
     Methods here answer "Where is X used?" or "What relates to Y?".
@@ -12,6 +14,8 @@ class DPMExplorer:
 
     def __init__(self, data_dict_api: Optional[DataDictionaryAPI] = None):
         self.api = data_dict_api or DataDictionaryAPI()
+
+    # ==================== Existing Explorer Methods ====================
 
     def get_properties_using_item(
         self, item_code: str, release_id: Optional[int] = None
@@ -135,3 +139,82 @@ class DPMExplorer:
             "open_keys": open_keys,
             "open_keys_count": len(open_keys),
         }
+
+    # ==================== New Explorer Methods Backed by Query Layer ====================
+
+    def get_variable_usage(
+        self,
+        variable_id: Optional[int] = None,
+        variable_vid: Optional[int] = None,
+        release_id: Optional[int] = None,
+        date: Optional[str] = None,
+        release_code: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Expose ExplorerQuery.get_variable_usage through the Explorer API.
+
+        Exactly one of variable_id or variable_vid must be provided.
+        Release arguments follow the same semantics as hierarchical queries:
+        at most one of release_id, date or release_code may be specified.
+        """
+        return ExplorerQuery.get_variable_usage(
+            self.api.session,
+            variable_id=variable_id,
+            variable_vid=variable_vid,
+            release_id=release_id,
+            date=date,
+            release_code=release_code,
+        )
+
+    def get_module_url(
+        self,
+        module_code: str,
+        date: Optional[str] = None,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> str:
+        """
+        Get the EBA taxonomy URL for a module.
+
+        The URL has the form:
+        http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/{framework_code}/{release_code}/mod/{module_code}.json
+
+        Exactly one of date, release_id or release_code may be specified.
+        If none are provided, the URL is built for the currently active
+        module version.
+        """
+        return ExplorerQuery.get_module_url(
+            self.api.session,
+            module_code=module_code,
+            date=date,
+            release_id=release_id,
+            release_code=release_code,
+        )
+
+    def get_variable_from_cell_address(
+        self,
+        table_code: str,
+        row_code: Optional[str] = None,
+        column_code: Optional[str] = None,
+        sheet_code: Optional[str] = None,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+        date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Resolve variable information from a cell address (table/row/column/sheet).
+
+        Row, column and sheet codes are optional and are only used when
+        provided. Release parameters follow the standard semantics; if none
+        are given, only active module versions are considered.
+        """
+        return ExplorerQuery.get_variable_from_cell_address(
+            self.api.session,
+            table_code=table_code,
+            row_code=row_code,
+            column_code=column_code,
+            sheet_code=sheet_code,
+            release_id=release_id,
+            release_code=release_code,
+            date=date,
+        )

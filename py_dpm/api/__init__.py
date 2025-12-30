@@ -15,7 +15,7 @@ from py_dpm.api.dpm_xl import (
 # Import from general DPM API
 from py_dpm.api.dpm import (
     DataDictionaryAPI,
-    DPMExplorer,
+    ExplorerQueryAPI,
     OperationScopesAPI,
     MigrationAPI,
     HierarchicalQueryAPI,
@@ -65,7 +65,7 @@ __all__ = [
     "SemanticAPI",
     "DataDictionaryAPI",
     "OperationScopesAPI",
-    "DPMExplorer",
+    "ExplorerQueryAPI",
     # Operation Scopes Convenience Functions
     "calculate_scopes_from_expression",
     "get_existing_scopes",
