@@ -818,7 +818,7 @@ results = [semantic_api.validate_expression(e) for e in expressions]
 
 ## Version Information
 
-- **Library Version:** 0.1.39rc32
+- **Library Version:** 0.2.0
 - **Python Requirements:** >=3.10
 - **ANTLR Version:** 4.9.2
 - **SQLAlchemy Version:** 1.4.50
