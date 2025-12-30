@@ -51,9 +51,10 @@ py_dpm/
 pyDPM supports multiple database backends. It selects the connection method based on the following hierarchy of preference:
 
 1.  **Explicit Argument**: Passing a connection URL or path directly in Python code overrides all configuration.
-2.  **PostgreSQL**: If `USE_POSTGRES=true` in `.env`, it connects to the configured Postgres server.
-3.  **SQLite**: If `USE_SQLITE=true` (default), it connects to a local SQLite file.
-4.  **SQL Server**: Legacy fallback if no other option is selected.
+2.  **Unified RDBMS Configuration**: If `PYDPM_RDBMS` and the `PYDPM_DB_*` variables are set, it connects to the configured server database.
+3.  **Legacy PostgreSQL**: If `USE_POSTGRES=true` in `.env`, it connects to the configured Postgres server.
+4.  **SQLite**: If `USE_SQLITE=true` (default), it connects to a local SQLite file.
+5.  **SQL Server**: Legacy fallback if no other option is selected.
 
 ### Environment Variables (.env)
 
@@ -64,7 +65,15 @@ Configure your database connection in the `.env` file:
 USE_SQLITE=true
 SQLITE_DB_PATH=database.db
 
-# --- Option 2: PostgreSQL ---
+# --- Option 2: Unified server database (recommended) ---
+# PYDPM_RDBMS=postgres        # or "sqlserver"
+# PYDPM_DB_HOST=localhost
+# PYDPM_DB_PORT=5432          # defaults: 5432 for postgres, 1433 for sqlserver
+# PYDPM_DB_NAME=dpm_db
+# PYDPM_DB_USER=myuser
+# PYDPM_DB_PASSWORD=mypassword
+
+# --- Option 3: Legacy PostgreSQL (backward compatible) ---
 # USE_POSTGRES=true
 # POSTGRES_HOST=localhost
 # POSTGRES_PORT=5432
@@ -234,4 +243,3 @@ api = DataDictionaryAPI(connection_url="postgresql://user:pass@localhost/db")
 ## License
 
 [Add your license information here]
-

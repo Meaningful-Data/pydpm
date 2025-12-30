@@ -225,8 +225,10 @@ api = SemanticAPI(database_path="data.db")
 # PostgreSQL
 api = SemanticAPI(connection_url="postgresql://user:pass@localhost/dbname")
 
-# Use environment variable
-api = SemanticAPI()  # Uses SQLITE_DB_PATH or default
+# Use environment variables
+# - PYDPM_RDBMS / PYDPM_DB_* for server databases (recommended)
+# - or SQLITE_DB_PATH for SQLite (default)
+api = SemanticAPI()
 ```
 
 ##### `validate_expression(expression, release_id=None)`

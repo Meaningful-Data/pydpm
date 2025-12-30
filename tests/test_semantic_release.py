@@ -2,6 +2,8 @@ import os
 
 import pytest
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
+
 from py_dpm.api.semantic import validate_expression
 
 
@@ -12,9 +14,57 @@ def _semantic_db_kwargs():
     """
     Build DB configuration for semantic validation from environment/.env.
 
-    Prefers PostgreSQL if USE_POSTGRES=true and credentials are present,
-    otherwise falls back to SQLite via SQLITE_DB_PATH.
+    Prefers server databases configured via PYDPM_RDBMS/PYDPM_DB_* variables.
+    Falls back to legacy USE_POSTGRES/POSTGRES_* configuration, then finally
+    to SQLite via SQLITE_DB_PATH.
     """
+    # Preferred unified configuration
+    rdbms = os.getenv("PYDPM_RDBMS", "").strip().lower()
+
+    if rdbms in ("postgres", "sqlserver"):
+        host = os.getenv("PYDPM_DB_HOST")
+        port = os.getenv("PYDPM_DB_PORT") or (
+            "5432" if rdbms == "postgres" else "1433"
+        )
+        db = os.getenv("PYDPM_DB_NAME")
+        user = os.getenv("PYDPM_DB_USER")
+        password = os.getenv("PYDPM_DB_PASSWORD")
+
+        if all([host, db, user, password]):
+            if rdbms == "postgres":
+                connection_url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
+            else:
+                # SQL Server connection using ODBC connection string
+                server_with_port = f"{host},{port}" if port else host
+
+                # Handling special characters in password for SQL Server
+                sqlserver_password = password.replace("}", "}}")
+                for x in "%&.@#/\\=;":
+                    if x in sqlserver_password:
+                        sqlserver_password = "{" + sqlserver_password + "}"
+                        break
+
+                if os.name == "nt":
+                    driver = "{SQL Server}"
+                else:
+                    driver = os.getenv(
+                        "SQL_DRIVER", "{ODBC Driver 18 for SQL Server}"
+                    )
+
+                connection_string = (
+                    f"DRIVER={driver}",
+                    f"SERVER={server_with_port}",
+                    f"DATABASE={db}",
+                    f"UID={user}",
+                    f"PWD={sqlserver_password}",
+                    "TrustServerCertificate=yes",
+                )
+                encoded = quote_plus(";".join(connection_string))
+                connection_url = f"mssql+pyodbc:///?odbc_connect={encoded}"
+
+            return {"connection_url": connection_url}
+
+    # Legacy PostgreSQL configuration
     use_postgres = os.getenv("USE_POSTGRES", "false").lower() == "true"
     use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true"
 

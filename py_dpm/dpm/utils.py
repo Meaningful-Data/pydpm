@@ -22,6 +22,31 @@ while current_dir != os.path.dirname(current_dir):  # Stop at root
 # SQLite configuration
 sqlite_db_path = os.getenv("SQLITE_DB_PATH", "database.db")
 
+# Unified RDBMS configuration (preferred)
+#
+# These environment variables provide a single, backend-agnostic way to
+# configure a server-based database for pyDPM. `PYDPM_RDBMS` selects the
+# backend and the remaining variables provide connection details:
+#   - PYDPM_RDBMS: "postgres" or "sqlserver"
+#   - PYDPM_DB_HOST: hostname or IP
+#   - PYDPM_DB_PORT: port number (optional; defaults per backend)
+#   - PYDPM_DB_NAME: database name
+#   - PYDPM_DB_USER: username
+#   - PYDPM_DB_PASSWORD: password
+pydpm_rdbms = os.getenv("PYDPM_RDBMS", "").strip().lower()
+db_host = os.getenv("PYDPM_DB_HOST", None)
+db_port = os.getenv("PYDPM_DB_PORT", None)
+db_name = os.getenv("PYDPM_DB_NAME", None)
+db_user = os.getenv("PYDPM_DB_USER", None)
+db_password = os.getenv("PYDPM_DB_PASSWORD", None)
+
+if pydpm_rdbms == "postgres" and not db_port:
+    db_port = "5432"
+elif pydpm_rdbms == "sqlserver" and not db_port:
+    db_port = "1433"
+
+
+
 # PostgreSQL configuration
 postgres_host = os.getenv("POSTGRES_HOST", None)
 postgres_port = os.getenv("POSTGRES_PORT", "5432")
@@ -172,14 +197,72 @@ def get_engine(owner=None, database_path=None, connection_url=None):
         connection_url = f"sqlite:///{database_path}"
         return create_engine_object(connection_url)
 
-    # Priority 3: Check environment variable USE_POSTGRES
-    if use_postgres:
-        # PostgreSQL connection
-        connection_url = f"postgresql://{postgres_user}:{postgres_pass}@{postgres_host}:{postgres_port}/{postgres_db}"
-        return create_engine_object(connection_url)
+    # Priority 3: Check unified PYDPM_RDBMS configuration
+    if pydpm_rdbms in ("postgres", "sqlserver"):
+        if not (db_host and db_name and db_user and db_password):
+            console.print(
+                "Warning: PYDPM_RDBMS is set but PYDPM_DB_* variables are incomplete; "
+                "falling back to legacy configuration",
+                style="bold yellow",
+            )
+        else:
+            if pydpm_rdbms == "postgres":
+                # PostgreSQL via unified PYDPM_* configuration
+                port = db_port or "5432"
+                connection_url = (
+                    f"postgresql://{db_user}:{db_password}@{db_host}:{port}/{db_name}"
+                )
+                return create_engine_object(connection_url)
+            else:
+                # SQL Server via unified PYDPM_* configuration
+                port = db_port or "1433"
+                server_with_port = f"{db_host},{port}" if port else db_host
 
-    # Priority 4: Check environment variable USE_SQLITE
-    elif use_sqlite:
+                # Handling special characters in password for SQL Server
+                sqlserver_password = db_password.replace("}", "}}")
+                for x in "%&.@#/\\=;":
+                    if x in sqlserver_password:
+                        sqlserver_password = "{" + sqlserver_password + "}"
+                        break
+
+                if os.name == "nt":
+                    driver = "{SQL Server}"
+                else:
+                    driver = os.getenv(
+                        "SQL_DRIVER", "{ODBC Driver 18 for SQL Server}"
+                    )
+
+                connection_string = (
+                    f"DRIVER={driver}",
+                    f"SERVER={server_with_port}",
+                    f"DATABASE={db_name}",
+                    f"UID={db_user}",
+                    f"PWD={sqlserver_password}",
+                    "TrustServerCertificate=yes",
+                )
+                connection_url = URL.create(
+                    "mssql+pyodbc",
+                    query={"odbc_connect": quote_plus(';'.join(connection_string))},
+                )
+                return create_engine_object(connection_url)
+
+    # Priority 4: Check legacy PostgreSQL configuration
+    if use_postgres:
+        if not (postgres_host and postgres_user and postgres_pass and postgres_db):
+            console.print(
+                "Warning: USE_POSTGRES is true but PostgreSQL credentials are incomplete; "
+                "falling back to SQLite or SQL Server defaults",
+                style="bold yellow",
+            )
+        else:
+            connection_url = (
+                f"postgresql://{postgres_user}:{postgres_pass}@"
+                f"{postgres_host}:{postgres_port}/{postgres_db}"
+            )
+            return create_engine_object(connection_url)
+
+    # Priority 5: Check environment variable USE_SQLITE
+    if use_sqlite:
         # For SQLite, create the database path if it doesn't exist
         db_dir = os.path.dirname(sqlite_db_path)
         if db_dir and not os.path.exists(db_dir):
@@ -195,37 +278,44 @@ def get_engine(owner=None, database_path=None, connection_url=None):
 
         connection_url = f"sqlite:///{db_path}"
         return create_engine_object(connection_url)
+
+    # Priority 6: Legacy SQL Server logic
+    if owner is None:
+        raise Exception("Cannot generate engine. No owner used.")
+
+    if owner not in ("EBA", "EIOPA"):
+        raise Exception("Invalid owner, must be EBA or EIOPA")
+
+    if database_name is None:
+        database = "DPM_" + owner
     else:
-        # Legacy SQL Server logic
-        if owner is None:
-            raise Exception("Cannot generate engine. No owner used.")
+        database = database_name
 
-        if owner not in ("EBA", "EIOPA"):
-            raise Exception("Invalid owner, must be EBA or EIOPA")
+    if os.name == "nt":
+        driver = "{SQL Server}"
+    else:
+        driver = os.getenv("SQL_DRIVER", "{ODBC Driver 18 for SQL Server}")
 
-        if database_name is None:
-            database = "DPM_" + owner
-        else:
-            database = database_name
+    # Handling special characters in password for legacy SQL Server configuration
+    sqlserver_password = password.replace("}", "}}") if password else ""
+    for x in "%&.@#/\\=;":
+        if x in sqlserver_password:
+            sqlserver_password = "{" + sqlserver_password + "}"
+            break
 
-        if os.name == "nt":
-            driver = "{SQL Server}"
-        else:
-            driver = os.getenv("SQL_DRIVER", "{ODBC Driver 18 for SQL Server}")
-
-        connection_string = (
-            f"DRIVER={driver}",
-            f"SERVER={server}",
-            f"DATABASE={database}",
-            f"UID={username}",
-            f"PWD={password}",
-            "TrustServerCertificate=yes",
-        )
-        connection_string = ";".join(connection_string)
-        connection_url = URL.create(
-            "mssql+pyodbc", query={"odbc_connect": quote_plus(connection_string)}
-        )
-        return create_engine_object(connection_url)
+    connection_string = (
+        f"DRIVER={driver}",
+        f"SERVER={server}",
+        f"DATABASE={database}",
+        f"UID={username}",
+        f"PWD={sqlserver_password}",
+        "TrustServerCertificate=yes",
+    )
+    connection_string = ";".join(connection_string)
+    connection_url = URL.create(
+        "mssql+pyodbc", query={"odbc_connect": quote_plus(connection_string)}
+    )
+    return create_engine_object(connection_url)
 
 
 def get_connection(owner=None):
