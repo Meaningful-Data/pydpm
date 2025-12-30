@@ -165,3 +165,56 @@ class ExplorerQueryAPI:
             date=date,
             release_code=release_code,
         )
+
+    def get_module_url(
+        self,
+        module_code: str,
+        date: Optional[str] = None,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> str:
+        """
+        Get the EBA taxonomy URL for a module.
+
+        The URL has the form:
+        http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/{framework_code}/{release_code}/mod/{module_code}.json
+
+        Exactly one of date, release_id or release_code may be specified.
+        If none are provided, the URL is built for the currently active
+        module version.
+        """
+        return ExplorerQuery.get_module_url(
+            self.api.session,
+            module_code=module_code,
+            date=date,
+            release_id=release_id,
+            release_code=release_code,
+        )
+
+    def get_variable_from_cell_address(
+        self,
+        table_code: str,
+        row_code: Optional[str] = None,
+        column_code: Optional[str] = None,
+        sheet_code: Optional[str] = None,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+        date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Resolve variable information from a cell address (table/row/column/sheet).
+
+        Row, column and sheet codes are optional and are only used when
+        provided. Release parameters follow the standard semantics; if none
+        are given, only active module versions are considered.
+        """
+        return ExplorerQuery.get_variable_from_cell_address(
+            self.api.session,
+            table_code=table_code,
+            row_code=row_code,
+            column_code=column_code,
+            sheet_code=sheet_code,
+            release_id=release_id,
+            release_code=release_code,
+            date=date,
+        )

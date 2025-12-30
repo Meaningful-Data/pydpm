@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from py_dpm.dpm.models import (
     VariableVersion,
@@ -8,11 +8,17 @@ from py_dpm.dpm.models import (
     TableVersion,
     ModuleVersionComposition,
     ModuleVersion,
+    Module,
+    Framework,
+    Release,
+    Cell,
+    HeaderVersion,
 )
 from py_dpm.dpm.queries.filters import (
     filter_by_release,
     filter_by_date,
     filter_active_only,
+    filter_item_version,
 )
 
 
@@ -119,6 +125,228 @@ class ExplorerQuery:
                 release_id=release_id,
                 release_code=release_code,
             )
+
+        results = q.all()
+        return [dict(row._mapping) for row in results]
+
+    @staticmethod
+    def get_module_url(
+        session: Session,
+        module_code: str,
+        date: Optional[str] = None,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> str:
+        """
+        Resolve the EBA taxonomy URL for a given module code.
+
+        The URL format is:
+            http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/{framework_code}/{release_code}/mod/{module_code}.json
+
+        Exactly one of date, release_id or release_code may be provided.
+        If none are provided, the currently active module version is used
+        (based on ModuleVersion.endreleaseid being NULL).
+        """
+
+        if sum(bool(x) for x in [release_id, date, release_code]) > 1:
+            raise ValueError(
+                "Specify a maximum of one of release_id, release_code or date."
+            )
+
+        # Base query to resolve framework and module version metadata
+        q = (
+            session.query(
+                Framework.code.label("framework_code"),
+                ModuleVersion.code.label("module_code"),
+                ModuleVersion.startreleaseid.label("module_startreleaseid"),
+                ModuleVersion.endreleaseid.label("module_endreleaseid"),
+                ModuleVersion.fromreferencedate.label("module_fromreferencedate"),
+                ModuleVersion.toreferencedate.label("module_toreferencedate"),
+            )
+            .select_from(ModuleVersion)
+            .join(Module, ModuleVersion.moduleid == Module.moduleid)
+            .join(Framework, Module.frameworkid == Framework.frameworkid)
+            .filter(ModuleVersion.code == module_code)
+        )
+
+        # Apply release/date filtering mirroring HierarchicalQuery.get_module_version
+        if date:
+            q = filter_by_date(
+                q,
+                date,
+                ModuleVersion.fromreferencedate,
+                ModuleVersion.toreferencedate,
+            )
+        elif release_id or release_code:
+            q = filter_by_release(
+                q,
+                start_col=ModuleVersion.startreleaseid,
+                end_col=ModuleVersion.endreleaseid,
+                release_id=release_id,
+                release_code=release_code,
+            )
+        else:
+            # Default to currently active module versions
+            q = filter_active_only(q, end_col=ModuleVersion.endreleaseid)
+
+        rows = q.all()
+
+        if len(rows) != 1:
+            raise ValueError(
+                f"Should return 1 record, but returned {len(rows)}"
+            )
+
+        row = rows[0]
+        framework_code = row.framework_code
+        resolved_module_code = row.module_code
+
+        # Determine which release_code to embed in the URL
+        if release_code is not None:
+            effective_release_code = release_code
+        elif release_id is not None:
+            release_row = (
+                session.query(Release.code)
+                .filter(Release.releaseid == release_id)
+                .first()
+            )
+            if not release_row:
+                raise ValueError(f"Release with id {release_id} was not found.")
+            effective_release_code = release_row.code
+        else:
+            # For date-based or default queries, use the module version's
+            # starting release to derive the release code.
+            start_release_id = row.module_startreleaseid
+            release_row = (
+                session.query(Release.code)
+                .filter(Release.releaseid == start_release_id)
+                .first()
+            )
+            if not release_row:
+                raise ValueError(
+                    f"Release with id {start_release_id} was not found."
+                )
+            effective_release_code = release_row.code
+
+        return (
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/"
+            f"{framework_code.lower()}/{effective_release_code}/mod/{resolved_module_code.lower()}.json"
+        )
+
+    @staticmethod
+    def get_variable_from_cell_address(
+        session: Session,
+        table_code: str,
+        row_code: Optional[str] = None,
+        column_code: Optional[str] = None,
+        sheet_code: Optional[str] = None,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+        date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Resolve variables from a cell address (table / row / column / sheet).
+
+        The query mirrors the provided SQL, but uses SQLAlchemy ORM and the
+        standard release/date filtering helpers. Row, column and sheet codes
+        are optional and are only applied when not None.
+        """
+
+        if sum(bool(x) for x in [release_id, release_code, date]) > 1:
+            raise ValueError(
+                "Specify a maximum of one of release_id, release_code or date."
+            )
+
+        # Base query: link variables to cells and table versions
+        q = (
+            session.query(
+                VariableVersion.variableid.label("variable_id"),
+                VariableVersion.variablevid.label("variable_vid")
+            )
+            .select_from(VariableVersion)
+            .join(
+                TableVersionCell,
+                TableVersionCell.variablevid == VariableVersion.variablevid,
+            )
+            .join(TableVersion, TableVersion.tablevid == TableVersionCell.tablevid)
+            .join(Cell, Cell.cellid == TableVersionCell.cellid)
+            .join(
+                ModuleVersionComposition,
+                ModuleVersionComposition.tablevid == TableVersion.tablevid,
+            )
+            .join(
+                ModuleVersion,
+                ModuleVersion.modulevid == ModuleVersionComposition.modulevid,
+            )
+        )
+
+        # Aliases for the three header axes
+        hv_row = aliased(HeaderVersion, name="hv_row")
+        hv_col = aliased(HeaderVersion, name="hv_col")
+        hv_sheet = aliased(HeaderVersion, name="hv_sheet")
+
+        q = q.add_columns(
+            hv_row.code.label("row_code"),
+            hv_col.code.label("column_code"),
+            hv_sheet.code.label("sheet_code"),
+        )
+
+        q = q.outerjoin(
+            hv_row,
+            (Cell.rowid == hv_row.headerid)
+            & filter_item_version(
+                TableVersion.startreleaseid,
+                hv_row.startreleaseid,
+                hv_row.endreleaseid,
+            ),
+        ).outerjoin(
+            hv_col,
+            (Cell.columnid == hv_col.headerid)
+            & filter_item_version(
+                TableVersion.startreleaseid,
+                hv_col.startreleaseid,
+                hv_col.endreleaseid,
+            ),
+        ).outerjoin(
+            hv_sheet,
+            (Cell.sheetid == hv_sheet.headerid)
+            & filter_item_version(
+                TableVersion.startreleaseid,
+                hv_sheet.startreleaseid,
+                hv_sheet.endreleaseid,
+            ),
+        )
+
+        # Mandatory table filter
+        q = q.filter(TableVersion.code == table_code)
+
+        # Optional axis filters
+        if row_code is not None:
+            q = q.filter(hv_row.code == row_code)
+        if column_code is not None:
+            q = q.filter(hv_col.code == column_code)
+        if sheet_code is not None:
+            q = q.filter(hv_sheet.code == sheet_code)
+
+        # Apply standard release/date filtering on ModuleVersion.
+        # For this method, if no release argument is provided, we default
+        # to filtering active-only module versions.
+        if date:
+            q = filter_by_date(
+                q,
+                date,
+                ModuleVersion.fromreferencedate,
+                ModuleVersion.toreferencedate,
+            )
+        elif release_id or release_code:
+            q = filter_by_release(
+                q,
+                start_col=ModuleVersion.startreleaseid,
+                end_col=ModuleVersion.endreleaseid,
+                release_id=release_id,
+                release_code=release_code,
+            )
+        else:
+            q = filter_active_only(q, end_col=ModuleVersion.endreleaseid)
 
         results = q.all()
         return [dict(row._mapping) for row in results]

@@ -2,7 +2,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from py_dpm.api.explorer import ExplorerQueryAPI
+from py_dpm.dpm.models import Base, Framework, Module, ModuleVersion, Release
+from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
 
 
 # Mock models to avoid importing actual DB models which require DB connection
@@ -150,3 +155,114 @@ class TestDPMExplorer(unittest.TestCase):
             release_code=None,
         )
         self.assertEqual(result, expected_result)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_module_url")
+    def test_get_module_url_delegates_to_query(self, mock_get_module_url):
+        # Arrange
+        expected_url = (
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/FRM/1.0/mod/MOD_aaaX.json"
+        )
+        mock_get_module_url.return_value = expected_url
+
+        # Act
+        result = self.explorer.get_module_url(
+            module_code="MOD_X", date=None, release_id=1, release_code=None
+        )
+
+        # Assert
+        mock_get_module_url.assert_called_once_with(
+            self.mock_api.session,
+            module_code="MOD_X",
+            date=None,
+            release_id=1,
+            release_code=None,
+        )
+
+        print(result)
+        self.assertEqual(result, expected_url)
+
+    @patch(
+        "py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variable_from_cell_address"
+    )
+    def test_get_variable_from_cell_address_delegates_to_query(
+        self, mock_get_variable_from_cell_address
+    ):
+        # Arrange
+        expected = [
+            {
+                "variable_id": 1,
+                "variable_vid": 10,
+                "table_code": "TBL_X",
+                "cell_code": "A1",
+                "row_code": "0010",
+                "column_code": "0100",
+                "sheet_code": "0001",
+            }
+        ]
+        mock_get_variable_from_cell_address.return_value = expected
+
+        # Act
+        result = self.explorer.get_variable_from_cell_address(
+            table_code="TBL_X",
+            row_code="0010",
+            column_code="0100",
+            sheet_code="0001",
+            release_id=1,
+            release_code=None,
+            date=None,
+        )
+
+        # Assert
+        mock_get_variable_from_cell_address.assert_called_once_with(
+            self.mock_api.session,
+            table_code="TBL_X",
+            row_code="0010",
+            column_code="0100",
+            sheet_code="0001",
+            release_id=1,
+            release_code=None,
+            date=None,
+        )
+        self.assertEqual(result, expected)
+
+
+class TestExplorerQueryModuleUrlIntegration(unittest.TestCase):
+    def setUp(self):
+        # Use an in-memory SQLite database for integration-style testing
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        SessionLocal = sessionmaker(bind=self.engine)
+        self.session = SessionLocal()
+
+        # Minimal data setup: one Release, Framework, Module, and ModuleVersion
+        release = Release(releaseid=1, code="2.0")
+        framework = Framework(frameworkid=10, code="FRM")
+        module = Module(moduleid=100, frameworkid=framework.frameworkid)
+        module_version = ModuleVersion(
+            modulevid=1000,
+            moduleid=module.moduleid,
+            code="MOD_X",
+            startreleaseid=release.releaseid,
+            endreleaseid=None,
+        )
+
+        self.session.add_all([release, framework, module, module_version])
+        self.session.commit()
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def test_get_module_url_uses_lowercase_codes(self):
+        url = ExplorerQuery.get_module_url(
+            self.session,
+            module_code="MOD_X",
+            date=None,
+            release_id=None,
+            release_code=None,
+        )
+
+        expected_url = (
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/frm/2.0/mod/mod_x.json"
+        )
+        self.assertEqual(url, expected_url)
