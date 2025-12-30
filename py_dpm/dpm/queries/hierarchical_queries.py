@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import func, literal, and_, or_
+from sqlalchemy import func, literal, and_, or_, join
 from sqlalchemy.orm import aliased
 
 from py_dpm.dpm.models import (
@@ -449,7 +449,16 @@ class HierarchicalQuery:
         ici = aliased(Item)  # context item
         mpi = aliased(Item)  # main property item
 
-        # ORM translation of the provided SQL query.
+        # Pre-build joined table expressions so that the SQL more closely
+        # matches:
+        #   LEFT JOIN (ItemCategory_X JOIN Item_Y ON ...) ON ...
+        context_property_join = join(iccp, icp, iccp.itemid == icp.itemid)
+        context_item_join = join(icci, ici, icci.itemid == ici.itemid)
+        main_property_join = join(icmp, mpi, icmp.itemid == mpi.itemid)
+
+        # ORM translation of the desired SQL query with left joins so that
+        # headers without a context (or without a main property) are still
+        # returned.
         q = (
             session.query(
                 HeaderVersion.headerid.label("header_id"),
@@ -469,13 +478,14 @@ class HierarchicalQuery:
                 HeaderVersion,
                 TableVersionHeader.headervid == HeaderVersion.headervid,
             )
-            .join(
+            # Context is optional, so use LEFT JOIN
+            .outerjoin(
                 ContextComposition,
                 HeaderVersion.contextid == ContextComposition.contextid,
             )
-            # Context property
-            .join(
-                iccp,
+            # Context property (optional, versioned)
+            .outerjoin(
+                context_property_join,
                 and_(
                     ContextComposition.propertyid == iccp.itemid,
                     filter_item_version(
@@ -485,10 +495,9 @@ class HierarchicalQuery:
                     ),
                 ),
             )
-            .join(icp, iccp.itemid == icp.itemid)
-            # Context item
-            .join(
-                icci,
+            # Context item (optional, versioned)
+            .outerjoin(
+                context_item_join,
                 and_(
                     ContextComposition.itemid == icci.itemid,
                     filter_item_version(
@@ -498,10 +507,9 @@ class HierarchicalQuery:
                     ),
                 ),
             )
-            .join(ici, icci.itemid == ici.itemid)
-            # Main property (optional)
+            # Main property (optional, versioned)
             .outerjoin(
-                icmp,
+                main_property_join,
                 and_(
                     HeaderVersion.propertyid == icmp.itemid,
                     filter_item_version(
@@ -511,19 +519,9 @@ class HierarchicalQuery:
                     ),
                 ),
             )
-            .outerjoin(mpi, icmp.itemid == mpi.itemid)
             .filter(TableVersion.tablevid == table_version.tablevid)
         )
 
-        # Group by header and reshape into the requested structure:
-        # {
-        #   <header_id>: [
-        #       {"main_property_code": ..., "main_property_name": ...},
-        #       {"context_item_code": ..., "context_item_name": ...},
-        #       ...
-        #   ],
-        #   ...
-        # }
         modelling: dict[int, list[dict]] = {}
         for row in q.all():
             header_id = row.header_id
@@ -539,10 +537,17 @@ class HierarchicalQuery:
                     }
                 )
 
-            # Context item pair (always present in the query)
-            if row.context_item_code is not None or row.context_item_name is not None:
+            # Context pair: property and item metadata in a single object
+            if (
+                row.context_property_code is not None
+                or row.context_property_name is not None
+                or row.context_item_code is not None
+                or row.context_item_name is not None
+            ):
                 modelling[header_id].append(
                     {
+                        "context_property_code": row.context_property_code,
+                        "context_property_name": row.context_property_name,
                         "context_item_code": row.context_item_code,
                         "context_item_name": row.context_item_name,
                     }
