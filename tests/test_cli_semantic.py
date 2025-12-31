@@ -1,8 +1,9 @@
 import pytest
 from click.testing import CliRunner
-from py_dpm.cli.main import main, semantic
+from py_dpm.cli.main import main, semantic, syntax
 from unittest.mock import patch, MagicMock, MagicMock
 from py_dpm.api.dpm_xl.semantic import SemanticValidationResult
+from py_dpm.api.dpm_xl.syntax import SyntaxValidationResult
 
 
 @pytest.fixture
@@ -191,3 +192,59 @@ def test_semantic_conflict_flags(runner):
 
     assert result.exit_code != 0
     assert "Cannot provide both --release-id and --dpm-version" in result.output
+
+
+def test_syntax_valid_expression(runner):
+    """Test syntax command with a valid expression."""
+    expression = "{tC_01.00, r0100, c0010}"
+
+    with patch("py_dpm.cli.main.SyntaxAPI") as MockAPI:
+        mock_api_instance = MockAPI.return_value
+        mock_api_instance.validate_expression.return_value = SyntaxValidationResult(
+            is_valid=True,
+            error_message=None,
+            expression=expression,
+        )
+
+        result = runner.invoke(main, ["syntax", expression])
+
+        MockAPI.assert_called_once()
+        mock_api_instance.validate_expression.assert_called_once_with(expression)
+
+        assert result.exit_code == 0
+        assert "Syntax OK" in result.output
+
+
+def test_syntax_invalid_expression(runner):
+    """Test syntax command with an invalid expression."""
+    expression = "invalid_expression"
+
+    with patch("py_dpm.cli.main.SyntaxAPI") as MockAPI:
+        mock_api_instance = MockAPI.return_value
+        mock_api_instance.validate_expression.return_value = SyntaxValidationResult(
+            is_valid=False,
+            error_message="Syntax errors detected",
+            expression=expression,
+        )
+
+        result = runner.invoke(main, ["syntax", expression])
+
+        MockAPI.assert_called_once()
+        mock_api_instance.validate_expression.assert_called_once_with(expression)
+
+        assert result.exit_code == 0
+        assert "Syntax Error: Syntax errors detected" in result.output
+
+
+def test_syntax_unexpected_exception(runner):
+    """Test syntax command when an unexpected exception occurs."""
+    expression = "{tC_01.00}"
+
+    with patch("py_dpm.cli.main.SyntaxAPI") as MockAPI:
+        mock_api_instance = MockAPI.return_value
+        mock_api_instance.validate_expression.side_effect = Exception("Unexpected error")
+
+        result = runner.invoke(main, ["syntax", expression])
+
+        assert result.exit_code == 0
+        assert "Unexpected Error: Unexpected error" in result.output

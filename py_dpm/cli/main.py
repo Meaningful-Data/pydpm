@@ -6,7 +6,7 @@ import os
 import sys
 import pandas as pd
 
-from py_dpm.api import SemanticAPI
+from py_dpm.api import SemanticAPI, SyntaxAPI
 from py_dpm.api.dpm_xl.semantic import SemanticValidationResult
 from py_dpm.api.dpm.operation_scopes import OperationScopesAPI
 from py_dpm.dpm.migration import run_migration
@@ -147,9 +147,11 @@ def syntax(expression: str):
     """Perform syntactic analysis on a DPM expression."""
 
     status = 0
-    api = API()
+    api = SyntaxAPI()
     try:
-        api.syntax_validation(expression)
+        result = api.validate_expression(expression)
+        if not result.is_valid:
+            raise SyntaxError(result.error_message or "Syntax errors detected")
         message_formatted = Text("Syntax OK", style="bold green")
     except SyntaxError as e:
         message = str(e)

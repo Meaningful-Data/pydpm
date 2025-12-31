@@ -56,6 +56,8 @@ class SemanticAPI:
         """
         self.database_path = database_path
         self.connection_url = connection_url
+        # Store last parsed AST for consumers that need it (e.g. complete AST generation)
+        self.ast = None
 
         if connection_url:
             # Create isolated engine and session for the provided connection URL
@@ -141,6 +143,8 @@ class SemanticAPI:
 
             # Generate AST
             ast = self.visitor.visit(parse_tree)
+            # Expose AST on the instance for downstream consumers
+            self.ast = ast
 
             # Perform semantic analysis
             oc = OperandsChecking(
