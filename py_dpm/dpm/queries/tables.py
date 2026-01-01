@@ -74,7 +74,12 @@ class TableQuery:
             subq.c.table_code.isnot(None)
         )
 
-        q = filter_by_release(q, release_id, subq.c.start_release, subq.c.end_release)
+        q = filter_by_release(
+            q,
+            start_col=subq.c.start_release,
+            end_col=subq.c.end_release,
+            release_id=release_id,
+        )
         q = q.order_by(subq.c.table_code)
 
         return BaseQuery(session, q)
@@ -91,7 +96,12 @@ class TableQuery:
             subq.c.table_code == table_code, subq.c.row_code.isnot(None)
         )
 
-        q = filter_by_release(q, release_id, subq.c.start_release, subq.c.end_release)
+        q = filter_by_release(
+            q,
+            start_col=subq.c.start_release,
+            end_col=subq.c.end_release,
+            release_id=release_id,
+        )
         q = q.order_by(subq.c.row_code)
 
         return BaseQuery(session, q)
@@ -108,7 +118,12 @@ class TableQuery:
             subq.c.table_code == table_code, subq.c.column_code.isnot(None)
         )
 
-        q = filter_by_release(q, release_id, subq.c.start_release, subq.c.end_release)
+        q = filter_by_release(
+            q,
+            start_col=subq.c.start_release,
+            end_col=subq.c.end_release,
+            release_id=release_id,
+        )
         q = q.order_by(subq.c.column_code)
 
         return BaseQuery(session, q)
@@ -127,7 +142,12 @@ class TableQuery:
             subq.c.sheet_code != "",
         )
 
-        q = filter_by_release(q, release_id, subq.c.start_release, subq.c.end_release)
+        q = filter_by_release(
+            q,
+            start_col=subq.c.start_release,
+            end_col=subq.c.end_release,
+            release_id=release_id,
+        )
         q = q.order_by(subq.c.sheet_code)
 
         return BaseQuery(session, q)

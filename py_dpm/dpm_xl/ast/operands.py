@@ -208,9 +208,9 @@ class OperandsChecking(ASTTemplate, ABC):
         # Apply release filter
         query = filter_by_release(
             query,
-            self.release_id,
-            TableVersion.startreleaseid,
-            TableVersion.endreleaseid,
+            start_col=TableVersion.startreleaseid,
+            end_col=TableVersion.endreleaseid,
+            release_id=self.release_id,
         )
 
         # Execute query and convert to DataFrame
