@@ -12,7 +12,7 @@ from py_dpm.api.dpm_xl.syntax import SyntaxAPI
 from py_dpm.api.dpm_xl.semantic import SemanticAPI
 
 
-class ASTGenerator:
+class ASTGeneratorAPI:
     """
     Simplified AST Generator for external packages.
 
@@ -407,7 +407,7 @@ def parse_expression(expression: str, compatibility_mode: str = "auto") -> Dict[
     Returns:
         Parse result dictionary
     """
-    generator = ASTGenerator(compatibility_mode=compatibility_mode)
+    generator = ASTGeneratorAPI(compatibility_mode=compatibility_mode)
     return generator.parse_expression(expression)
 
 
@@ -421,7 +421,7 @@ def validate_expression(expression: str) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    generator = ASTGenerator()
+    generator = ASTGeneratorAPI()
     result = generator.validate_expression(expression)
     return result['valid']
 
@@ -437,5 +437,5 @@ def parse_batch(expressions: List[str], compatibility_mode: str = "auto") -> Lis
     Returns:
         List of parse results
     """
-    generator = ASTGenerator(compatibility_mode=compatibility_mode)
+    generator = ASTGeneratorAPI(compatibility_mode=compatibility_mode)
     return generator.parse_batch(expressions)
