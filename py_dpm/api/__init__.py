@@ -9,6 +9,7 @@ Provides both DPM-XL specific and general DPM functionality.
 from py_dpm.api.dpm_xl import (
     SyntaxAPI,
     SemanticAPI,
+    OperationScopesAPI,
 )
 
 # Import from general DPM API
@@ -25,6 +26,7 @@ __all__ = [
     "MigrationAPI",
     "SyntaxAPI",
     "SemanticAPI",
+    "OperationScopesAPI",
     "DataDictionaryAPI",
     "ExplorerQueryAPI",
     "HierarchicalQueryAPI",
