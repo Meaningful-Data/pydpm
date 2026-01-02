@@ -70,15 +70,30 @@ def test_generate_complete_ast_uses_semantic_api_without_legacy_api(monkeypatch)
                 validation_type="SEMANTIC",
             )
 
-    # Patch SemanticAPI in the module where generate_complete_ast imports it from
+    # Patch SemanticAPI in both the semantic module and ast_generator module
+    # since generate_complete_ast now uses ASTGeneratorAPI which imports SemanticAPI
     monkeypatch.setattr(
         "py_dpm.api.dpm_xl.semantic.SemanticAPI", DummySemanticAPI
     )
+    monkeypatch.setattr(
+        "py_dpm.api.dpm_xl.ast_generator.SemanticAPI", DummySemanticAPI
+    )
 
-    result = complete_ast_module.generate_complete_ast(expression)
+    # Mock get_engine to avoid database connection issues
+    def mock_get_engine(database_path=None, connection_url=None):
+        return None  # Return a dummy engine
+
+    monkeypatch.setattr(
+        "py_dpm.dpm.utils.get_engine", mock_get_engine
+    )
+
+    # Provide a dummy database path to satisfy the check
+    result = complete_ast_module.generate_complete_ast(
+        expression, database_path="dummy.db"
+    )
 
     assert isinstance(result, dict)
-    assert result["success"] is True
+    assert result["success"] is True, f"Expected success=True, got error: {result.get('error')}"
     assert result["ast"] is not None
     assert result["context"] is not None
     # Context should reflect the partial_selection VarID
