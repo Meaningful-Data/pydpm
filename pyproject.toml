@@ -1,6 +1,6 @@
 [project]
 name = "pydpm_xl"
-version = "0.2.3"
+version = "0.2.4"
 description = "Python library for DPM-XL data processing and analysis"
 authors = [
     {name = "MeaningfulData S.L.", email = "info@meaningfuldata.eu"}
@@ -52,7 +52,7 @@ exclude = []
 
 [tool.poetry]
 name = "pydpm_xl"
-version = "0.2.3"
+version = "0.2.4"
 description = "Python library for DPM-XL data processing and analysis"
 authors = ["MeaningfulData S.L. <info@meaningfuldata.eu>"]
 readme = "README.md"
