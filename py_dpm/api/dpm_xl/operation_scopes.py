@@ -1244,7 +1244,7 @@ def calculate_scopes_from_expression(
         OperationScopeResult: Result containing existing and new scopes
 
     Example:
-        >>> from py_dpm.api.dpm.operation_scopes import calculate_scopes_from_expression
+        >>> from py_dpm.api.dpm_xl.operation_scopes import calculate_scopes_from_expression
         >>> result = calculate_scopes_from_expression(
         ...     "{tC_01.00, r0100, c0010}",
         ...     release_id=4,
@@ -1275,7 +1275,7 @@ def get_existing_scopes(
         List[OperationScope]: List of existing scopes
 
     Example:
-        >>> from py_dpm.api.dpm.operation_scopes import get_existing_scopes
+        >>> from py_dpm.api.dpm_xl.operation_scopes import get_existing_scopes
         >>> scopes = get_existing_scopes(operation_version_id=1, database_path="./database.db")
     """
     api = OperationScopesAPI(database_path=database_path, connection_url=connection_url)

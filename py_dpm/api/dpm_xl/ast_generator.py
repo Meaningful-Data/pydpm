@@ -7,14 +7,36 @@ without exposing internal complexity or version compatibility issues.
 """
 
 from typing import Dict, Any, Optional, List, Union
+from pathlib import Path
 import json
+from datetime import datetime
 from py_dpm.api.dpm_xl.syntax import SyntaxAPI
 from py_dpm.api.dpm_xl.semantic import SemanticAPI
 
 
-class ASTGenerator:
+
+class ASTGeneratorAPI:
     """
     Simplified AST Generator for external packages.
+
+    Provides three levels of AST generation:
+
+    1. **Basic AST** (parse_expression):
+       - Syntax parsing only, no database required
+       - Returns: Clean AST dictionary with version compatibility normalization
+       - Use for: Syntax validation, basic AST analysis
+
+    2. **Complete AST** (generate_complete_ast):
+       - Requires database connection
+       - Performs full semantic validation and operand checking
+       - Returns: AST with data fields populated (datapoint IDs, operand references)
+       - Use for: AST analysis with complete metadata, matching json_scripts/*.json format
+
+    3. **Enriched AST** (generate_enriched_ast):
+       - Requires database connection
+       - Extends complete AST with framework structure for execution engines
+       - Returns: Engine-ready AST with operations, variables, tables, preconditions sections
+       - Use for: Business rule execution engines, validation frameworks
 
     Handles all internal complexity including:
     - Version compatibility
@@ -49,18 +71,30 @@ class ASTGenerator:
 
     def parse_expression(self, expression: str) -> Dict[str, Any]:
         """
-        Parse DPM-XL expression into clean AST format.
+        Parse DPM-XL expression into clean AST format (Level 1 - Basic AST).
+
+        Performs syntax parsing only, no database required. Returns a clean AST dictionary
+        with version compatibility normalization applied.
+
+        **What you get:**
+        - Clean AST structure (syntax tree)
+        - Context information (if WITH clause present)
+        - Version compatibility normalization
+
+        **What you DON'T get:**
+        - Data fields (datapoint IDs, operand references) - use generate_complete_ast()
+        - Framework structure - use generate_enriched_ast()
 
         Args:
             expression: DPM-XL expression string
 
         Returns:
             Dictionary containing:
-            - success: bool
-            - ast: AST dictionary (if successful)
-            - context: Context information (if WITH clause present)
-            - error: Error message (if failed)
-            - metadata: Additional information
+            - success (bool): Whether parsing succeeded
+            - ast (dict): Clean AST dictionary
+            - context (dict): Context information (if WITH clause present)
+            - error (str): Error message (if failed)
+            - metadata (dict): Additional information (expression type, compatibility mode)
         """
         try:
             # Parse with syntax API
@@ -178,6 +212,260 @@ class ASTGenerator:
 
         result['analysis'] = analysis
         return result
+
+    # ============================================================================
+    # Complete AST Generation (requires database)
+    # ============================================================================
+
+    def generate_complete_ast(
+        self,
+        expression: str,
+        release_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate complete AST with all data fields populated (Level 2).
+
+        This method performs full semantic validation and operand checking using the database,
+        populating datapoint IDs and operand references in the AST. The result matches the
+        format found in json_scripts/*.json files.
+
+        **What you get:**
+        - Pure AST with data fields (datapoint IDs, operand references)
+        - Semantic validation results
+        - Context information
+
+        **What you DON'T get:**
+        - Framework structure (operations, variables, tables, preconditions)
+        - For that, use generate_enriched_ast() instead
+
+        Args:
+            expression: DPM-XL expression string
+            release_id: Optional release ID to filter database lookups by specific release.
+                If None, uses all available data (release-agnostic).
+
+        Returns:
+            dict with keys:
+                - success (bool): Whether generation succeeded
+                - ast (dict): Complete AST with data fields
+                - context (dict): Context information (table, rows, columns, etc.)
+                - error (str): Error message if failed
+                - data_populated (bool): Whether data fields were populated
+                - semantic_result: Semantic validation result object
+        """
+        try:
+            from py_dpm.dpm.utils import get_engine
+            from py_dpm.dpm_xl.utils.serialization import ASTToJSONVisitor
+
+            # Initialize database connection if explicitly provided, to surface connection errors early
+            try:
+                get_engine(database_path=self.database_path, connection_url=self.connection_url)
+            except Exception as e:
+                return {
+                    "success": False,
+                    "ast": None,
+                    "context": None,
+                    "error": f"Database connection failed: {e}",
+                    "data_populated": False,
+                }
+
+            # Create or reuse semantic API for validation
+            if not self.semantic_api:
+                self.semantic_api = SemanticAPI(
+                    database_path=self.database_path,
+                    connection_url=self.connection_url
+                )
+
+            semantic_result = self.semantic_api.validate_expression(
+                expression, release_id=release_id
+            )
+
+            # If semantic validation failed, return structured error
+            if not semantic_result.is_valid:
+                return {
+                    "success": False,
+                    "ast": None,
+                    "context": None,
+                    "error": semantic_result.error_message,
+                    "data_populated": False,
+                    "semantic_result": semantic_result,
+                }
+
+            ast_root = getattr(self.semantic_api, "ast", None)
+
+            if ast_root is None:
+                return {
+                    "success": False,
+                    "ast": None,
+                    "context": None,
+                    "error": "Semantic validation did not generate AST",
+                    "data_populated": False,
+                    "semantic_result": semantic_result,
+                }
+
+            # Extract components
+            actual_ast, context = self._extract_complete_components(ast_root)
+
+            # Convert to JSON using the ASTToJSONVisitor
+            visitor = ASTToJSONVisitor(context)
+            ast_dict = visitor.visit(actual_ast)
+
+            # Check if data fields were populated
+            data_populated = self._check_data_fields_populated(ast_dict)
+
+            # Serialize context
+            context_dict = self._serialize_context(context)
+
+            return {
+                "success": True,
+                "ast": ast_dict,
+                "context": context_dict,
+                "error": None,
+                "data_populated": data_populated,
+                "semantic_result": semantic_result,
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "ast": None,
+                "context": None,
+                "error": f"API error: {str(e)}",
+                "data_populated": False,
+            }
+
+    def generate_complete_batch(
+        self,
+        expressions: List[str],
+        release_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate complete ASTs for multiple expressions.
+
+        Args:
+            expressions: List of DPM-XL expression strings
+            release_id: Optional release ID to filter database lookups by specific release.
+                If None, uses all available data (release-agnostic).
+
+        Returns:
+            list: List of result dictionaries (same format as generate_complete_ast)
+        """
+        results = []
+        for i, expr in enumerate(expressions):
+            result = self.generate_complete_ast(expr, release_id=release_id)
+            result["batch_index"] = i
+            results.append(result)
+        return results
+
+    # ============================================================================
+    # Enriched AST Generation (requires database)
+    # ============================================================================
+
+    def generate_enriched_ast(
+        self,
+        expression: str,
+        dpm_version: Optional[str] = None,
+        operation_code: Optional[str] = None,
+        table_context: Optional[Dict[str, Any]] = None,
+        precondition: Optional[str] = None,
+        release_id: Optional[int] = None,
+        output_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate enriched, engine-ready AST with framework structure (Level 3).
+
+        This extends generate_complete_ast() by wrapping the complete AST in an engine-ready
+        framework structure with operations, variables, tables, and preconditions sections.
+        This is the format required by business rule execution engines.
+
+        **What you get:**
+        - Everything from generate_complete_ast() PLUS:
+        - Framework structure: operations, variables, tables, preconditions
+        - Module metadata: version, release info, dates
+        - Dependency information
+        - Coordinates (x/y/z) added to data entries
+
+        **Typical use case:**
+        - Feeding AST to business rule execution engines
+        - Validation framework integration
+        - Production rule processing
+
+        Args:
+            expression: DPM-XL expression string
+            dpm_version: DPM version code (e.g., "4.0", "4.1", "4.2")
+            operation_code: Optional operation code (defaults to "default_code")
+            table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
+            precondition: Optional precondition variable reference (e.g., {v_F_44_04})
+            release_id: Optional release ID to filter database lookups by specific release.
+                If None, uses all available data (release-agnostic).
+            output_path: Optional path (string or Path) to save the enriched_ast as JSON file.
+                If provided, the enriched_ast will be automatically saved to this location.
+
+        Returns:
+            dict: {
+                'success': bool,
+                'enriched_ast': dict,  # Engine-ready AST with framework structure
+                'error': str           # Error message if failed
+            }
+
+        Example:
+            >>> generator = ASTGeneratorAPI(database_path="data.db")
+            >>> result = generator.generate_enriched_ast(
+            ...     "{tF_01.00, r0010, c0010}",
+            ...     dpm_version="4.2",
+            ...     operation_code="my_validation"
+            ... )
+            >>> # result['enriched_ast'] contains framework structure ready for engines
+            >>>
+            >>> # Or save directly to a file:
+            >>> result = generator.generate_enriched_ast(
+            ...     "{tF_01.00, r0010, c0010}",
+            ...     dpm_version="4.2",
+            ...     operation_code="my_validation",
+            ...     output_path="./output/enriched_ast.json"
+            ... )
+            >>> # The enriched_ast is automatically saved to the specified path
+        """
+        try:
+            # Generate complete AST first
+            complete_result = self.generate_complete_ast(expression, release_id=release_id)
+
+            if not complete_result["success"]:
+                return {
+                    "success": False,
+                    "enriched_ast": None,
+                    "error": f"Failed to generate complete AST: {complete_result['error']}",
+                }
+
+            complete_ast = complete_result["ast"]
+            context = complete_result.get("context") or table_context
+
+            # Enrich with framework structure
+            enriched_ast = self._enrich_ast_with_metadata(
+                ast_dict=complete_ast,
+                expression=expression,
+                context=context,
+                dpm_version=dpm_version,
+                operation_code=operation_code,
+                precondition=precondition,
+            )
+
+            # Save to file if output_path is provided
+            if output_path is not None:
+                path = Path(output_path) if isinstance(output_path, str) else output_path
+                # Create parent directories if they don't exist
+                path.parent.mkdir(parents=True, exist_ok=True)
+                # Save enriched_ast as JSON
+                with open(path, "w") as f:
+                    json.dump(enriched_ast, f, indent=4)
+
+            return {"success": True, "enriched_ast": enriched_ast, "error": None}
+
+        except Exception as e:
+            return {
+                "success": False,
+                "enriched_ast": None,
+                "error": f"Enrichment error: {str(e)}",
+            }
 
     # Internal helper methods
 
@@ -393,6 +681,398 @@ class ASTGenerator:
                 score += self._calculate_complexity(item)
         return score
 
+    # ============================================================================
+    # Helper methods for complete and enriched AST generation
+    # ============================================================================
+
+    def _extract_complete_components(self, ast_obj):
+        """Extract context and expression from complete AST object."""
+        if hasattr(ast_obj, "children") and len(ast_obj.children) > 0:
+            child = ast_obj.children[0]
+            if hasattr(child, "expression"):
+                return child.expression, child.partial_selection
+            else:
+                return child, None
+        return ast_obj, None
+
+    def _check_data_fields_populated(self, ast_dict):
+        """Check if any VarID nodes have data fields populated."""
+        if not isinstance(ast_dict, dict):
+            return False
+
+        if ast_dict.get("class_name") == "VarID" and "data" in ast_dict:
+            return True
+
+        # Recursively check nested structures
+        for value in ast_dict.values():
+            if isinstance(value, dict):
+                if self._check_data_fields_populated(value):
+                    return True
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict) and self._check_data_fields_populated(item):
+                        return True
+
+        return False
+
+    def _enrich_ast_with_metadata(
+        self,
+        ast_dict: Dict[str, Any],
+        expression: str,
+        context: Optional[Dict[str, Any]],
+        dpm_version: Optional[str] = None,
+        operation_code: Optional[str] = None,
+        precondition: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add framework structure (operations, variables, tables, preconditions) to complete AST.
+
+        This creates the engine-ready format with all metadata sections.
+        """
+        from py_dpm.dpm.utils import get_engine
+        import copy
+
+        # Initialize database connection
+        engine = get_engine(database_path=self.database_path, connection_url=self.connection_url)
+
+        # Generate operation code if not provided
+        if not operation_code:
+            operation_code = "default_code"
+
+        # Get current date for framework structure
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        # Query database for release information
+        release_info = self._get_release_info(dpm_version, engine)
+
+        # Build module info
+        module_info = {
+            "module_code": "default",
+            "module_version": "1.0.0",
+            "framework_code": "default",
+            "dpm_release": {
+                "release": release_info["release"],
+                "publication_date": release_info["publication_date"],
+            },
+            "dates": {"from": "2001-01-01", "to": None},
+        }
+
+        # Add coordinates to AST data entries
+        ast_with_coords = self._add_coordinates_to_ast(ast_dict, context)
+
+        # Build operations section
+        operations = {
+            operation_code: {
+                "version_id": hash(expression) % 10000,
+                "code": operation_code,
+                "expression": expression,
+                "root_operator_id": 24,  # Default for now
+                "ast": ast_with_coords,
+                "from_submission_date": current_date,
+                "severity": "Error",
+            }
+        }
+
+        # Build variables section by extracting from the complete AST
+        all_variables, variables_by_table = self._extract_variables_from_ast(ast_with_coords)
+
+        variables = all_variables
+        tables = {}
+
+        # Build tables with their specific variables
+        for table_code, table_variables in variables_by_table.items():
+            tables[table_code] = {"variables": table_variables, "open_keys": {}}
+
+        # Build preconditions
+        preconditions = {}
+        precondition_variables = {}
+
+        if precondition or (context and "table" in context):
+            preconditions, precondition_variables = self._build_preconditions(
+                precondition=precondition,
+                context=context,
+                operation_code=operation_code,
+                engine=engine,
+            )
+
+        # Build dependency information
+        dependency_info = {
+            "intra_instance_validations": [operation_code],
+            "cross_instance_dependencies": [],
+        }
+
+        # Build dependency modules
+        dependency_modules = {}
+
+        # Build complete structure
+        namespace = "default_module"
+
+        return {
+            namespace: {
+                **module_info,
+                "operations": operations,
+                "variables": variables,
+                "tables": tables,
+                "preconditions": preconditions,
+                "precondition_variables": precondition_variables,
+                "dependency_information": dependency_info,
+                "dependency_modules": dependency_modules,
+            }
+        }
+
+    def _get_release_info(self, dpm_version: Optional[str], engine) -> Dict[str, Any]:
+        """Get release information from database using SQLAlchemy."""
+        from py_dpm.dpm.models import Release
+        from sqlalchemy.orm import sessionmaker
+
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            if dpm_version:
+                # Query for specific version
+                version_float = float(dpm_version)
+                release = (
+                    session.query(Release)
+                    .filter(Release.code == str(version_float))
+                    .first()
+                )
+
+                if release:
+                    return {
+                        "release": str(release.code) if release.code else dpm_version,
+                        "publication_date": (
+                            release.date.strftime("%Y-%m-%d")
+                            if release.date
+                            else "2001-01-01"
+                        ),
+                    }
+
+            # Fallback: get latest released version
+            release = (
+                session.query(Release)
+                .filter(Release.status == "released")
+                .order_by(Release.code.desc())
+                .first()
+            )
+
+            if release:
+                return {
+                    "release": str(release.code) if release.code else "4.1",
+                    "publication_date": (
+                        release.date.strftime("%Y-%m-%d") if release.date else "2001-01-01"
+                    ),
+                }
+
+            # Final fallback
+            return {"release": "4.1", "publication_date": "2001-01-01"}
+
+        except Exception:
+            # Fallback on any error
+            return {"release": "4.1", "publication_date": "2001-01-01"}
+        finally:
+            session.close()
+
+    def _get_table_info(self, table_code: str, engine) -> Optional[Dict[str, Any]]:
+        """Get table information from database using SQLAlchemy."""
+        from py_dpm.dpm.models import TableVersion
+        from sqlalchemy.orm import sessionmaker
+        import re
+
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            # Try exact match first
+            table = (
+                session.query(TableVersion).filter(TableVersion.code == table_code).first()
+            )
+
+            if table:
+                return {"table_vid": table.tablevid, "code": table.code}
+
+            # Handle precondition parser format: F_25_01 -> F_25.01
+            if re.match(r"^[A-Z]_\d+_\d+", table_code):
+                parts = table_code.split("_", 2)
+                if len(parts) >= 3:
+                    table_code_with_dot = f"{parts[0]}_{parts[1]}.{parts[2]}"
+                    table = (
+                        session.query(TableVersion)
+                        .filter(TableVersion.code == table_code_with_dot)
+                        .first()
+                    )
+
+                    if table:
+                        return {"table_vid": table.tablevid, "code": table.code}
+
+            # Try LIKE pattern as last resort (handles sub-tables like F_25.01.a)
+            table = (
+                session.query(TableVersion)
+                .filter(TableVersion.code.like(f"{table_code}%"))
+                .order_by(TableVersion.code)
+                .first()
+            )
+
+            if table:
+                return {"table_vid": table.tablevid, "code": table.code}
+
+            return None
+
+        except Exception:
+            return None
+        finally:
+            session.close()
+
+    def _build_preconditions(
+        self,
+        precondition: Optional[str],
+        context: Optional[Dict[str, Any]],
+        operation_code: str,
+        engine,
+    ) -> tuple:
+        """Build preconditions and precondition_variables sections."""
+        import re
+
+        preconditions = {}
+        precondition_variables = {}
+
+        # Extract table code from precondition or context
+        table_code = None
+
+        if precondition:
+            # Extract variable code from precondition reference like {v_F_44_04}
+            match = re.match(r"\{v_([^}]+)\}", precondition)
+            if match:
+                table_code = match.group(1)
+        elif context and "table" in context:
+            table_code = context["table"]
+
+        if table_code:
+            # Query database for actual variable ID and version
+            table_info = self._get_table_info(table_code, engine)
+
+            if table_info:
+                precondition_var_id = table_info["table_vid"]
+                version_id = table_info["table_vid"]
+                precondition_code = f"p_{precondition_var_id}"
+
+                preconditions[precondition_code] = {
+                    "ast": {
+                        "class_name": "PreconditionItem",
+                        "variable_id": precondition_var_id,
+                        "variable_code": table_code,
+                    },
+                    "affected_operations": [operation_code],
+                    "version_id": version_id,
+                    "code": precondition_code,
+                }
+
+                precondition_variables[str(precondition_var_id)] = "b"
+
+        return preconditions, precondition_variables
+
+    def _extract_variables_from_ast(self, ast_dict: Dict[str, Any]) -> tuple:
+        """
+        Extract variables from complete AST by table.
+
+        Returns:
+            tuple: (all_variables_dict, variables_by_table_dict)
+        """
+        variables_by_table = {}
+        all_variables = {}
+
+        def extract_from_node(node):
+            if isinstance(node, dict):
+                # Check if this is a VarID node with data
+                if node.get("class_name") == "VarID" and "data" in node:
+                    table = node.get("table")
+                    if table:
+                        if table not in variables_by_table:
+                            variables_by_table[table] = {}
+
+                        # Extract variable IDs and data types from AST data array
+                        for data_item in node["data"]:
+                            if "datapoint" in data_item:
+                                var_id = str(int(data_item["datapoint"]))
+                                data_type = data_item.get("data_type", "e")
+                                variables_by_table[table][var_id] = data_type
+                                all_variables[var_id] = data_type
+
+                # Recursively process nested nodes
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        extract_from_node(value)
+            elif isinstance(node, list):
+                for item in node:
+                    extract_from_node(item)
+
+        extract_from_node(ast_dict)
+        return all_variables, variables_by_table
+
+    def _add_coordinates_to_ast(
+        self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Add x/y/z coordinates to data entries in AST."""
+        import copy
+
+        def add_coords_to_node(node):
+            if isinstance(node, dict):
+                # Handle VarID nodes with data arrays
+                if node.get("class_name") == "VarID" and "data" in node:
+                    # Get column information from context
+                    cols = []
+                    if context and "columns" in context and context["columns"]:
+                        cols = context["columns"]
+
+                    # Group data entries by row to assign coordinates correctly
+                    entries_by_row = {}
+                    for data_entry in node["data"]:
+                        row_code = data_entry.get("row", "")
+                        if row_code not in entries_by_row:
+                            entries_by_row[row_code] = []
+                        entries_by_row[row_code].append(data_entry)
+
+                    # Assign coordinates based on column order and row grouping
+                    rows = list(entries_by_row.keys())
+                    for x_index, row_code in enumerate(rows, 1):
+                        for data_entry in entries_by_row[row_code]:
+                            column_code = data_entry.get("column", "")
+
+                            # Find y coordinate based on column position in context
+                            y_index = 1  # default
+                            if cols and column_code in cols:
+                                y_index = cols.index(column_code) + 1
+                            elif cols:
+                                # Fallback to order in data
+                                row_columns = [
+                                    entry.get("column", "")
+                                    for entry in entries_by_row[row_code]
+                                ]
+                                if column_code in row_columns:
+                                    y_index = row_columns.index(column_code) + 1
+
+                            # Always add y coordinate
+                            data_entry["y"] = y_index
+
+                            # Add x coordinate only if there are multiple rows
+                            if len(rows) > 1:
+                                data_entry["x"] = x_index
+
+                            # TODO: Add z coordinate for sheets when needed
+
+                # Recursively process child nodes
+                for key, value in node.items():
+                    if isinstance(value, (dict, list)):
+                        add_coords_to_node(value)
+            elif isinstance(node, list):
+                for item in node:
+                    add_coords_to_node(item)
+
+        # Create a deep copy to avoid modifying the original
+        result = copy.deepcopy(ast_dict)
+        add_coords_to_node(result)
+        return result
+
 
 # Convenience functions for simple usage
 
@@ -407,7 +1087,7 @@ def parse_expression(expression: str, compatibility_mode: str = "auto") -> Dict[
     Returns:
         Parse result dictionary
     """
-    generator = ASTGenerator(compatibility_mode=compatibility_mode)
+    generator = ASTGeneratorAPI(compatibility_mode=compatibility_mode)
     return generator.parse_expression(expression)
 
 
@@ -421,7 +1101,7 @@ def validate_expression(expression: str) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    generator = ASTGenerator()
+    generator = ASTGeneratorAPI()
     result = generator.validate_expression(expression)
     return result['valid']
 
@@ -437,5 +1117,5 @@ def parse_batch(expressions: List[str], compatibility_mode: str = "auto") -> Lis
     Returns:
         List of parse results
     """
-    generator = ASTGenerator(compatibility_mode=compatibility_mode)
+    generator = ASTGeneratorAPI(compatibility_mode=compatibility_mode)
     return generator.parse_batch(expressions)

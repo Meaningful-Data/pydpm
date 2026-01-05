@@ -1293,7 +1293,11 @@ class Organisation(Base):
     name = Column("Name", String(200), unique=True)
     acronym = Column("Acronym", String(20))
     idprefix = Column("IDPrefix", Integer, unique=True)
-    rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
+    rowguid = Column(
+        "RowGUID",
+        String(36),
+        ForeignKey("Concept.ConceptGUID", use_alter=True, name="fk_org_concept"),
+    )
 
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])

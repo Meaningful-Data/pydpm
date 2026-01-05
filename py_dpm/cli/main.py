@@ -8,7 +8,7 @@ import pandas as pd
 
 from py_dpm.api import SemanticAPI, SyntaxAPI
 from py_dpm.api.dpm_xl.semantic import SemanticValidationResult
-from py_dpm.api.dpm.operation_scopes import OperationScopesAPI
+from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
 from py_dpm.dpm.migration import run_migration
 from py_dpm.dpm_xl.utils.tokens import (
     CODE,

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from py_dpm.api.explorer import ExplorerQueryAPI
+from py_dpm.api.dpm.explorer import ExplorerQueryAPI
 from py_dpm.dpm.models import Base, Framework, Module, ModuleVersion, Release
 from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
 

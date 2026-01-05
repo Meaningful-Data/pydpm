@@ -4,7 +4,7 @@ import pytest
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
 
-from py_dpm.api.semantic import validate_expression
+from py_dpm.api.dpm_xl.semantic import validate_expression
 
 
 load_dotenv()

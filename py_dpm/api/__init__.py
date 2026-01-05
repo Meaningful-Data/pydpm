@@ -9,70 +9,40 @@ Provides both DPM-XL specific and general DPM functionality.
 from py_dpm.api.dpm_xl import (
     SyntaxAPI,
     SemanticAPI,
-    ASTGenerator,
-)
-
-# Import from general DPM API
-from py_dpm.api.dpm import (
-    DataDictionaryAPI,
-    ExplorerQueryAPI,
+    ASTGeneratorAPI,
     OperationScopesAPI,
-    MigrationAPI,
-    HierarchicalQueryAPI,
-)
-
-# Import convenience functions and types from DPM API
-from py_dpm.api.dpm.operation_scopes import (
-    calculate_scopes_from_expression,
-    get_existing_scopes,
-    OperationScopeDetailedInfo,
-    OperationScopeResult,
-)
-
-
-# Import AST generator convenience functions
-from py_dpm.api.dpm_xl.ast_generator import (
-    parse_expression,
-    validate_expression,
-    parse_batch,
-)
-
-# Import complete AST functions
-from py_dpm.api.dpm_xl.complete_ast import (
     generate_complete_ast,
     generate_complete_batch,
     generate_enriched_ast,
     enrich_ast_with_metadata,
+    parse_with_data_fields,
+)
+
+# Import from general DPM API
+from py_dpm.api.dpm import (
+    MigrationAPI,
+    DataDictionaryAPI,
+    ExplorerQueryAPI,
+    HierarchicalQueryAPI,
 )
 
 
-# Export the main API classes
+# Export the main API classes and functions
 __all__ = [
-    # Complete AST API (recommended - includes data fields)
-    "generate_complete_ast",
-    "generate_complete_batch",
-    # Enriched AST API (engine-ready with framework structure)
-    "generate_enriched_ast",
-    "enrich_ast_with_metadata",
-    # Simple AST API
-    "ASTGenerator",
-    "parse_expression",
-    "validate_expression",
-    "parse_batch",
-    # Advanced APIs
+    # General DPM APIs
     "MigrationAPI",
+    "DataDictionaryAPI",
+    "ExplorerQueryAPI",
+    "HierarchicalQueryAPI",
+    # DPM-XL APIs
     "SyntaxAPI",
     "SemanticAPI",
-    "DataDictionaryAPI",
+    "ASTGeneratorAPI",
     "OperationScopesAPI",
-    "ExplorerQueryAPI",
-    # Operation Scopes Convenience Functions
-    "calculate_scopes_from_expression",
-    "get_existing_scopes",
-    # Operation Scopes Data Classes
-    "ModuleVersionInfo",
-    "TableVersionInfo",
-    "HeaderVersionInfo",
-    "OperationScopeDetailedInfo",
-    "OperationScopeResult",
+    # Complete AST functions (backwards compatibility)
+    "generate_complete_ast",
+    "generate_complete_batch",
+    "generate_enriched_ast",
+    "enrich_ast_with_metadata",
+    "parse_with_data_fields",
 ]
