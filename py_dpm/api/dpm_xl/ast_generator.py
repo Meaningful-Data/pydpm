@@ -7,6 +7,7 @@ without exposing internal complexity or version compatibility issues.
 """
 
 from typing import Dict, Any, Optional, List, Union
+from pathlib import Path
 import json
 from datetime import datetime
 from py_dpm.api.dpm_xl.syntax import SyntaxAPI
@@ -17,6 +18,25 @@ from py_dpm.api.dpm_xl.semantic import SemanticAPI
 class ASTGeneratorAPI:
     """
     Simplified AST Generator for external packages.
+
+    Provides three levels of AST generation:
+
+    1. **Basic AST** (parse_expression):
+       - Syntax parsing only, no database required
+       - Returns: Clean AST dictionary with version compatibility normalization
+       - Use for: Syntax validation, basic AST analysis
+
+    2. **Complete AST** (generate_complete_ast):
+       - Requires database connection
+       - Performs full semantic validation and operand checking
+       - Returns: AST with data fields populated (datapoint IDs, operand references)
+       - Use for: AST analysis with complete metadata, matching json_scripts/*.json format
+
+    3. **Enriched AST** (generate_enriched_ast):
+       - Requires database connection
+       - Extends complete AST with framework structure for execution engines
+       - Returns: Engine-ready AST with operations, variables, tables, preconditions sections
+       - Use for: Business rule execution engines, validation frameworks
 
     Handles all internal complexity including:
     - Version compatibility
@@ -51,18 +71,30 @@ class ASTGeneratorAPI:
 
     def parse_expression(self, expression: str) -> Dict[str, Any]:
         """
-        Parse DPM-XL expression into clean AST format.
+        Parse DPM-XL expression into clean AST format (Level 1 - Basic AST).
+
+        Performs syntax parsing only, no database required. Returns a clean AST dictionary
+        with version compatibility normalization applied.
+
+        **What you get:**
+        - Clean AST structure (syntax tree)
+        - Context information (if WITH clause present)
+        - Version compatibility normalization
+
+        **What you DON'T get:**
+        - Data fields (datapoint IDs, operand references) - use generate_complete_ast()
+        - Framework structure - use generate_enriched_ast()
 
         Args:
             expression: DPM-XL expression string
 
         Returns:
             Dictionary containing:
-            - success: bool
-            - ast: AST dictionary (if successful)
-            - context: Context information (if WITH clause present)
-            - error: Error message (if failed)
-            - metadata: Additional information
+            - success (bool): Whether parsing succeeded
+            - ast (dict): Clean AST dictionary
+            - context (dict): Context information (if WITH clause present)
+            - error (str): Error message (if failed)
+            - metadata (dict): Additional information (expression type, compatibility mode)
         """
         try:
             # Parse with syntax API
@@ -191,10 +223,20 @@ class ASTGeneratorAPI:
         release_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Generate complete AST with all data fields, exactly like json_scripts examples.
+        Generate complete AST with all data fields populated (Level 2).
 
         This method performs full semantic validation and operand checking using the database,
-        populating datapoint IDs and operand references in the AST.
+        populating datapoint IDs and operand references in the AST. The result matches the
+        format found in json_scripts/*.json files.
+
+        **What you get:**
+        - Pure AST with data fields (datapoint IDs, operand references)
+        - Semantic validation results
+        - Context information
+
+        **What you DON'T get:**
+        - Framework structure (operations, variables, tables, preconditions)
+        - For that, use generate_enriched_ast() instead
 
         Args:
             expression: DPM-XL expression string
@@ -203,17 +245,13 @@ class ASTGeneratorAPI:
 
         Returns:
             dict with keys:
-                success, ast, context, error, data_populated, semantic_result
+                - success (bool): Whether generation succeeded
+                - ast (dict): Complete AST with data fields
+                - context (dict): Context information (table, rows, columns, etc.)
+                - error (str): Error message if failed
+                - data_populated (bool): Whether data fields were populated
+                - semantic_result: Semantic validation result object
         """
-        if not self.database_path and not self.connection_url:
-            return {
-                "success": False,
-                "ast": None,
-                "context": None,
-                "error": "Database connection required for complete AST generation. Provide database_path or connection_url.",
-                "data_populated": False,
-            }
-
         try:
             from py_dpm.dpm.utils import get_engine
             from py_dpm.dpm_xl.utils.serialization import ASTToJSONVisitor
@@ -330,12 +368,26 @@ class ASTGeneratorAPI:
         table_context: Optional[Dict[str, Any]] = None,
         precondition: Optional[str] = None,
         release_id: Optional[int] = None,
+        output_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         """
-        Generate enriched, engine-ready AST from DPM-XL expression.
+        Generate enriched, engine-ready AST with framework structure (Level 3).
 
-        This extends generate_complete_ast() by adding framework structure
-        (operations, variables, tables, preconditions) for execution engines.
+        This extends generate_complete_ast() by wrapping the complete AST in an engine-ready
+        framework structure with operations, variables, tables, and preconditions sections.
+        This is the format required by business rule execution engines.
+
+        **What you get:**
+        - Everything from generate_complete_ast() PLUS:
+        - Framework structure: operations, variables, tables, preconditions
+        - Module metadata: version, release info, dates
+        - Dependency information
+        - Coordinates (x/y/z) added to data entries
+
+        **Typical use case:**
+        - Feeding AST to business rule execution engines
+        - Validation framework integration
+        - Production rule processing
 
         Args:
             expression: DPM-XL expression string
@@ -345,6 +397,8 @@ class ASTGeneratorAPI:
             precondition: Optional precondition variable reference (e.g., {v_F_44_04})
             release_id: Optional release ID to filter database lookups by specific release.
                 If None, uses all available data (release-agnostic).
+            output_path: Optional path (string or Path) to save the enriched_ast as JSON file.
+                If provided, the enriched_ast will be automatically saved to this location.
 
         Returns:
             dict: {
@@ -352,14 +406,25 @@ class ASTGeneratorAPI:
                 'enriched_ast': dict,  # Engine-ready AST with framework structure
                 'error': str           # Error message if failed
             }
-        """
-        if not self.database_path and not self.connection_url:
-            return {
-                "success": False,
-                "enriched_ast": None,
-                "error": "Database connection required for enriched AST generation. Provide database_path or connection_url.",
-            }
 
+        Example:
+            >>> generator = ASTGeneratorAPI(database_path="data.db")
+            >>> result = generator.generate_enriched_ast(
+            ...     "{tF_01.00, r0010, c0010}",
+            ...     dpm_version="4.2",
+            ...     operation_code="my_validation"
+            ... )
+            >>> # result['enriched_ast'] contains framework structure ready for engines
+            >>>
+            >>> # Or save directly to a file:
+            >>> result = generator.generate_enriched_ast(
+            ...     "{tF_01.00, r0010, c0010}",
+            ...     dpm_version="4.2",
+            ...     operation_code="my_validation",
+            ...     output_path="./output/enriched_ast.json"
+            ... )
+            >>> # The enriched_ast is automatically saved to the specified path
+        """
         try:
             # Generate complete AST first
             complete_result = self.generate_complete_ast(expression, release_id=release_id)
@@ -383,6 +448,15 @@ class ASTGeneratorAPI:
                 operation_code=operation_code,
                 precondition=precondition,
             )
+
+            # Save to file if output_path is provided
+            if output_path is not None:
+                path = Path(output_path) if isinstance(output_path, str) else output_path
+                # Create parent directories if they don't exist
+                path.parent.mkdir(parents=True, exist_ok=True)
+                # Save enriched_ast as JSON
+                with open(path, "w") as f:
+                    json.dump(enriched_ast, f, indent=4)
 
             return {"success": True, "enriched_ast": enriched_ast, "error": None}
 
