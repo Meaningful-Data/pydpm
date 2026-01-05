@@ -25,8 +25,7 @@ class Fact:
         self.open_values = open_values
         self.value = value
         self.variable_id = None
-
-        self.resolve_datapoint_id(date)
+        self._date = date
 
     def __str__(self):
         return f"Operand(table={self.table_code}, column={self.column_code}, row={self.row_code}, sheet={self.sheet_code}, open_values={self.open_values}, value={self.value})"
@@ -144,21 +143,58 @@ class Instance:
     def from_dict(cls, instance_json: dict):
         cls._validate_dict_structure(instance_json)
 
-        url = ExplorerQueryAPI().get_module_url(
-            module_code=instance_json["module_code"],
-            date=instance_json["parameters"]["refPeriod"],
-        )
-
         parameters = cls.PARAMETERS_DEFAULT.copy()
         parameters.update(instance_json["parameters"])
 
-        operands = {}
-        for operand in instance_json["facts"]:
-            operand["date"] = parameters["refPeriod"]
-            operand = Fact.from_dict(operand)
-            if operand.table_code not in operands:
-                operands[operand.table_code] = []
-            operands[operand.table_code].append(operand)
+        ref_period = parameters["refPeriod"]
+
+        with ExplorerQueryAPI() as explorer:
+            url = explorer.get_module_url(
+                module_code=instance_json["module_code"],
+                date=ref_period,
+            )
+
+            # Build Fact objects grouped by table without triggering DB lookups
+            operands = {}
+            for fact_data in instance_json["facts"]:
+                fact = Fact.from_dict(fact_data)
+                if fact.table_code not in operands:
+                    operands[fact.table_code] = []
+                operands[fact.table_code].append(fact)
+
+            # Resolve datapoint IDs in batches per table
+            for table_code, facts in operands.items():
+                variables = explorer.get_variable_from_cell_address(
+                    table_code=table_code,
+                    row_code=None,
+                    column_code=None,
+                    sheet_code=None,
+                    date=ref_period,
+                )
+
+                # Build mapping from (row, column, sheet) -> list of variable rows
+                variable_map = {}
+                for var in variables:
+                    key = (
+                        var.get("row_code"),
+                        var.get("column_code"),
+                        var.get("sheet_code"),
+                    )
+                    variable_map.setdefault(key, []).append(var)
+
+                # Assign variable_id to each fact, preserving previous error semantics
+                for fact in facts:
+                    key = (fact.row_code, fact.column_code, fact.sheet_code)
+                    candidates = variable_map.get(key, [])
+
+                    if len(candidates) == 0:
+                        raise ValueError(f"No mapping found for {fact.operand_code}")
+                    if len(candidates) > 1:
+                        raise ValueError(
+                            f"Multiple mappings found for {fact.operand_code}"
+                        )
+
+                    fact.variable_id = candidates[0]["variable_id"]
 
         instance = cls(
             module_url=url,
@@ -212,12 +248,15 @@ class Instance:
 
             # FilingIndicators.csv
             filing_indicators_lines = ["templateID,reported"]
+            seen_templates = set()
             for table in self.operands.keys():
-                if "." in table:
-                    table = table.split(".")
-                    table = table[0] + "." + table[1]
-                if f"{table},true" not in filing_indicators_lines:
-                    filing_indicators_lines.append(f"{table},true")
+                normalized_table = table
+                if "." in normalized_table:
+                    parts = normalized_table.split(".")
+                    normalized_table = parts[0] + "." + parts[1]
+                if normalized_table not in seen_templates:
+                    seen_templates.add(normalized_table)
+                    filing_indicators_lines.append(f"{normalized_table},true")
 
             (reports_dir / "FilingIndicators.csv").write_text(
                 "\n".join(filing_indicators_lines)
