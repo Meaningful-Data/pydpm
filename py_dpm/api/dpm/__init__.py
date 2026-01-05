@@ -8,6 +8,7 @@ from py_dpm.api.dpm.data_dictionary import DataDictionaryAPI
 from py_dpm.api.dpm.explorer import ExplorerQueryAPI
 from py_dpm.api.dpm.migration import MigrationAPI
 from py_dpm.api.dpm.hierarchical_queries import HierarchicalQueryAPI
+from py_dpm.api.dpm.instance import InstanceAPI
 
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "ExplorerQueryAPI",
     "MigrationAPI",
     "HierarchicalQueryAPI",
+    "InstanceAPI",
 ]
