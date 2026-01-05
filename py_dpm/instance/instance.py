@@ -116,7 +116,7 @@ class Instance:
 
     @staticmethod
     def _validate_dict_structure(instance_json: dict):
-        required_keys = {"module_code", "parameters", "operands"}
+        required_keys = {"module_code", "parameters", "facts"}
         if required_keys != set(instance_json.keys()):
             missing = required_keys - set(instance_json.keys())
             raise ValueError(f"Missing required keys: {missing}")
@@ -130,8 +130,8 @@ class Instance:
         if "refPeriod" not in instance_json["parameters"]:
             raise ValueError("parameters must contain 'refPeriod'")
 
-        if not isinstance(instance_json["operands"], list):
-            raise TypeError("operands must be a list")
+        if not isinstance(instance_json["facts"], list):
+            raise TypeError("facts must be a list")
 
     @classmethod
     def from_json_file(cls, json_file: Path):
@@ -153,7 +153,7 @@ class Instance:
         parameters.update(instance_json["parameters"])
 
         operands = {}
-        for operand in instance_json["operands"]:
+        for operand in instance_json["facts"]:
             operand["date"] = parameters["refPeriod"]
             operand = Fact.from_dict(operand)
             if operand.table_code not in operands:

@@ -19,7 +19,7 @@ def example_from_dict():
         "parameters": {
             "refPeriod": "2024-12-31"
         },
-        "operands": [
+        "facts": [
             {
                 "table_code": "C_14.01",
                 "column_code": "0330",

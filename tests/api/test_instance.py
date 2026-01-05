@@ -23,7 +23,7 @@ class TestInstanceAPI(unittest.TestCase):
                 "refPeriod": "2024-12-31",
                 "entityID": "rs:TESTLEI123456789012.CON",
             },
-            "operands": [
+            "facts": [
                 {
                     "table_code": "t001",
                     "row_code": "r010",

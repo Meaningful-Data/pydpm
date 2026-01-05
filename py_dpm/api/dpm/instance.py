@@ -31,7 +31,7 @@ class InstanceAPI:
         Args:
             instance_data: Dictionary with the instance configuration.
                           Must contain: module_code, parameters (with refPeriod),
-                          and operands (list of facts)
+                          and facts (list of facts)
             output_folder: Directory where the output ZIP file will be created
             file_prefix: Optional prefix for the output filename
 
@@ -49,7 +49,7 @@ class InstanceAPI:
             ...     "parameters": {
             ...         "refPeriod": "2024-12-31"
             ...     },
-            ...     "operands": [
+            ...     "facts": [
             ...         {
             ...             "table_code": "t001",
             ...             "row_code": "r010",
@@ -78,7 +78,7 @@ class InstanceAPI:
         Args:
             json_file: Path to JSON file with instance configuration.
                       Must contain: module_code, parameters (with refPeriod),
-                      and operands (list of facts)
+                      and facts (list of facts)
             output_folder: Directory where the output ZIP file will be created
             file_prefix: Optional prefix for the output filename
 
