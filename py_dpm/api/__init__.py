@@ -24,6 +24,7 @@ from py_dpm.api.dpm import (
     DataDictionaryAPI,
     ExplorerQueryAPI,
     HierarchicalQueryAPI,
+    InstanceAPI,
 )
 
 
@@ -34,6 +35,7 @@ __all__ = [
     "DataDictionaryAPI",
     "ExplorerQueryAPI",
     "HierarchicalQueryAPI",
+    "InstanceAPI",
     # DPM-XL APIs
     "SyntaxAPI",
     "SemanticAPI",
