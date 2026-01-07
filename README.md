@@ -208,6 +208,59 @@ migration_api.migrate_from_access(
 )
 ```
 
+#### XBRL-CSV Instance Generation
+
+```python
+from py_dpm.api import InstanceAPI
+
+api = InstanceAPI()
+
+# Build package from dictionary
+data = {
+    "module_code": "F_01.01",
+    "parameters": {"refPeriod": "2024-12-31"},
+    "facts": [
+        {"table_code": "t001", "row_code": "r010", "column_code": "c010", "value": 1000000}
+    ]
+}
+output_path = api.build_package_from_dict(data, "/tmp/output")
+
+# Build package from JSON file
+output_path = api.build_package_from_json("instance_data.json", "/tmp/output")
+```
+
+#### DPM Explorer - Introspection Queries
+
+```python
+from py_dpm.api import ExplorerQueryAPI
+
+with ExplorerQueryAPI() as api:
+    # Find all properties using a specific item
+    properties = api.get_properties_using_item("EUR")
+
+    # Get module URL for documentation
+    url = api.get_module_url(module_code="F_01.01")
+
+    # Explore variable usage
+    tables = api.get_tables_using_variable(variable_code="mi123")
+```
+
+#### Hierarchical Queries
+
+```python
+from py_dpm.api import HierarchicalQueryAPI
+
+with HierarchicalQueryAPI() as api:
+    # Get hierarchy for a domain
+    hierarchy = api.get_hierarchy(domain_code="DOM_001")
+
+    # Navigate parent-child relationships
+    children = api.get_children(item_code="PARENT_001")
+
+    # Get all ancestors
+    ancestors = api.get_ancestors(item_code="LEAF_001")
+```
+
 ## Development
 
 ### Running Tests
