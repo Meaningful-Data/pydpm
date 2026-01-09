@@ -369,6 +369,7 @@ class ASTGeneratorAPI:
         precondition: Optional[str] = None,
         release_id: Optional[int] = None,
         output_path: Optional[Union[str, Path]] = None,
+        primary_module_vid: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Generate enriched, engine-ready AST with framework structure (Level 3).
@@ -381,13 +382,14 @@ class ASTGeneratorAPI:
         - Everything from generate_complete_ast() PLUS:
         - Framework structure: operations, variables, tables, preconditions
         - Module metadata: version, release info, dates
-        - Dependency information
+        - Dependency information (including cross-module dependencies)
         - Coordinates (x/y/z) added to data entries
 
         **Typical use case:**
         - Feeding AST to business rule execution engines
         - Validation framework integration
         - Production rule processing
+        - Module exports with cross-module dependency tracking
 
         Args:
             expression: DPM-XL expression string
@@ -399,6 +401,11 @@ class ASTGeneratorAPI:
                 If None, uses all available data (release-agnostic).
             output_path: Optional path (string or Path) to save the enriched_ast as JSON file.
                 If provided, the enriched_ast will be automatically saved to this location.
+            primary_module_vid: Optional module version ID of the module being exported.
+                When provided, enables detection of cross-module dependencies - tables from
+                other modules will be identified and added to dependency_modules and
+                cross_instance_dependencies fields. If None, cross-module detection uses
+                the first table's module as the primary module.
 
         Returns:
             dict: {
@@ -416,14 +423,17 @@ class ASTGeneratorAPI:
             ... )
             >>> # result['enriched_ast'] contains framework structure ready for engines
             >>>
-            >>> # Or save directly to a file:
+            >>> # For module exports with cross-module dependency tracking:
             >>> result = generator.generate_enriched_ast(
-            ...     "{tF_01.00, r0010, c0010}",
+            ...     "{tC_26.00, r030, c010} * {tC_01.00, r0015, c0010}",
             ...     dpm_version="4.2",
-            ...     operation_code="my_validation",
-            ...     output_path="./output/enriched_ast.json"
+            ...     operation_code="v2814_m",
+            ...     primary_module_vid=123,  # Module being exported
+            ...     release_id=42
             ... )
-            >>> # The enriched_ast is automatically saved to the specified path
+            >>> # result['enriched_ast']['dependency_modules'] contains external module info
+            >>> # result['enriched_ast']['dependency_information']['cross_instance_dependencies']
+            >>> # contains list of external module dependencies
         """
         try:
             # Generate complete AST first
@@ -447,6 +457,8 @@ class ASTGeneratorAPI:
                 dpm_version=dpm_version,
                 operation_code=operation_code,
                 precondition=precondition,
+                release_id=release_id,
+                primary_module_vid=primary_module_vid,
             )
 
             # Save to file if output_path is provided
@@ -723,11 +735,23 @@ class ASTGeneratorAPI:
         dpm_version: Optional[str] = None,
         operation_code: Optional[str] = None,
         precondition: Optional[str] = None,
+        release_id: Optional[int] = None,
+        primary_module_vid: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Add framework structure (operations, variables, tables, preconditions) to complete AST.
 
         This creates the engine-ready format with all metadata sections.
+
+        Args:
+            ast_dict: Complete AST dictionary
+            expression: Original DPM-XL expression
+            context: Context dict with table, rows, columns, sheets, default, interval
+            dpm_version: DPM version code (e.g., "4.2")
+            operation_code: Operation code (defaults to "default_code")
+            precondition: Precondition variable reference (e.g., {v_F_44_04})
+            release_id: Optional release ID to filter database lookups
+            primary_module_vid: Module VID being exported (to identify external dependencies)
         """
         from py_dpm.dpm.utils import get_engine
         import copy
@@ -795,14 +819,20 @@ class ASTGeneratorAPI:
                 engine=engine,
             )
 
+        # Detect cross-module dependencies
+        dependency_modules, cross_instance_dependencies = self._detect_cross_module_dependencies(
+            expression=expression,
+            variables_by_table=variables_by_table,
+            primary_module_vid=primary_module_vid,
+            operation_code=operation_code,
+            release_id=release_id,
+        )
+
         # Build dependency information
         dependency_info = {
             "intra_instance_validations": [operation_code],
-            "cross_instance_dependencies": [],
+            "cross_instance_dependencies": cross_instance_dependencies,
         }
-
-        # Build dependency modules
-        dependency_modules = {}
 
         # Build complete structure
         namespace = "default_module"
@@ -1008,6 +1038,154 @@ class ASTGeneratorAPI:
 
         extract_from_node(ast_dict)
         return all_variables, variables_by_table
+
+    def _detect_cross_module_dependencies(
+        self,
+        expression: str,
+        variables_by_table: Dict[str, Dict[str, str]],
+        primary_module_vid: Optional[int],
+        operation_code: str,
+        release_id: Optional[int] = None,
+    ) -> tuple:
+        """
+        Detect cross-module dependencies for a single expression.
+
+        Uses existing OperationScopesAPI and ExplorerQuery to detect external module
+        references in cross-module expressions.
+
+        Args:
+            expression: DPM-XL expression
+            variables_by_table: Variables by table code (from _extract_variables_from_ast)
+            primary_module_vid: The module being exported (if known)
+            operation_code: Current operation code
+            release_id: Optional release ID for filtering
+
+        Returns:
+            Tuple of (dependency_modules, cross_instance_dependencies)
+            - dependency_modules: {uri: {tables: {...}, variables: {...}}}
+            - cross_instance_dependencies: [{modules: [...], affected_operations: [...], ...}]
+        """
+        from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
+        from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
+        import logging
+
+        scopes_api = OperationScopesAPI(
+            database_path=self.database_path,
+            connection_url=self.connection_url
+        )
+
+        try:
+            # Get tables with module info
+            tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
+                expression=expression,
+                release_id=release_id
+            )
+
+            # Check if cross-module
+            scope_result = scopes_api.calculate_scopes_from_expression(
+                expression=expression,
+                release_id=release_id,
+                read_only=True
+            )
+
+            if scope_result.has_error or not scope_result.is_cross_module:
+                return {}, []
+
+            # Determine primary module from first table if not provided
+            if primary_module_vid is None and tables_with_modules:
+                primary_module_vid = tables_with_modules[0].get("module_vid")
+
+            # Group external tables by module
+            external_modules = {}
+            for table_info in tables_with_modules:
+                module_vid = table_info.get("module_vid")
+                if module_vid == primary_module_vid:
+                    continue  # Skip primary module
+
+                module_code = table_info.get("module_code")
+                if not module_code:
+                    continue
+
+                # Get module URI using existing ExplorerQuery
+                try:
+                    module_uri = ExplorerQuery.get_module_url(
+                        scopes_api.session,
+                        module_code=module_code,
+                        release_id=release_id,
+                    )
+                    # Remove .json suffix if present (for consistency with expected format)
+                    if module_uri.endswith(".json"):
+                        module_uri = module_uri[:-5]
+                except Exception:
+                    continue
+
+                if module_uri not in external_modules:
+                    external_modules[module_uri] = {
+                        "module_vid": module_vid,
+                        "tables": {},
+                        "variables": {},
+                        "from_date": None,
+                        "to_date": None
+                    }
+
+                # Add table - get variables from variables_by_table
+                table_code = table_info.get("code")
+                if table_code:
+                    # Look up variables in variables_by_table (handles t prefix)
+                    table_variables = variables_by_table.get(table_code, {})
+                    if not table_variables:
+                        # Try with t prefix
+                        table_variables = variables_by_table.get(f"t{table_code}", {})
+                    external_modules[module_uri]["tables"][table_code] = {
+                        "variables": table_variables,
+                        "open_keys": {}
+                    }
+                    external_modules[module_uri]["variables"].update(table_variables)
+
+            # Get date info from scopes metadata
+            scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
+                expression=expression,
+                release_id=release_id
+            )
+            for scope_info in scopes_metadata:
+                for module in scope_info.module_versions:
+                    mvid = module.get("module_vid")
+                    for uri, data in external_modules.items():
+                        if data["module_vid"] == mvid:
+                            data["from_date"] = module.get("from_reference_date")
+                            data["to_date"] = module.get("to_reference_date")
+
+            # Build output structures
+            dependency_modules = {}
+            cross_instance_dependencies = []
+
+            for uri, data in external_modules.items():
+                # dependency_modules entry
+                dependency_modules[uri] = {
+                    "tables": data["tables"],
+                    "variables": data["variables"]
+                }
+
+                # cross_instance_dependencies entry (one per external module)
+                from_date = data["from_date"]
+                to_date = data["to_date"]
+                cross_instance_dependencies.append({
+                    "modules": [{
+                        "URI": uri,
+                        "ref_period": "T"
+                    }],
+                    "affected_operations": [operation_code],
+                    "from_reference_date": str(from_date) if from_date else "",
+                    "to_reference_date": str(to_date) if to_date else ""
+                })
+
+            return dependency_modules, cross_instance_dependencies
+
+        except Exception as e:
+            logging.warning(f"Failed to detect cross-module dependencies: {e}")
+            return {}, []
+        finally:
+            scopes_api.close()
 
     def _add_coordinates_to_ast(
         self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]]
