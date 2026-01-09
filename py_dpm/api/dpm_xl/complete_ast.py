@@ -117,6 +117,7 @@ def generate_enriched_ast(
     table_context: Optional[Dict[str, Any]] = None,
     precondition: Optional[str] = None,
     release_id: Optional[int] = None,
+    primary_module_vid: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate enriched, engine-ready AST from DPM-XL expression.
@@ -133,6 +134,8 @@ def generate_enriched_ast(
         precondition: Optional precondition variable reference (e.g., {v_F_44_04})
         release_id: Optional release ID to filter database lookups by specific release.
             If None, uses all available data (release-agnostic).
+        primary_module_vid: Optional module version ID of the module being exported.
+            When provided, enables detection of cross-module dependencies.
 
     Returns:
         dict: {
@@ -153,6 +156,7 @@ def generate_enriched_ast(
         table_context=table_context,
         precondition=precondition,
         release_id=release_id,
+        primary_module_vid=primary_module_vid,
     )
 
 
@@ -165,6 +169,8 @@ def enrich_ast_with_metadata(
     dpm_version: Optional[str] = None,
     operation_code: Optional[str] = None,
     precondition: Optional[str] = None,
+    release_id: Optional[int] = None,
+    primary_module_vid: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Add framework structure (operations, variables, tables, preconditions) to complete AST.
@@ -180,6 +186,8 @@ def enrich_ast_with_metadata(
         dpm_version: DPM version code (e.g., "4.2")
         operation_code: Operation code (defaults to "default_code")
         precondition: Precondition variable reference (e.g., {v_F_44_04})
+        release_id: Optional release ID to filter database lookups
+        primary_module_vid: Optional module VID of the module being exported
 
     Returns:
         dict: Engine-ready AST with framework structure
@@ -196,4 +204,6 @@ def enrich_ast_with_metadata(
         dpm_version=dpm_version,
         operation_code=operation_code,
         precondition=precondition,
+        release_id=release_id,
+        primary_module_vid=primary_module_vid,
     )
