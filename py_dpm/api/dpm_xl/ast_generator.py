@@ -1039,6 +1039,81 @@ class ASTGeneratorAPI:
         extract_from_node(ast_dict)
         return all_variables, variables_by_table
 
+    def _extract_time_shifts_by_table(self, expression: str) -> Dict[str, str]:
+        """
+        Extract time shift information for each table in the expression.
+
+        Uses the AST to properly parse the expression and find TimeShiftOp nodes
+        to determine the ref_period for each table reference.
+
+        Args:
+            expression: DPM-XL expression
+
+        Returns:
+            Dict mapping table codes to ref_period values (e.g., {"C_01.00": "T-1Q"})
+            Tables without time shifts default to "T".
+        """
+        from py_dpm.dpm_xl.ast.template import ASTTemplate
+
+        time_shifts = {}
+        current_period = ["t"]  # Use list to allow mutation in nested function
+
+        class TimeShiftExtractor(ASTTemplate):
+            """Lightweight AST visitor that extracts time shifts for each table."""
+
+            def visit_TimeShiftOp(self, node):
+                # Save current time period and compute new one
+                previous_period = current_period[0]
+
+                period_indicator = node.period_indicator
+                shift_number = node.shift_number
+
+                # Compute time period (same logic as ModuleDependencies)
+                if "-" in str(shift_number):
+                    current_period[0] = f"t+{period_indicator}{shift_number}"
+                else:
+                    current_period[0] = f"t-{period_indicator}{shift_number}"
+
+                # Visit operand (which contains the VarID)
+                self.visit(node.operand)
+
+                # Restore previous time period
+                current_period[0] = previous_period
+
+            def visit_VarID(self, node):
+                if node.table and current_period[0] != "t":
+                    time_shifts[node.table] = current_period[0]
+
+        def convert_to_ref_period(internal_period: str) -> str:
+            """Convert internal time period format to ref_period format.
+
+            Internal format: "t+Q-1" or "t-Q1"
+            Output format: "T-1Q" for one quarter back
+            """
+            if internal_period.startswith("t+"):
+                # e.g., "t+Q-1" -> "T-1Q"
+                indicator = internal_period[2]
+                number = internal_period[3:]
+                if number.startswith("-"):
+                    return f"T{number}{indicator}"
+                return f"T+{number}{indicator}"
+            elif internal_period.startswith("t-"):
+                # e.g., "t-Q1" -> "T-1Q"
+                indicator = internal_period[2]
+                number = internal_period[3:]
+                return f"T-{number}{indicator}"
+            return "T"
+
+        try:
+            ast = self.syntax_api.parse_expression(expression)
+            extractor = TimeShiftExtractor()
+            extractor.visit(ast)
+
+            return {table: convert_to_ref_period(period) for table, period in time_shifts.items()}
+
+        except Exception:
+            return {}
+
     def _detect_cross_module_dependencies(
         self,
         expression: str,
@@ -1075,7 +1150,7 @@ class ASTGeneratorAPI:
         )
 
         try:
-            # Get tables with module info
+            # Get tables with module info (includes module_version)
             tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
                 expression=expression,
                 release_id=release_id
@@ -1091,9 +1166,34 @@ class ASTGeneratorAPI:
             if scope_result.has_error or not scope_result.is_cross_module:
                 return {}, []
 
+            # Extract time shifts for each table from expression
+            time_shifts_by_table = self._extract_time_shifts_by_table(expression)
+
             # Determine primary module from first table if not provided
             if primary_module_vid is None and tables_with_modules:
                 primary_module_vid = tables_with_modules[0].get("module_vid")
+
+            # Helper to normalize table code (remove 't' prefix if present)
+            def normalize_table_code(code: str) -> str:
+                return code[1:] if code and code.startswith('t') else code
+
+            # Helper to lookup ref_period for a table
+            def get_ref_period(table_code: str) -> str:
+                if not table_code:
+                    return "T"
+                ref = time_shifts_by_table.get(table_code)
+                if not ref:
+                    ref = time_shifts_by_table.get(normalize_table_code(table_code))
+                return ref or "T"
+
+            # Helper to lookup variables for a table
+            def get_table_variables(table_code: str) -> dict:
+                if not table_code:
+                    return {}
+                variables = variables_by_table.get(table_code)
+                if not variables:
+                    variables = variables_by_table.get(f"t{table_code}", {})
+                return variables or {}
 
             # Group external tables by module
             external_modules = {}
@@ -1106,36 +1206,38 @@ class ASTGeneratorAPI:
                 if not module_code:
                     continue
 
-                # Get module URI using existing ExplorerQuery
+                # Get module URI
                 try:
                     module_uri = ExplorerQuery.get_module_url(
                         scopes_api.session,
                         module_code=module_code,
                         release_id=release_id,
                     )
-                    # Remove .json suffix if present (for consistency with expected format)
                     if module_uri.endswith(".json"):
                         module_uri = module_uri[:-5]
                 except Exception:
                     continue
 
+                table_code = table_info.get("code")
+                ref_period = get_ref_period(table_code)
+
                 if module_uri not in external_modules:
                     external_modules[module_uri] = {
                         "module_vid": module_vid,
+                        "module_version": table_info.get("module_version"),  # Already in table_info
+                        "ref_period": ref_period,
                         "tables": {},
                         "variables": {},
                         "from_date": None,
                         "to_date": None
                     }
+                elif ref_period != "T":
+                    # Keep most specific ref_period (non-T takes precedence)
+                    external_modules[module_uri]["ref_period"] = ref_period
 
-                # Add table - get variables from variables_by_table
-                table_code = table_info.get("code")
+                # Add table and variables
                 if table_code:
-                    # Look up variables in variables_by_table (handles t prefix)
-                    table_variables = variables_by_table.get(table_code, {})
-                    if not table_variables:
-                        # Try with t prefix
-                        table_variables = variables_by_table.get(f"t{table_code}", {})
+                    table_variables = get_table_variables(table_code)
                     external_modules[module_uri]["tables"][table_code] = {
                         "variables": table_variables,
                         "open_keys": {}
@@ -1169,11 +1271,16 @@ class ASTGeneratorAPI:
                 # cross_instance_dependencies entry (one per external module)
                 from_date = data["from_date"]
                 to_date = data["to_date"]
+                module_entry = {
+                    "URI": uri,
+                    "ref_period": data["ref_period"]
+                }
+                # Add module_version if available
+                if data["module_version"]:
+                    module_entry["module_version"] = data["module_version"]
+
                 cross_instance_dependencies.append({
-                    "modules": [{
-                        "URI": uri,
-                        "ref_period": "T"
-                    }],
+                    "modules": [module_entry],
                     "affected_operations": [operation_code],
                     "from_reference_date": str(from_date) if from_date else "",
                     "to_reference_date": str(to_date) if to_date else ""
