@@ -728,6 +728,8 @@ class ModuleVersion(Base):
                 columns=[
                     "ModuleVID",
                     "variable_vid",
+                    "ModuleCode",
+                    "VersionNumber",
                     "FromReferenceDate",
                     "ToReferenceDate",
                     "EndReleaseID",
@@ -738,6 +740,8 @@ class ModuleVersion(Base):
             session.query(
                 cls.modulevid.label("ModuleVID"),
                 ModuleVersionComposition.tablevid.label("variable_vid"),
+                cls.code.label("ModuleCode"),
+                cls.versionnumber.label("VersionNumber"),
                 cls.fromreferencedate.label("FromReferenceDate"),
                 cls.toreferencedate.label("ToReferenceDate"),
                 cls.endreleaseid.label("EndReleaseID"),
@@ -764,6 +768,8 @@ class ModuleVersion(Base):
             columns=[
                 "ModuleVID",
                 "variable_vid",
+                "ModuleCode",
+                "VersionNumber",
                 "FromReferenceDate",
                 "ToReferenceDate",
                 "EndReleaseID",
@@ -790,6 +796,8 @@ class ModuleVersion(Base):
                 columns=[
                     "ModuleVID",
                     "variable_vid",
+                    "ModuleCode",
+                    "VersionNumber",
                     "FromReferenceDate",
                     "ToReferenceDate",
                     "StartReleaseID",
@@ -804,6 +812,8 @@ class ModuleVersion(Base):
             session.query(
                 cls.modulevid.label("ModuleVID"),
                 ModuleVersionComposition.tablevid.label("variable_vid"),
+                cls.code.label("ModuleCode"),
+                cls.versionnumber.label("VersionNumber"),
                 cls.fromreferencedate.label("FromReferenceDate"),
                 cls.toreferencedate.label("ToReferenceDate"),
                 cls.startreleaseid.label("StartReleaseID"),
@@ -836,6 +846,8 @@ class ModuleVersion(Base):
             columns=[
                 "ModuleVID",
                 "variable_vid",
+                "ModuleCode",
+                "VersionNumber",
                 "FromReferenceDate",
                 "ToReferenceDate",
                 "StartReleaseID",
@@ -865,6 +877,8 @@ class ModuleVersion(Base):
                 columns=[
                     "ModuleVID",
                     "variable_vid",
+                    "ModuleCode",
+                    "VersionNumber",
                     "FromReferenceDate",
                     "ToReferenceDate",
                     "Code",
@@ -875,6 +889,8 @@ class ModuleVersion(Base):
             session.query(
                 cls.modulevid.label("ModuleVID"),
                 VariableVersion.variablevid.label("variable_vid"),
+                cls.code.label("ModuleCode"),
+                cls.versionnumber.label("VersionNumber"),
                 cls.fromreferencedate.label("FromReferenceDate"),
                 cls.toreferencedate.label("ToReferenceDate"),
                 VariableVersion.code.label("Code"),
@@ -904,6 +920,8 @@ class ModuleVersion(Base):
             columns=[
                 "ModuleVID",
                 "variable_vid",
+                "ModuleCode",
+                "VersionNumber",
                 "FromReferenceDate",
                 "ToReferenceDate",
                 "Code",
@@ -945,6 +963,72 @@ class ModuleVersion(Base):
                 "EndReleaseID",
             ],
         )
+
+    @classmethod
+    def get_from_release_id(
+        cls, session, release_id, module_id=None, module_code=None
+    ):
+        """
+        Get the module version applicable to a given release for a specific module.
+
+        If the resulting module version has fromreferencedate == toreferencedate,
+        the previous module version for the same module is returned instead.
+
+        Args:
+            session: SQLAlchemy session
+            release_id: The release ID to filter for
+            module_id: Optional module ID (mutually exclusive with module_code)
+            module_code: Optional module code (mutually exclusive with module_id)
+
+        Returns:
+            ModuleVersion instance or None if not found
+
+        Raises:
+            ValueError: If neither module_id nor module_code is provided,
+                        or if both are provided
+        """
+        if module_id is None and module_code is None:
+            raise ValueError("Either module_id or module_code must be provided.")
+        if module_id is not None and module_code is not None:
+            raise ValueError(
+                "Specify only one of module_id or module_code, not both."
+            )
+
+        # Build the base query with release filtering
+        query = session.query(cls).filter(
+            and_(
+                cls.startreleaseid <= release_id,
+                or_(cls.endreleaseid > release_id, cls.endreleaseid.is_(None)),
+            )
+        )
+
+        # Apply module filter
+        if module_id is not None:
+            query = query.filter(cls.moduleid == module_id)
+        else:  # module_code
+            query = query.filter(cls.code == module_code)
+
+        module_version = query.first()
+
+        if module_version is None:
+            return None
+
+        # Check if fromreferencedate == toreferencedate
+        if module_version.fromreferencedate == module_version.toreferencedate:
+            # Get the previous module version for the same module
+            prev_query = (
+                session.query(cls)
+                .filter(
+                    cls.moduleid == module_version.moduleid,
+                    cls.startreleaseid < module_version.startreleaseid,
+                )
+                .order_by(cls.startreleaseid.desc())
+            )
+            prev_module_version = prev_query.first()
+            if prev_module_version:
+                return prev_module_version
+
+        return module_version
 
     @classmethod
     def get_last_release(cls, session):
@@ -1118,6 +1202,60 @@ class OperationScope(Base):
     operation_scope_compositions = relationship(
         "OperationScopeComposition", back_populates="operation_scope"
     )
+
+    def to_dict(self):
+        """
+        Convert the operation scope to a dictionary representation.
+
+        Returns:
+            dict: A dictionary with module codes as keys and module details as values.
+                  Format: {
+                      "<module_code>": {
+                          "module_version_number": <versionnumber>,
+                          "from_reference_date": <fromreferencedate>,
+                          "to_reference_date": <toreferencedate>
+                      },
+                      ...
+                  }
+        """
+        from sqlalchemy.orm import object_session
+
+        def format_date(date_value):
+            """Format date to string (YYYY-MM-DD) or None if NaT/None."""
+            if date_value is None:
+                return None
+            if pd.isna(date_value):
+                return None
+            if hasattr(date_value, "strftime"):
+                return date_value.strftime("%Y-%m-%d")
+            return str(date_value)
+
+        result = {}
+        for composition in self.operation_scope_compositions:
+            # For new/proposed scopes, use transient _module_info attribute
+            if hasattr(composition, "_module_info") and composition._module_info:
+                info = composition._module_info
+                result[info["code"]] = {
+                    "module_version_number": info["version_number"],
+                    "from_reference_date": format_date(info["from_reference_date"]),
+                    "to_reference_date": format_date(info["to_reference_date"]),
+                }
+            else:
+                # For existing scopes from DB, use relationship or query
+                module_version = composition.module_version
+                if module_version is None:
+                    session = object_session(self)
+                    if session is not None:
+                        module_version = session.query(ModuleVersion).filter(
+                            ModuleVersion.modulevid == composition.modulevid
+                        ).first()
+                if module_version is not None:
+                    result[module_version.code] = {
+                        "module_version_number": module_version.versionnumber,
+                        "from_reference_date": format_date(module_version.fromreferencedate),
+                        "to_reference_date": format_date(module_version.toreferencedate),
+                    }
+        return result
 
 
 class OperationScopeComposition(Base):
