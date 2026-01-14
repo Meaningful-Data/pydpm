@@ -811,7 +811,7 @@ class ASTGeneratorAPI:
         preconditions = {}
         precondition_variables = {}
 
-        if precondition or (context and "table" in context):
+        if precondition:
             preconditions, precondition_variables = self._build_preconditions(
                 precondition=precondition,
                 context=context,
@@ -974,8 +974,6 @@ class ASTGeneratorAPI:
             match = re.match(r"\{v_([^}]+)\}", precondition)
             if match:
                 table_code = match.group(1)
-        elif context and "table" in context:
-            table_code = context["table"]
 
         if table_code:
             # Query database for actual variable ID and version
