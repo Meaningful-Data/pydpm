@@ -13,6 +13,9 @@ from py_dpm.dpm.models import (
     Concept,
     DpmClass,
     Organisation,
+    Variable,
+    VariableVersion,
+    ModuleParameters,
 )
 
 
@@ -369,3 +372,566 @@ class TestGetFromReleaseId:
         assert result is not None
         assert result.modulevid == 3001  # Should be the current version
         assert result.start_release.releaseid == 102
+
+
+# Tests for _apply_fallback_for_equal_dates helper method
+class TestApplyFallbackForEqualDates:
+    """Tests for ModuleVersion._apply_fallback_for_equal_dates()"""
+
+    @pytest.fixture
+    def setup_fallback_data(self, session):
+        """Create test data for fallback tests."""
+        from datetime import date
+
+        # Create releases
+        release_ids = [301, 302, 303]
+        for rid in release_ids:
+            existing = session.query(Release).filter(Release.releaseid == rid).first()
+            if not existing:
+                session.add(Release(releaseid=rid, code=f"R{rid}"))
+        session.flush()
+
+        # Check if module already exists
+        module = session.query(Module).filter(Module.moduleid == 301).first()
+        if not module:
+            module = Module(moduleid=301)
+            session.add(module)
+            session.flush()
+
+        # Check if module versions already exist
+        mv_previous = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 4000).first()
+        )
+        if not mv_previous:
+            mv_previous = ModuleVersion(
+                modulevid=4000,
+                moduleid=301,
+                code="FALLBACK_TEST",
+                startreleaseid=301,
+                endreleaseid=302,
+                fromreferencedate=date(2020, 1, 1),
+                toreferencedate=date(2023, 12, 31),
+                versionnumber="1.0",
+            )
+            session.add(mv_previous)
+
+        mv_current = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 4001).first()
+        )
+        if not mv_current:
+            mv_current = ModuleVersion(
+                modulevid=4001,
+                moduleid=301,
+                code="FALLBACK_TEST",
+                startreleaseid=302,
+                endreleaseid=None,
+                fromreferencedate=date(2024, 1, 1),
+                toreferencedate=date(2024, 1, 1),  # Equal dates
+                versionnumber="2.0",
+            )
+            session.add(mv_current)
+
+        session.commit()
+
+        return {"previous": mv_previous, "current": mv_current}
+
+    def test_empty_dataframe_returns_empty(self, session):
+        """Empty DataFrame should return empty DataFrame."""
+        import pandas as pd
+
+        df = pd.DataFrame(
+            columns=[
+                "ModuleVID",
+                "FromReferenceDate",
+                "ToReferenceDate",
+                "ModuleCode",
+                "VersionNumber",
+            ]
+        )
+        result = ModuleVersion._apply_fallback_for_equal_dates(session, df)
+        assert result.empty
+
+    def test_no_equal_dates_returns_unchanged(self, session, setup_fallback_data):
+        """DataFrame without equal dates should return unchanged."""
+        import pandas as pd
+        from datetime import date
+
+        # Create DataFrame with different from/to dates
+        df = pd.DataFrame(
+            {
+                "ModuleVID": [4000],
+                "ModuleCode": ["FALLBACK_TEST"],
+                "VersionNumber": ["1.0"],
+                "FromReferenceDate": [date(2020, 1, 1)],
+                "ToReferenceDate": [date(2023, 12, 31)],  # Different dates
+                "variable_vid": [100],
+            }
+        )
+        result = ModuleVersion._apply_fallback_for_equal_dates(session, df)
+
+        # Should be unchanged
+        assert len(result) == 1
+        assert result.iloc[0]["ModuleVID"] == 4000
+        assert result.iloc[0]["FromReferenceDate"] == date(2020, 1, 1)
+        assert result.iloc[0]["ToReferenceDate"] == date(2023, 12, 31)
+
+    def test_equal_dates_triggers_fallback(self, session, setup_fallback_data):
+        """Rows with equal dates should get replaced with previous version."""
+        import pandas as pd
+        from datetime import date
+
+        # Create DataFrame with the "current" version (equal dates)
+        df = pd.DataFrame(
+            {
+                "ModuleVID": [4001],
+                "ModuleCode": ["FALLBACK_TEST"],
+                "VersionNumber": ["2.0"],
+                "FromReferenceDate": [date(2024, 1, 1)],
+                "ToReferenceDate": [date(2024, 1, 1)],  # Equal dates
+                "variable_vid": [100],
+                "StartReleaseID": [302],
+                "EndReleaseID": [None],
+            }
+        )
+        result = ModuleVersion._apply_fallback_for_equal_dates(session, df)
+
+        # Should have been replaced with previous version
+        assert len(result) == 1
+        assert result.iloc[0]["ModuleVID"] == 4000  # Previous version
+        assert result.iloc[0]["ModuleCode"] == "FALLBACK_TEST"
+        assert result.iloc[0]["VersionNumber"] == "1.0"
+        assert result.iloc[0]["FromReferenceDate"] == date(2020, 1, 1)
+        assert result.iloc[0]["ToReferenceDate"] == date(2023, 12, 31)
+        assert result.iloc[0]["StartReleaseID"] == 301
+        # variable_vid should be preserved
+        assert result.iloc[0]["variable_vid"] == 100
+
+    def test_no_previous_version_keeps_original(self, session):
+        """If no previous version exists, keep original row."""
+        import pandas as pd
+        from datetime import date
+
+        # Create a module with only one version (no previous)
+        release = Release(releaseid=310, code="R310")
+        session.add(release)
+        session.flush()
+
+        module = Module(moduleid=310)
+        session.add(module)
+        session.flush()
+
+        mv_only = ModuleVersion(
+            modulevid=5000,
+            moduleid=310,
+            code="NO_PREV_TEST",
+            startreleaseid=310,
+            endreleaseid=None,
+            fromreferencedate=date(2024, 1, 1),
+            toreferencedate=date(2024, 1, 1),  # Equal dates
+            versionnumber="1.0",
+        )
+        session.add(mv_only)
+        session.commit()
+
+        df = pd.DataFrame(
+            {
+                "ModuleVID": [5000],
+                "ModuleCode": ["NO_PREV_TEST"],
+                "VersionNumber": ["1.0"],
+                "FromReferenceDate": [date(2024, 1, 1)],
+                "ToReferenceDate": [date(2024, 1, 1)],  # Equal dates
+                "variable_vid": [100],
+            }
+        )
+        result = ModuleVersion._apply_fallback_for_equal_dates(session, df)
+
+        # Should keep original since no previous version
+        assert len(result) == 1
+        assert result.iloc[0]["ModuleVID"] == 5000
+
+
+# Tests for get_from_tables_vids fallback behavior
+class TestGetFromTablesVidsFallback:
+    """Tests for fallback behavior in get_from_tables_vids()"""
+
+    @pytest.fixture
+    def setup_tables_data(self, session):
+        """Create test data including tables and compositions."""
+        from datetime import date
+
+        # Create releases
+        release_ids = [401, 402, 403]
+        for rid in release_ids:
+            existing = session.query(Release).filter(Release.releaseid == rid).first()
+            if not existing:
+                session.add(Release(releaseid=rid, code=f"R{rid}"))
+        session.flush()
+
+        # Check if module already exists
+        module = session.query(Module).filter(Module.moduleid == 401).first()
+        if not module:
+            module = Module(moduleid=401)
+            session.add(module)
+            session.flush()
+
+        # Check if table already exists
+        table = session.query(Table).filter(Table.tableid == 401).first()
+        if not table:
+            table = Table(tableid=401)
+            session.add(table)
+            session.flush()
+
+        # Check if table version already exists
+        tv = session.query(TableVersion).filter(TableVersion.tablevid == 401).first()
+        if not tv:
+            tv = TableVersion(
+                tablevid=401, tableid=401, code="T_01.00", startreleaseid=401
+            )
+            session.add(tv)
+            session.flush()
+
+        # Check if module versions already exist
+        mv_previous = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 6000).first()
+        )
+        if not mv_previous:
+            mv_previous = ModuleVersion(
+                modulevid=6000,
+                moduleid=401,
+                code="TABLES_TEST",
+                startreleaseid=401,
+                endreleaseid=402,
+                fromreferencedate=date(2020, 1, 1),
+                toreferencedate=date(2023, 12, 31),
+                versionnumber="1.0",
+            )
+            session.add(mv_previous)
+
+        mv_current = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 6001).first()
+        )
+        if not mv_current:
+            mv_current = ModuleVersion(
+                modulevid=6001,
+                moduleid=401,
+                code="TABLES_TEST",
+                startreleaseid=402,
+                endreleaseid=None,
+                fromreferencedate=date(2024, 1, 1),
+                toreferencedate=date(2024, 1, 1),  # Equal dates
+                versionnumber="2.0",
+            )
+            session.add(mv_current)
+
+        session.flush()
+
+        # Check if composition already exists
+        mvc = (
+            session.query(ModuleVersionComposition)
+            .filter(
+                ModuleVersionComposition.modulevid == 6001,
+                ModuleVersionComposition.tableid == 401,
+            )
+            .first()
+        )
+        if not mvc:
+            mvc = ModuleVersionComposition(
+                modulevid=6001, tablevid=401, tableid=401, order=1
+            )
+            session.add(mvc)
+
+        session.commit()
+
+        return {
+            "table_vid": 401,
+            "previous_mv": mv_previous,
+            "current_mv": mv_current,
+        }
+
+    def test_fallback_when_dates_equal(self, session, setup_tables_data):
+        """Test that previous module version is returned when dates are equal."""
+        from datetime import date
+
+        result = ModuleVersion.get_from_tables_vids(
+            session, tables_vids=[setup_tables_data["table_vid"]], release_id=403
+        )
+
+        assert not result.empty
+        assert len(result) == 1
+        # Should have been replaced with previous version
+        assert result.iloc[0]["ModuleVID"] == 6000
+        assert result.iloc[0]["FromReferenceDate"] == date(2020, 1, 1)
+        assert result.iloc[0]["ToReferenceDate"] == date(2023, 12, 31)
+
+    def test_variable_vid_preserved_after_fallback(self, session, setup_tables_data):
+        """Test that variable_vid (TableVID) is preserved after fallback."""
+        result = ModuleVersion.get_from_tables_vids(
+            session, tables_vids=[setup_tables_data["table_vid"]], release_id=403
+        )
+
+        assert not result.empty
+        # variable_vid should still be the original table VID
+        assert result.iloc[0]["variable_vid"] == setup_tables_data["table_vid"]
+
+
+# Tests for get_from_table_codes fallback behavior
+class TestGetFromTableCodesFallback:
+    """Tests for fallback behavior in get_from_table_codes()"""
+
+    @pytest.fixture
+    def setup_table_codes_data(self, session):
+        """Create test data including tables with codes."""
+        from datetime import date
+
+        # Create releases
+        release_ids = [501, 502, 503]
+        for rid in release_ids:
+            existing = session.query(Release).filter(Release.releaseid == rid).first()
+            if not existing:
+                session.add(Release(releaseid=rid, code=f"R{rid}"))
+        session.flush()
+
+        # Check if module already exists
+        module = session.query(Module).filter(Module.moduleid == 501).first()
+        if not module:
+            module = Module(moduleid=501)
+            session.add(module)
+            session.flush()
+
+        # Check if table already exists
+        table = session.query(Table).filter(Table.tableid == 501).first()
+        if not table:
+            table = Table(tableid=501)
+            session.add(table)
+            session.flush()
+
+        # Check if table version already exists
+        tv = session.query(TableVersion).filter(TableVersion.tablevid == 501).first()
+        if not tv:
+            tv = TableVersion(
+                tablevid=501, tableid=501, code="G_01.00", startreleaseid=501
+            )
+            session.add(tv)
+            session.flush()
+
+        # Check if module versions already exist
+        mv_previous = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 7000).first()
+        )
+        if not mv_previous:
+            mv_previous = ModuleVersion(
+                modulevid=7000,
+                moduleid=501,
+                code="CODES_TEST",
+                startreleaseid=501,
+                endreleaseid=502,
+                fromreferencedate=date(2020, 1, 1),
+                toreferencedate=date(2023, 12, 31),
+                versionnumber="1.0",
+            )
+            session.add(mv_previous)
+
+        mv_current = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 7001).first()
+        )
+        if not mv_current:
+            mv_current = ModuleVersion(
+                modulevid=7001,
+                moduleid=501,
+                code="CODES_TEST",
+                startreleaseid=502,
+                endreleaseid=None,
+                fromreferencedate=date(2024, 1, 1),
+                toreferencedate=date(2024, 1, 1),  # Equal dates
+                versionnumber="2.0",
+            )
+            session.add(mv_current)
+
+        session.flush()
+
+        # Check if composition already exists
+        mvc = (
+            session.query(ModuleVersionComposition)
+            .filter(
+                ModuleVersionComposition.modulevid == 7001,
+                ModuleVersionComposition.tableid == 501,
+            )
+            .first()
+        )
+        if not mvc:
+            mvc = ModuleVersionComposition(
+                modulevid=7001, tablevid=501, tableid=501, order=1
+            )
+            session.add(mvc)
+
+        session.commit()
+
+        return {
+            "table_code": "G_01.00",
+            "table_vid": 501,
+            "previous_mv": mv_previous,
+            "current_mv": mv_current,
+        }
+
+    def test_fallback_when_dates_equal(self, session, setup_table_codes_data):
+        """Test that previous module version is returned when dates are equal."""
+        from datetime import date
+
+        result = ModuleVersion.get_from_table_codes(
+            session,
+            table_codes=[setup_table_codes_data["table_code"]],
+            release_id=503,
+        )
+
+        assert not result.empty
+        assert len(result) == 1
+        # Should have been replaced with previous version
+        assert result.iloc[0]["ModuleVID"] == 7000
+        assert result.iloc[0]["FromReferenceDate"] == date(2020, 1, 1)
+        assert result.iloc[0]["ToReferenceDate"] == date(2023, 12, 31)
+
+    def test_table_code_preserved_after_fallback(self, session, setup_table_codes_data):
+        """Test that TableCode column is preserved after fallback."""
+        result = ModuleVersion.get_from_table_codes(
+            session,
+            table_codes=[setup_table_codes_data["table_code"]],
+            release_id=503,
+        )
+
+        assert not result.empty
+        # TableCode should still be the original
+        assert result.iloc[0]["TableCode"] == setup_table_codes_data["table_code"]
+
+
+# Tests for get_precondition_module_versions fallback behavior
+class TestGetPreconditionModuleVersionsFallback:
+    """Tests for fallback behavior in get_precondition_module_versions()"""
+
+    @pytest.fixture
+    def setup_precondition_data(self, session):
+        """Create test data including variables and module parameters."""
+        from datetime import date
+
+        # Create releases
+        release_ids = [601, 602, 603]
+        for rid in release_ids:
+            existing = session.query(Release).filter(Release.releaseid == rid).first()
+            if not existing:
+                session.add(Release(releaseid=rid, code=f"R{rid}"))
+        session.flush()
+
+        # Check if module already exists
+        module = session.query(Module).filter(Module.moduleid == 601).first()
+        if not module:
+            module = Module(moduleid=601)
+            session.add(module)
+            session.flush()
+
+        # Check if variable already exists
+        variable = session.query(Variable).filter(Variable.variableid == 601).first()
+        if not variable:
+            variable = Variable(variableid=601, type="Filing Indicator")
+            session.add(variable)
+            session.flush()
+
+        # Check if variable version already exists
+        vv = (
+            session.query(VariableVersion)
+            .filter(VariableVersion.variablevid == 601)
+            .first()
+        )
+        if not vv:
+            vv = VariableVersion(
+                variablevid=601,
+                variableid=601,
+                code="FI_TEST_001",
+                startreleaseid=601,
+            )
+            session.add(vv)
+            session.flush()
+
+        # Check if module versions already exist
+        mv_previous = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 8000).first()
+        )
+        if not mv_previous:
+            mv_previous = ModuleVersion(
+                modulevid=8000,
+                moduleid=601,
+                code="PRECOND_TEST",
+                startreleaseid=601,
+                endreleaseid=602,
+                fromreferencedate=date(2020, 1, 1),
+                toreferencedate=date(2023, 12, 31),
+                versionnumber="1.0",
+            )
+            session.add(mv_previous)
+
+        mv_current = (
+            session.query(ModuleVersion).filter(ModuleVersion.modulevid == 8001).first()
+        )
+        if not mv_current:
+            mv_current = ModuleVersion(
+                modulevid=8001,
+                moduleid=601,
+                code="PRECOND_TEST",
+                startreleaseid=602,
+                endreleaseid=None,
+                fromreferencedate=date(2024, 1, 1),
+                toreferencedate=date(2024, 1, 1),  # Equal dates
+                versionnumber="2.0",
+            )
+            session.add(mv_current)
+
+        session.flush()
+
+        # Check if module parameter already exists
+        mp = (
+            session.query(ModuleParameters)
+            .filter(
+                ModuleParameters.modulevid == 8001,
+                ModuleParameters.variablevid == 601,
+            )
+            .first()
+        )
+        if not mp:
+            mp = ModuleParameters(modulevid=8001, variablevid=601)
+            session.add(mp)
+
+        session.commit()
+
+        return {
+            "variable_code": "FI_TEST_001",
+            "variable_vid": 601,
+            "previous_mv": mv_previous,
+            "current_mv": mv_current,
+        }
+
+    def test_fallback_when_dates_equal(self, session, setup_precondition_data):
+        """Test that previous module version is returned when dates are equal."""
+        from datetime import date
+
+        result = ModuleVersion.get_precondition_module_versions(
+            session,
+            precondition_items=[setup_precondition_data["variable_code"]],
+            release_id=603,
+        )
+
+        assert not result.empty
+        assert len(result) == 1
+        # Should have been replaced with previous version
+        assert result.iloc[0]["ModuleVID"] == 8000
+        assert result.iloc[0]["FromReferenceDate"] == date(2020, 1, 1)
+        assert result.iloc[0]["ToReferenceDate"] == date(2023, 12, 31)
+
+    def test_code_preserved_after_fallback(self, session, setup_precondition_data):
+        """Test that Code (VariableVersion code) is preserved after fallback."""
+        result = ModuleVersion.get_precondition_module_versions(
+            session,
+            precondition_items=[setup_precondition_data["variable_code"]],
+            release_id=603,
+        )
+
+        assert not result.empty
+        # Code should still be the original variable version code
+        assert result.iloc[0]["Code"] == setup_precondition_data["variable_code"]
