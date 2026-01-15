@@ -93,11 +93,10 @@ class OperationScopeService:
             if table_codes:
                 unique_operands_number = len(table_codes) + len(precondition_items)
 
-                # Categorize modules by lifecycle: starting vs ending in this release
-                starting_modules = (
-                    {}
-                )  # Modules that START in this release (replacements)
-                ending_modules = {}  # Modules that END in this release (being replaced)
+                # First pass: categorize modules by table code and lifecycle
+                # We track lifecycle to handle version transitions within the SAME module
+                starting_by_code = {}  # table_code -> [module_vids that START in this release]
+                ending_by_code = {}  # table_code -> [module_vids that END or are active]
 
                 for module_vid, group_df in modules_info_dataframe.groupby(MODULE_VID):
                     table_codes_in_module = (
@@ -115,31 +114,55 @@ class OperationScopeService:
                     end_release = group_df["EndReleaseID"].values[0]
 
                     # Determine if this is a "new" module starting in this release
-                    # or an "old" module ending in this release
                     is_starting = start_release == release_id
-                    is_ending = end_release == release_id or end_release == float(
-                        release_id
-                    )
 
                     if len(table_codes_in_module) == unique_operands_number:
                         # Intra-module: include ALL modules active in the release
-                        # (don't filter by lifecycle - that's only for cross-module)
                         intra_modules.append(module_vid)
                     else:
-                        # For cross-module, group by table code AND lifecycle stage
-                        target_dict = (
-                            starting_modules if is_starting else ending_modules
-                        )
+                        # Track modules by table code and lifecycle
                         for table_code in table_codes_in_module:
-                            if table_code not in target_dict:
-                                target_dict[table_code] = []
-                            target_dict[table_code].append(module_vid)
+                            if is_starting:
+                                if table_code not in starting_by_code:
+                                    starting_by_code[table_code] = []
+                                starting_by_code[table_code].append(module_vid)
+                            else:
+                                if table_code not in ending_by_code:
+                                    ending_by_code[table_code] = []
+                                ending_by_code[table_code].append(module_vid)
 
-                # Process cross-module scopes separately for each generation
-                if starting_modules:
-                    cross_modules["_starting"] = starting_modules
-                if ending_modules:
-                    cross_modules["_ending"] = ending_modules
+                # Second pass: determine if lifecycle separation is needed
+                # Only separate if a table code has modules in BOTH starting and ending
+                # (indicating a version transition for that table)
+                needs_lifecycle_separation = any(
+                    code in starting_by_code and code in ending_by_code
+                    for code in set(starting_by_code.keys()) | set(ending_by_code.keys())
+                )
+
+                if needs_lifecycle_separation:
+                    # Separate into starting and ending scopes
+                    starting_modules = {}
+                    ending_modules = {}
+                    for code, vids in starting_by_code.items():
+                        starting_modules[code] = vids
+                    for code, vids in ending_by_code.items():
+                        ending_modules[code] = vids
+                    if starting_modules:
+                        cross_modules["_starting"] = starting_modules
+                    if ending_modules:
+                        cross_modules["_ending"] = ending_modules
+                else:
+                    # No version transitions - combine all modules by table code
+                    all_by_code = {}
+                    for code, vids in starting_by_code.items():
+                        if code not in all_by_code:
+                            all_by_code[code] = []
+                        all_by_code[code].extend(vids)
+                    for code, vids in ending_by_code.items():
+                        if code not in all_by_code:
+                            all_by_code[code] = []
+                        all_by_code[code].extend(vids)
+                    cross_modules = all_by_code
             else:
                 # Original logic for table VIDs
                 unique_operands_number = len(tables_vids) + len(precondition_items)
