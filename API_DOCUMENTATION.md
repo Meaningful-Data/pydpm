@@ -623,6 +623,61 @@ pydpm calculate-scopes "<expression>"
 
 ## Data Models
 
+### ModuleVersion
+
+The `ModuleVersion` model represents a version of a module in the DPM data dictionary.
+
+#### Class Methods
+
+##### `ModuleVersion.get_from_release_id(session, release_id, module_id=None, module_code=None)`
+
+Get the module version applicable to a given release for a specific module.
+
+**Parameters:**
+- `session`: SQLAlchemy session
+- `release_id` (int): The release ID to filter for
+- `module_id` (Optional[int]): Module ID to filter by (mutually exclusive with `module_code`)
+- `module_code` (Optional[str]): Module code to filter by (mutually exclusive with `module_id`)
+
+**Returns:**
+- `ModuleVersion`: The applicable module version instance, or `None` if not found
+
+**Raises:**
+- `ValueError`: If neither `module_id` nor `module_code` is provided, or if both are provided
+
+**Special Behavior:**
+If the resulting module version has `fromreferencedate == toreferencedate`, the method returns the previous module version for the same module instead. This handles cases where a module version has an empty date range and the previous version should be used.
+
+This serves to manage those dummy modules versions for which the FromReferenceDate = ToReferenceDate, which in practice do not exist.
+
+**Example:**
+```python
+from py_dpm.dpm.models import ModuleVersion
+from sqlalchemy.orm import Session
+
+# Get module version by module_code
+module_version = ModuleVersion.get_from_release_id(
+    session,
+    release_id=4,
+    module_code="FINREP9"
+)
+
+if module_version:
+    print(f"Module: {module_version.code}")
+    print(f"Start Release: {module_version.start_release.releaseid}")
+    print(f"From Date: {module_version.fromreferencedate}")
+    print(f"To Date: {module_version.toreferencedate}")
+
+# Get module version by module_id
+module_version = ModuleVersion.get_from_release_id(
+    session,
+    release_id=4,
+    module_id=123
+)
+```
+
+---
+
 ### Common Data Types
 
 Located in `py_dpm.api.dpm.types`:

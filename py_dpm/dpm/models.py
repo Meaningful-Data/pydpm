@@ -720,16 +720,20 @@ class ModuleVersion(Base):
             release_id: Optional release ID to filter modules by release range
 
         Returns:
-            pandas DataFrame with columns: ModuleVID, TableVID (as VARIABLE_VID),
-            FromReferenceDate, ToReferenceDate, EndReleaseID
+            pandas DataFrame with columns: ModuleVID, TableVID (as variable_vid),
+            ModuleCode, VersionNumber, FromReferenceDate, ToReferenceDate,
+            StartReleaseID, EndReleaseID
         """
         if not tables_vids:
             return pd.DataFrame(
                 columns=[
                     "ModuleVID",
                     "variable_vid",
+                    "ModuleCode",
+                    "VersionNumber",
                     "FromReferenceDate",
                     "ToReferenceDate",
+                    "StartReleaseID",
                     "EndReleaseID",
                 ]
             )
@@ -738,8 +742,11 @@ class ModuleVersion(Base):
             session.query(
                 cls.modulevid.label("ModuleVID"),
                 ModuleVersionComposition.tablevid.label("variable_vid"),
+                cls.code.label("ModuleCode"),
+                cls.versionnumber.label("VersionNumber"),
                 cls.fromreferencedate.label("FromReferenceDate"),
                 cls.toreferencedate.label("ToReferenceDate"),
+                cls.startreleaseid.label("StartReleaseID"),
                 cls.endreleaseid.label("EndReleaseID"),
             )
             .join(
@@ -759,16 +766,20 @@ class ModuleVersion(Base):
             )
 
         results = query.all()
-        return pd.DataFrame(
+        df = pd.DataFrame(
             results,
             columns=[
                 "ModuleVID",
                 "variable_vid",
+                "ModuleCode",
+                "VersionNumber",
                 "FromReferenceDate",
                 "ToReferenceDate",
+                "StartReleaseID",
                 "EndReleaseID",
             ],
         )
+        return cls._apply_fallback_for_equal_dates(session, df)
 
     @classmethod
     def get_from_table_codes(cls, session, table_codes, release_id=None):
@@ -790,6 +801,8 @@ class ModuleVersion(Base):
                 columns=[
                     "ModuleVID",
                     "variable_vid",
+                    "ModuleCode",
+                    "VersionNumber",
                     "FromReferenceDate",
                     "ToReferenceDate",
                     "StartReleaseID",
@@ -804,6 +817,8 @@ class ModuleVersion(Base):
             session.query(
                 cls.modulevid.label("ModuleVID"),
                 ModuleVersionComposition.tablevid.label("variable_vid"),
+                cls.code.label("ModuleCode"),
+                cls.versionnumber.label("VersionNumber"),
                 cls.fromreferencedate.label("FromReferenceDate"),
                 cls.toreferencedate.label("ToReferenceDate"),
                 cls.startreleaseid.label("StartReleaseID"),
@@ -831,11 +846,13 @@ class ModuleVersion(Base):
             )
 
         results = query.all()
-        return pd.DataFrame(
+        df = pd.DataFrame(
             results,
             columns=[
                 "ModuleVID",
                 "variable_vid",
+                "ModuleCode",
+                "VersionNumber",
                 "FromReferenceDate",
                 "ToReferenceDate",
                 "StartReleaseID",
@@ -843,6 +860,7 @@ class ModuleVersion(Base):
                 "TableCode",
             ],
         )
+        return cls._apply_fallback_for_equal_dates(session, df)
 
     @classmethod
     def get_precondition_module_versions(
@@ -857,16 +875,21 @@ class ModuleVersion(Base):
             release_id: Optional release ID to filter modules by release range
 
         Returns:
-            pandas DataFrame with columns: ModuleVID, VariableVID (as VARIABLE_VID),
-            FromReferenceDate, ToReferenceDate, Code
+            pandas DataFrame with columns: ModuleVID, variable_vid (VariableVID),
+            ModuleCode, VersionNumber, FromReferenceDate, ToReferenceDate,
+            StartReleaseID, EndReleaseID, Code
         """
         if not precondition_items:
             return pd.DataFrame(
                 columns=[
                     "ModuleVID",
                     "variable_vid",
+                    "ModuleCode",
+                    "VersionNumber",
                     "FromReferenceDate",
                     "ToReferenceDate",
+                    "StartReleaseID",
+                    "EndReleaseID",
                     "Code",
                 ]
             )
@@ -875,8 +898,12 @@ class ModuleVersion(Base):
             session.query(
                 cls.modulevid.label("ModuleVID"),
                 VariableVersion.variablevid.label("variable_vid"),
+                cls.code.label("ModuleCode"),
+                cls.versionnumber.label("VersionNumber"),
                 cls.fromreferencedate.label("FromReferenceDate"),
                 cls.toreferencedate.label("ToReferenceDate"),
+                cls.startreleaseid.label("StartReleaseID"),
+                cls.endreleaseid.label("EndReleaseID"),
                 VariableVersion.code.label("Code"),
             )
             .join(ModuleParameters, cls.modulevid == ModuleParameters.modulevid)
@@ -899,16 +926,21 @@ class ModuleVersion(Base):
             )
 
         results = query.all()
-        return pd.DataFrame(
+        df = pd.DataFrame(
             results,
             columns=[
                 "ModuleVID",
                 "variable_vid",
+                "ModuleCode",
+                "VersionNumber",
                 "FromReferenceDate",
                 "ToReferenceDate",
+                "StartReleaseID",
+                "EndReleaseID",
                 "Code",
             ],
         )
+        return cls._apply_fallback_for_equal_dates(session, df)
 
     @classmethod
     def get_module_version_by_vid(cls, session, vid):
@@ -945,6 +977,170 @@ class ModuleVersion(Base):
                 "EndReleaseID",
             ],
         )
+
+    @classmethod
+    def _apply_fallback_for_equal_dates(cls, session, df, module_vid_col="ModuleVID"):
+        """
+        Apply fallback logic for rows where FromReferenceDate == ToReferenceDate.
+
+        For each such row, find the previous module version (same moduleid,
+        highest startreleaseid less than current) and replace module-specific
+        columns while preserving association columns (variable_vid, TableCode, Code).
+
+        Args:
+            session: SQLAlchemy session
+            df: pandas DataFrame with module version data
+            module_vid_col: Column name for module version ID (default: "ModuleVID")
+
+        Returns:
+            pandas DataFrame with fallback logic applied
+        """
+        if df.empty:
+            return df
+
+        # Identify rows needing fallback
+        mask = df["FromReferenceDate"] == df["ToReferenceDate"]
+        rows_needing_fallback = df[mask]
+
+        if rows_needing_fallback.empty:
+            return df
+
+        # Get unique ModuleVIDs that need fallback
+        module_vids_needing_fallback = (
+            rows_needing_fallback[module_vid_col].unique().tolist()
+        )
+
+        # Batch query: get module info (moduleid, startreleaseid) for affected rows
+        current_modules = (
+            session.query(
+                cls.modulevid,
+                cls.moduleid,
+                cls.startreleaseid,
+            )
+            .filter(cls.modulevid.in_(module_vids_needing_fallback))
+            .all()
+        )
+
+        # Build mapping: current_modulevid -> (moduleid, startreleaseid)
+        current_module_info = {
+            row.modulevid: (row.moduleid, row.startreleaseid) for row in current_modules
+        }
+
+        # Get all potential previous versions for the affected modules
+        unique_module_ids = list(set(info[0] for info in current_module_info.values()))
+
+        previous_versions_query = (
+            session.query(cls)
+            .filter(cls.moduleid.in_(unique_module_ids))
+            .order_by(cls.moduleid, cls.startreleaseid.desc())
+            .all()
+        )
+
+        # Build lookup: moduleid -> list of versions sorted by startreleaseid desc
+        versions_by_moduleid = {}
+        for mv in previous_versions_query:
+            if mv.moduleid not in versions_by_moduleid:
+                versions_by_moduleid[mv.moduleid] = []
+            versions_by_moduleid[mv.moduleid].append(mv)
+
+        # For each current modulevid, find the previous version
+        replacement_map = {}  # current_modulevid -> previous_moduleversion
+        for current_vid, (moduleid, current_startreleaseid) in current_module_info.items():
+            versions = versions_by_moduleid.get(moduleid, [])
+            for mv in versions:
+                if mv.startreleaseid < current_startreleaseid:
+                    replacement_map[current_vid] = mv
+                    break  # Already sorted desc, so first match is highest
+
+        # Apply replacements to DataFrame
+        if not replacement_map:
+            return df
+
+        # Create a copy to avoid modifying original
+        result_df = df.copy()
+
+        for idx, row in result_df.iterrows():
+            if row["FromReferenceDate"] == row["ToReferenceDate"]:
+                current_vid = row[module_vid_col]
+                if current_vid in replacement_map:
+                    prev_mv = replacement_map[current_vid]
+                    result_df.at[idx, "ModuleVID"] = prev_mv.modulevid
+                    result_df.at[idx, "ModuleCode"] = prev_mv.code
+                    result_df.at[idx, "VersionNumber"] = prev_mv.versionnumber
+                    result_df.at[idx, "FromReferenceDate"] = prev_mv.fromreferencedate
+                    result_df.at[idx, "ToReferenceDate"] = prev_mv.toreferencedate
+                    if "StartReleaseID" in result_df.columns:
+                        result_df.at[idx, "StartReleaseID"] = prev_mv.startreleaseid
+                    if "EndReleaseID" in result_df.columns:
+                        result_df.at[idx, "EndReleaseID"] = prev_mv.endreleaseid
+
+        return result_df
+
+    @classmethod
+    def get_from_release_id(
+        cls, session, release_id, module_id=None, module_code=None
+    ):
+        """
+        Get the module version applicable to a given release for a specific module.
+
+        If the resulting module version has fromreferencedate == toreferencedate,
+        the previous module version for the same module is returned instead.
+
+        Args:
+            session: SQLAlchemy session
+            release_id: The release ID to filter for
+            module_id: Optional module ID (mutually exclusive with module_code)
+            module_code: Optional module code (mutually exclusive with module_id)
+
+        Returns:
+            ModuleVersion instance or None if not found
+
+        Raises:
+            ValueError: If neither module_id nor module_code is provided,
+                        or if both are provided
+        """
+        if module_id is None and module_code is None:
+            raise ValueError("Either module_id or module_code must be provided.")
+        if module_id is not None and module_code is not None:
+            raise ValueError(
+                "Specify only one of module_id or module_code, not both."
+            )
+
+        # Build the base query with release filtering
+        query = session.query(cls).filter(
+            and_(
+                cls.startreleaseid <= release_id,
+                or_(cls.endreleaseid > release_id, cls.endreleaseid.is_(None)),
+            )
+        )
+
+        # Apply module filter
+        if module_id is not None:
+            query = query.filter(cls.moduleid == module_id)
+        else:  # module_code
+            query = query.filter(cls.code == module_code)
+
+        module_version = query.first()
+
+        if module_version is None:
+            return None
+
+        # Check if fromreferencedate == toreferencedate
+        if module_version.fromreferencedate == module_version.toreferencedate:
+            # Get the previous module version for the same module
+            prev_query = (
+                session.query(cls)
+                .filter(
+                    cls.moduleid == module_version.moduleid,
+                    cls.startreleaseid < module_version.startreleaseid,
+                )
+                .order_by(cls.startreleaseid.desc())
+            )
+            prev_module_version = prev_query.first()
+            if prev_module_version:
+                return prev_module_version
+
+        return module_version
 
     @classmethod
     def get_last_release(cls, session):
@@ -1118,6 +1314,60 @@ class OperationScope(Base):
     operation_scope_compositions = relationship(
         "OperationScopeComposition", back_populates="operation_scope"
     )
+
+    def to_dict(self):
+        """
+        Convert the operation scope to a dictionary representation.
+
+        Returns:
+            dict: A dictionary with module codes as keys and module details as values.
+                  Format: {
+                      "<module_code>": {
+                          "module_version_number": <versionnumber>,
+                          "from_reference_date": <fromreferencedate>,
+                          "to_reference_date": <toreferencedate>
+                      },
+                      ...
+                  }
+        """
+        from sqlalchemy.orm import object_session
+
+        def format_date(date_value):
+            """Format date to string (YYYY-MM-DD) or None if NaT/None."""
+            if date_value is None:
+                return None
+            if pd.isna(date_value):
+                return None
+            if hasattr(date_value, "strftime"):
+                return date_value.strftime("%Y-%m-%d")
+            return str(date_value)
+
+        result = {}
+        for composition in self.operation_scope_compositions:
+            # For new/proposed scopes, use transient _module_info attribute
+            if hasattr(composition, "_module_info") and composition._module_info:
+                info = composition._module_info
+                result[info["code"]] = {
+                    "module_version_number": info["version_number"],
+                    "from_reference_date": format_date(info["from_reference_date"]),
+                    "to_reference_date": format_date(info["to_reference_date"]),
+                }
+            else:
+                # For existing scopes from DB, use relationship or query
+                module_version = composition.module_version
+                if module_version is None:
+                    session = object_session(self)
+                    if session is not None:
+                        module_version = session.query(ModuleVersion).filter(
+                            ModuleVersion.modulevid == composition.modulevid
+                        ).first()
+                if module_version is not None:
+                    result[module_version.code] = {
+                        "module_version_number": module_version.versionnumber,
+                        "from_reference_date": format_date(module_version.fromreferencedate),
+                        "to_reference_date": format_date(module_version.toreferencedate),
+                    }
+        return result
 
 
 class OperationScopeComposition(Base):

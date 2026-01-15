@@ -71,9 +71,19 @@ class OperationScopeService:
         if len(modules_info_dataframe) == 1:
             module_vid = modules_vids[0]
             from_date = modules_info_dataframe["FromReferenceDate"].values[0]
+            to_date = modules_info_dataframe["ToReferenceDate"].values[0]
+            module_code = modules_info_dataframe["ModuleCode"].values[0]
+            version_number = modules_info_dataframe["VersionNumber"].values[0]
             operation_scope = self.create_operation_scope(from_date)
             self.create_operation_scope_composition(
-                operation_scope=operation_scope, module_vid=module_vid
+                operation_scope=operation_scope,
+                module_vid=module_vid,
+                module_info={
+                    "code": module_code,
+                    "version_number": version_number,
+                    "from_reference_date": from_date,
+                    "to_reference_date": to_date,
+                },
             )
         else:
             intra_modules = []
@@ -83,11 +93,10 @@ class OperationScopeService:
             if table_codes:
                 unique_operands_number = len(table_codes) + len(precondition_items)
 
-                # Categorize modules by lifecycle: starting vs ending in this release
-                starting_modules = (
-                    {}
-                )  # Modules that START in this release (replacements)
-                ending_modules = {}  # Modules that END in this release (being replaced)
+                # First pass: categorize modules by table code and lifecycle
+                # We track lifecycle to handle version transitions within the SAME module
+                starting_by_code = {}  # table_code -> [module_vids that START in this release]
+                ending_by_code = {}  # table_code -> [module_vids that END or are active]
 
                 for module_vid, group_df in modules_info_dataframe.groupby(MODULE_VID):
                     table_codes_in_module = (
@@ -105,31 +114,55 @@ class OperationScopeService:
                     end_release = group_df["EndReleaseID"].values[0]
 
                     # Determine if this is a "new" module starting in this release
-                    # or an "old" module ending in this release
                     is_starting = start_release == release_id
-                    is_ending = end_release == release_id or end_release == float(
-                        release_id
-                    )
 
                     if len(table_codes_in_module) == unique_operands_number:
                         # Intra-module: include ALL modules active in the release
-                        # (don't filter by lifecycle - that's only for cross-module)
                         intra_modules.append(module_vid)
                     else:
-                        # For cross-module, group by table code AND lifecycle stage
-                        target_dict = (
-                            starting_modules if is_starting else ending_modules
-                        )
+                        # Track modules by table code and lifecycle
                         for table_code in table_codes_in_module:
-                            if table_code not in target_dict:
-                                target_dict[table_code] = []
-                            target_dict[table_code].append(module_vid)
+                            if is_starting:
+                                if table_code not in starting_by_code:
+                                    starting_by_code[table_code] = []
+                                starting_by_code[table_code].append(module_vid)
+                            else:
+                                if table_code not in ending_by_code:
+                                    ending_by_code[table_code] = []
+                                ending_by_code[table_code].append(module_vid)
 
-                # Process cross-module scopes separately for each generation
-                if starting_modules:
-                    cross_modules["_starting"] = starting_modules
-                if ending_modules:
-                    cross_modules["_ending"] = ending_modules
+                # Second pass: determine if lifecycle separation is needed
+                # Only separate if a table code has modules in BOTH starting and ending
+                # (indicating a version transition for that table)
+                needs_lifecycle_separation = any(
+                    code in starting_by_code and code in ending_by_code
+                    for code in set(starting_by_code.keys()) | set(ending_by_code.keys())
+                )
+
+                if needs_lifecycle_separation:
+                    # Separate into starting and ending scopes
+                    starting_modules = {}
+                    ending_modules = {}
+                    for code, vids in starting_by_code.items():
+                        starting_modules[code] = vids
+                    for code, vids in ending_by_code.items():
+                        ending_modules[code] = vids
+                    if starting_modules:
+                        cross_modules["_starting"] = starting_modules
+                    if ending_modules:
+                        cross_modules["_ending"] = ending_modules
+                else:
+                    # No version transitions - combine all modules by table code
+                    all_by_code = {}
+                    for code, vids in starting_by_code.items():
+                        if code not in all_by_code:
+                            all_by_code[code] = []
+                        all_by_code[code].extend(vids)
+                    for code, vids in ending_by_code.items():
+                        if code not in all_by_code:
+                            all_by_code[code] = []
+                        all_by_code[code].extend(vids)
+                    cross_modules = all_by_code
             else:
                 # Original logic for table VIDs
                 unique_operands_number = len(tables_vids) + len(precondition_items)
@@ -268,12 +301,21 @@ class OperationScopeService:
         :param modules_vids: list with module version ids
         """
         for module_vid in modules_vids:
-            from_date = modules_info[modules_info["ModuleVID"] == module_vid][
-                "FromReferenceDate"
-            ].values[0]
+            module_row = modules_info[modules_info["ModuleVID"] == module_vid].iloc[0]
+            from_date = module_row["FromReferenceDate"]
+            to_date = module_row["ToReferenceDate"]
+            module_code = module_row["ModuleCode"]
+            version_number = module_row["VersionNumber"]
             operation_scope = self.create_operation_scope(from_date)
             self.create_operation_scope_composition(
-                operation_scope=operation_scope, module_vid=module_vid
+                operation_scope=operation_scope,
+                module_vid=module_vid,
+                module_info={
+                    "code": module_code,
+                    "version_number": version_number,
+                    "from_reference_date": from_date,
+                    "to_reference_date": to_date,
+                },
             )
 
     def process_cross_module(self, cross_modules, modules_dataframe):
@@ -313,8 +355,18 @@ class OperationScopeService:
             operation_scope = self.create_operation_scope(from_submission_date)
             combination = set(combination)
             for module in combination:
+                module_row = modules_dataframe[
+                    modules_dataframe[MODULE_VID] == module
+                ].iloc[0]
                 self.create_operation_scope_composition(
-                    operation_scope=operation_scope, module_vid=module
+                    operation_scope=operation_scope,
+                    module_vid=module,
+                    module_info={
+                        "code": module_row["ModuleCode"],
+                        "version_number": module_row["VersionNumber"],
+                        "from_reference_date": module_row[FROM_REFERENCE_DATE],
+                        "to_reference_date": module_row[TO_REFERENCE_DATE],
+                    },
                 )
 
     def create_operation_scope(self, submission_date):
@@ -340,17 +392,21 @@ class OperationScopeService:
         self.session.add(operation_scope)
         return operation_scope
 
-    def create_operation_scope_composition(self, operation_scope, module_vid):
+    def create_operation_scope_composition(self, operation_scope, module_vid, module_info=None):
         """
         Method to populate OperationScopeComposition table
         :param operation_scope: Operation scope data
         :param module_vid: Module version id
+        :param module_info: Optional dict with module info (code, from_reference_date, to_reference_date)
         """
         operation_scope_composition = OperationScopeComposition(
             operation_scope=operation_scope,
             modulevid=module_vid,
             rowguid=str(uuid.uuid4()),
         )
+        # Store module info as transient attribute for to_dict() access
+        if module_info:
+            operation_scope_composition._module_info = module_info
         self.session.add(operation_scope_composition)
 
     def get_scopes_with_status(self):
