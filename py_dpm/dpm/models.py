@@ -1006,9 +1006,10 @@ class ModuleVersion(Base):
             return df
 
         # Get unique ModuleVIDs that need fallback
-        module_vids_needing_fallback = (
-            rows_needing_fallback[module_vid_col].unique().tolist()
-        )
+        # Convert to native Python int to avoid numpy.int64 issues with PostgreSQL
+        module_vids_needing_fallback = [
+            int(vid) for vid in rows_needing_fallback[module_vid_col].unique()
+        ]
 
         # Batch query: get module info (moduleid, startreleaseid) for affected rows
         current_modules = (
@@ -1044,13 +1045,17 @@ class ModuleVersion(Base):
             versions_by_moduleid[mv.moduleid].append(mv)
 
         # For each current modulevid, find the previous version
+        # Skip versions that also have equal dates (ghost modules)
         replacement_map = {}  # current_modulevid -> previous_moduleversion
         for current_vid, (moduleid, current_startreleaseid) in current_module_info.items():
             versions = versions_by_moduleid.get(moduleid, [])
             for mv in versions:
                 if mv.startreleaseid < current_startreleaseid:
-                    replacement_map[current_vid] = mv
-                    break  # Already sorted desc, so first match is highest
+                    # Only use this version if it has different dates
+                    # (skip ghost modules where from == to)
+                    if mv.fromreferencedate != mv.toreferencedate:
+                        replacement_map[current_vid] = mv
+                        break  # Already sorted desc, so first match is highest
 
         # Apply replacements to DataFrame
         if not replacement_map:
@@ -1061,7 +1066,8 @@ class ModuleVersion(Base):
 
         for idx, row in result_df.iterrows():
             if row["FromReferenceDate"] == row["ToReferenceDate"]:
-                current_vid = row[module_vid_col]
+                # Convert to native Python int to match replacement_map keys
+                current_vid = int(row[module_vid_col])
                 if current_vid in replacement_map:
                     prev_mv = replacement_map[current_vid]
                     result_df.at[idx, "ModuleVID"] = prev_mv.modulevid
