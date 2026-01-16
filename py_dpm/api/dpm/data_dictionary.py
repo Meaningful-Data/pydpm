@@ -461,6 +461,7 @@ class DataDictionaryAPI:
                 TableVersion.code.label("table_version_code"),
                 ItemCategory.code.label("property_code"),
                 DataType.name.label("data_type_name"),
+                DataType.code.label("data_type_code"),
             )
             .select_from(DataType)
             .join(Property, DataType.datatypeid == Property.datatypeid)
@@ -498,6 +499,7 @@ class DataDictionaryAPI:
                 "table_version_code": r.table_version_code,
                 "property_code": r.property_code,
                 "data_type_name": r.data_type_name,
+                "data_type_code": r.data_type_code,
             }
             for r in results
         ]

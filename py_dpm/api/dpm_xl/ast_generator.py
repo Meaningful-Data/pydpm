@@ -803,9 +803,22 @@ class ASTGeneratorAPI:
         variables = all_variables
         tables = {}
 
-        # Build tables with their specific variables
+        # Initialize DataDictionaryAPI to query open keys
+        from py_dpm.api.dpm import DataDictionaryAPI
+        data_dict_api = DataDictionaryAPI(
+            database_path=self.database_path,
+            connection_url=self.connection_url
+        )
+
+        # Build tables with their specific variables and open keys
         for table_code, table_variables in variables_by_table.items():
-            tables[table_code] = {"variables": table_variables, "open_keys": {}}
+            # Query open keys for this table
+            open_keys_list = data_dict_api.get_open_keys_for_table(table_code, release_id)
+            open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
+
+            tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+
+        data_dict_api.close()
 
         # Build preconditions
         preconditions = {}
