@@ -213,6 +213,7 @@ class ExplorerQueryAPI:
         row_code: Optional[str] = None,
         column_code: Optional[str] = None,
         sheet_code: Optional[str] = None,
+        module_code: Optional[str] = None,
         release_id: Optional[int] = None,
         release_code: Optional[str] = None,
         date: Optional[str] = None,
@@ -220,7 +221,7 @@ class ExplorerQueryAPI:
         """
         Resolve variable information from a cell address (table/row/column/sheet).
 
-        Row, column and sheet codes are optional and are only used when
+        Row, column, sheet and module codes are optional and are only used when
         provided. Release parameters follow the standard semantics; if none
         are given, only active module versions are considered.
         """
@@ -230,6 +231,7 @@ class ExplorerQueryAPI:
             row_code=row_code,
             column_code=column_code,
             sheet_code=sheet_code,
+            module_code=module_code,
             release_id=release_id,
             release_code=release_code,
             date=date,
