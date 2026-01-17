@@ -169,6 +169,7 @@ class Instance:
                     row_code=None,
                     column_code=None,
                     sheet_code=None,
+                    module_code=instance_json["module_code"],
                     date=ref_period,
                 )
 

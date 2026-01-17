@@ -239,6 +239,7 @@ class ExplorerQuery:
         row_code: Optional[str] = None,
         column_code: Optional[str] = None,
         sheet_code: Optional[str] = None,
+        module_code: Optional[str] = None,
         release_id: Optional[int] = None,
         release_code: Optional[str] = None,
         date: Optional[str] = None,
@@ -326,6 +327,8 @@ class ExplorerQuery:
             q = q.filter(hv_col.code == column_code)
         if sheet_code is not None:
             q = q.filter(hv_sheet.code == sheet_code)
+        if module_code is not None:
+            q = q.filter(ModuleVersion.code == module_code)
 
         # Apply standard release/date filtering on ModuleVersion.
         # For this method, if no release argument is provided, we default
