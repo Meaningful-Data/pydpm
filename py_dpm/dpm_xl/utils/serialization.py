@@ -361,12 +361,14 @@ class ASTToJSONVisitor(NodeVisitor):
             'op': node.op,
             'operand': self.visit(node.operand),
         }
-        # Add grouping_clause if present and has actual components
+        # Always include grouping_clause (null when not present or empty)
+        grouping_clause = None
         if hasattr(node, 'grouping_clause') and node.grouping_clause is not None:
             gc = self.visit(node.grouping_clause)
-            # Only include grouping_clause if it has components
+            # Only set to actual value if it has components
             if gc and gc.get('components'):
-                result['grouping_clause'] = gc
+                grouping_clause = gc
+        result['grouping_clause'] = grouping_clause
         return result
 
     def visit_GroupingClause(self, node):
