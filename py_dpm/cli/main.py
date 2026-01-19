@@ -61,41 +61,41 @@ def migrate_access(access_file: str):
     "--release-id", type=int, help="Release ID to use for validation", default=None
 )
 @click.option(
-    "--dpm-version",
+    "--release-code",
     type=str,
-    help="DPM Version (e.g. 4.2) to use for validation",
+    help="Release code (e.g. 4.2) to use for validation",
     default=None,
 )
-def semantic(expression: str, release_id: int, dpm_version: str):
+def semantic(expression: str, release_id: int, release_code: str):
     """
     Semantically analyses the input expression by applying the syntax validation, the operands checking, the data type
     validation and the structure validation
     :param expression: Expression to be analysed
     :param release_id: ID of the release used. If None, gathers the live release
-    :param dpm_version: Version code of the release used.
+    :param release_code: Version code of the release used.
     Used only in DPM-ML generation
     :return if Return_data is False, any Symbol, else data extracted from DB based on operands cell references
     """
 
-    if release_id is not None and dpm_version is not None:
-        raise click.UsageError("Cannot provide both --release-id and --dpm-version")
+    if release_id is not None and release_code is not None:
+        raise click.UsageError("Cannot provide both --release-id and --release-code")
 
     error_code = ""
     validation_type = STATUS_UNKNOWN
 
     semantic_api = SemanticAPI()
 
-    if dpm_version:
+    if release_code:
         from py_dpm.dpm.models import Release
 
         release_id = (
             semantic_api.session.query(Release.releaseid)
-            .filter(Release.code == dpm_version)
+            .filter(Release.code == release_code)
             .scalar()
         )
         if release_id is None:
             console.print(
-                f"Error: DPM version '{dpm_version}' not found.", style="bold red"
+                f"Error: Release code '{release_code}' not found.", style="bold red"
             )
             sys.exit(1)
 

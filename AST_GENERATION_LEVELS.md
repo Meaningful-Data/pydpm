@@ -134,7 +134,7 @@ from py_dpm.api import ASTGeneratorAPI
 generator = ASTGeneratorAPI(database_path="data.db")
 result = generator.generate_enriched_ast(
     expression="{tC_01.00, r0100, c0010}",
-    dpm_version="4.2",
+    release_code="4.2",
     operation_code="my_validation",
     precondition="{v_F_44_04}"
 )
@@ -248,7 +248,7 @@ print(f"Level 2 - AST keys: {complete['ast'].keys()}")
 # Level 3: Enriched AST (with database + framework)
 enriched = generator_complete.generate_enriched_ast(
     expression,
-    dpm_version="4.2",
+    release_code="4.2",
     operation_code="validation_1"
 )
 print(f"Level 3 - Top-level keys: {enriched['enriched_ast'].keys()}")

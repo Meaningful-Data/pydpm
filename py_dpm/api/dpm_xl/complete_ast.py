@@ -112,7 +112,7 @@ def generate_enriched_ast(
     expression: str,
     database_path: Optional[str] = None,
     connection_url: Optional[str] = None,
-    dpm_version: Optional[str] = None,
+    release_code: Optional[str] = None,
     operation_code: Optional[str] = None,
     table_context: Optional[Dict[str, Any]] = None,
     precondition: Optional[str] = None,
@@ -128,7 +128,7 @@ def generate_enriched_ast(
         expression: DPM-XL expression string
         database_path: Path to SQLite database (or None for PostgreSQL)
         connection_url: PostgreSQL connection URL (takes precedence over database_path)
-        dpm_version: DPM version code (e.g., "4.0", "4.1", "4.2")
+        release_code: DPM release code (e.g., "4.0", "4.1", "4.2")
         operation_code: Optional operation code (defaults to "default_code")
         table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
         precondition: Optional precondition variable reference (e.g., {v_F_44_04})
@@ -151,7 +151,7 @@ def generate_enriched_ast(
     )
     return generator.generate_enriched_ast(
         expression=expression,
-        dpm_version=dpm_version,
+        release_code=release_code,
         operation_code=operation_code,
         table_context=table_context,
         precondition=precondition,
@@ -166,7 +166,7 @@ def enrich_ast_with_metadata(
     context: Optional[Dict[str, Any]],
     database_path: Optional[str] = None,
     connection_url: Optional[str] = None,
-    dpm_version: Optional[str] = None,
+    release_code: Optional[str] = None,
     operation_code: Optional[str] = None,
     precondition: Optional[str] = None,
     release_id: Optional[int] = None,
@@ -183,7 +183,7 @@ def enrich_ast_with_metadata(
         context: Context dict with table, rows, columns, sheets, default, interval
         database_path: Path to SQLite database
         connection_url: PostgreSQL connection URL (takes precedence)
-        dpm_version: DPM version code (e.g., "4.2")
+        release_code: DPM release code (e.g., "4.2")
         operation_code: Operation code (defaults to "default_code")
         precondition: Precondition variable reference (e.g., {v_F_44_04})
         release_id: Optional release ID to filter database lookups
@@ -201,7 +201,7 @@ def enrich_ast_with_metadata(
         ast_dict=ast_dict,
         expression=expression,
         context=context,
-        dpm_version=dpm_version,
+        release_code=release_code,
         operation_code=operation_code,
         precondition=precondition,
         release_id=release_id,
