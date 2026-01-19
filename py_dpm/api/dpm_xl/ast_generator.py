@@ -1465,10 +1465,18 @@ class ASTGeneratorAPI:
             # Group external tables by module
             # If preferred_module_dependencies is set, only include those modules
             external_modules = {}
+
+            # TEMPORARY WORKAROUND: Also collect primary module tables to add to dependency_modules
+            # This is conceptually wrong but required for current implementation.
+            # See /docs/dependency_modules_main_tables_workaround.md for how to revert this.
+            primary_module_tables = []
+
             for table_info in tables_with_modules:
                 module_vid = table_info.get("module_vid")
                 if module_vid == primary_module_vid:
-                    continue  # Skip primary module
+                    # Collect primary module tables for later inclusion in dependency_modules
+                    primary_module_tables.append(table_info)
+                    continue  # Skip for now, will add later
 
                 ext_module_code = table_info.get("module_code")
                 if not ext_module_code:
@@ -1516,6 +1524,21 @@ class ASTGeneratorAPI:
                         "open_keys": {}
                     }
                     external_modules[module_uri]["variables"].update(table_variables)
+
+            # TEMPORARY WORKAROUND: Add primary module tables to each dependency module entry
+            # This includes main module tables/variables in dependency_modules for cross-module validations
+            # See /docs/dependency_modules_main_tables_workaround.md for how to revert this.
+            for uri in external_modules:
+                for table_info in primary_module_tables:
+                    table_code = table_info.get("code")
+                    if table_code:
+                        table_vid = table_info.get("table_vid")
+                        table_variables = get_table_variables(table_code, table_vid)
+                        external_modules[uri]["tables"][table_code] = {
+                            "variables": table_variables,
+                            "open_keys": {}
+                        }
+                        external_modules[uri]["variables"].update(table_variables)
 
             # Get date info from scopes metadata
             scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
