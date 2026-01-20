@@ -12,7 +12,6 @@ from py_dpm.api.dpm_xl import (
     ASTGeneratorAPI,
     OperationScopesAPI,
     generate_complete_ast,
-    generate_complete_batch,
     generate_enriched_ast,
     enrich_ast_with_metadata,
     parse_with_data_fields,
@@ -43,7 +42,6 @@ __all__ = [
     "OperationScopesAPI",
     # Complete AST functions (backwards compatibility)
     "generate_complete_ast",
-    "generate_complete_batch",
     "generate_enriched_ast",
     "enrich_ast_with_metadata",
     "parse_with_data_fields",

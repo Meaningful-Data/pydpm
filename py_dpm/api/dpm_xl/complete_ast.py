@@ -12,7 +12,7 @@ For new code, prefer using ASTGeneratorAPI directly:
     result = generator.generate_complete_ast(expression)
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union, Tuple
 from py_dpm.api.dpm_xl.ast_generator import ASTGeneratorAPI
 
 
@@ -44,35 +44,6 @@ def generate_complete_ast(
         enable_semantic_validation=True
     )
     return generator.generate_complete_ast(expression, release_id=release_id)
-
-
-def generate_complete_batch(
-    expressions: list,
-    database_path: str = None,
-    connection_url: str = None,
-    release_id: Optional[int] = None,
-):
-    """
-    Generate complete ASTs for multiple expressions.
-
-    This function delegates to ASTGeneratorAPI for backwards compatibility.
-
-    Args:
-        expressions: List of DPM-XL expression strings
-        database_path: Path to SQLite database file
-        connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
-        release_id: Optional release ID to filter database lookups by specific release.
-            If None, uses all available data (release-agnostic).
-
-    Returns:
-        list: List of result dictionaries
-    """
-    generator = ASTGeneratorAPI(
-        database_path=database_path,
-        connection_url=connection_url,
-        enable_semantic_validation=True
-    )
-    return generator.generate_complete_batch(expressions, release_id=release_id)
 
 
 # Convenience function with cleaner interface
@@ -109,33 +80,42 @@ def parse_with_data_fields(
 
 
 def generate_enriched_ast(
-    expression: str,
+    expressions: Union[str, List[Tuple[str, str, Optional[str]]]],
     database_path: Optional[str] = None,
     connection_url: Optional[str] = None,
     release_code: Optional[str] = None,
-    operation_code: Optional[str] = None,
     table_context: Optional[Dict[str, Any]] = None,
-    precondition: Optional[str] = None,
     release_id: Optional[int] = None,
     primary_module_vid: Optional[int] = None,
+    module_code: Optional[str] = None,
+    preferred_module_dependencies: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Generate enriched, engine-ready AST from DPM-XL expression.
+    Generate enriched, engine-ready AST from DPM-XL expression(s).
 
     This function delegates to ASTGeneratorAPI for backwards compatibility.
 
+    Supports both single expressions (for backward compatibility) and multiple
+    expression/operation/precondition tuples for generating scripts with multiple operations.
+
     Args:
-        expression: DPM-XL expression string
+        expressions: Either a single DPM-XL expression string (backward compatible),
+            or a list of tuples: [(expression, operation_code, precondition), ...].
+            Each tuple contains:
+            - expression (str): The DPM-XL expression (required)
+            - operation_code (str): The operation code (required)
+            - precondition (Optional[str]): Optional precondition reference (e.g., {v_F_44_04})
         database_path: Path to SQLite database (or None for PostgreSQL)
         connection_url: PostgreSQL connection URL (takes precedence over database_path)
         release_code: DPM release code (e.g., "4.0", "4.1", "4.2")
-        operation_code: Optional operation code (defaults to "default_code")
         table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
-        precondition: Optional precondition variable reference (e.g., {v_F_44_04})
         release_id: Optional release ID to filter database lookups by specific release.
             If None, uses all available data (release-agnostic).
         primary_module_vid: Optional module version ID of the module being exported.
             When provided, enables detection of cross-module dependencies.
+        module_code: Optional module code (e.g., "FINREP9") to specify the main module.
+        preferred_module_dependencies: Optional list of module codes to prefer when
+            multiple dependency scopes are possible.
 
     Returns:
         dict: {
@@ -143,6 +123,25 @@ def generate_enriched_ast(
             'enriched_ast': dict,  # Engine-ready AST with framework structure
             'error': str           # Error message if failed
         }
+
+    Example:
+        >>> # Single expression (backward compatible)
+        >>> result = generate_enriched_ast(
+        ...     "{tF_01.00, r0010, c0010}",
+        ...     database_path="data.db",
+        ...     release_code="4.2",
+        ... )
+        >>>
+        >>> # Multiple expressions
+        >>> result = generate_enriched_ast(
+        ...     [
+        ...         ("{tF_01.00, r0010, c0010} = 0", "v1234_m", None),
+        ...         ("{tF_01.00, r0020, c0010} > 0", "v1235_m", "{v_F_44_04}"),
+        ...     ],
+        ...     database_path="data.db",
+        ...     release_code="4.2",
+        ...     module_code="FINREP9",
+        ... )
     """
     generator = ASTGeneratorAPI(
         database_path=database_path,
@@ -150,13 +149,13 @@ def generate_enriched_ast(
         enable_semantic_validation=True
     )
     return generator.generate_enriched_ast(
-        expression=expression,
+        expressions=expressions,
         release_code=release_code,
-        operation_code=operation_code,
         table_context=table_context,
-        precondition=precondition,
         release_id=release_id,
         primary_module_vid=primary_module_vid,
+        module_code=module_code,
+        preferred_module_dependencies=preferred_module_dependencies,
     )
 
 
