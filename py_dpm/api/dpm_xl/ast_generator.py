@@ -974,7 +974,8 @@ class ASTGeneratorAPI:
         all_intra_instance_ops = []
 
         # Track processed preconditions to avoid duplicates
-        processed_preconditions: set = set()
+        # Maps precondition string -> list of precondition keys generated from it
+        processed_preconditions: Dict[str, List[str]] = {}
 
         # Track all tables with their modules for validation
         all_tables_with_modules = []
@@ -1096,13 +1097,14 @@ class ASTGeneratorAPI:
 
                 # Handle precondition (deduplicate by precondition string)
                 if precondition and precondition not in processed_preconditions:
-                    processed_preconditions.add(precondition)
                     preconds, precond_vars = self._build_preconditions(
                         precondition=precondition,
                         context=context,
                         operation_code=operation_code,
                         engine=engine,
                     )
+                    # Track which keys were generated for this precondition string
+                    processed_preconditions[precondition] = list(preconds.keys())
                     # Merge preconditions
                     for precond_key, precond_data in preconds.items():
                         if precond_key not in all_preconditions:
@@ -1113,11 +1115,12 @@ class ASTGeneratorAPI:
                                 all_preconditions[precond_key]["affected_operations"].append(operation_code)
                     all_precondition_variables.update(precond_vars)
                 elif precondition and precondition in processed_preconditions:
-                    # Precondition already processed, just add this operation to affected_operations
-                    for precond_key, precond_data in all_preconditions.items():
-                        # Find the precondition that matches
-                        if operation_code not in precond_data["affected_operations"]:
-                            precond_data["affected_operations"].append(operation_code)
+                    # Precondition already processed, add this operation ONLY to the matching precondition(s)
+                    matching_keys = processed_preconditions[precondition]
+                    for precond_key in matching_keys:
+                        if precond_key in all_preconditions:
+                            if operation_code not in all_preconditions[precond_key]["affected_operations"]:
+                                all_preconditions[precond_key]["affected_operations"].append(operation_code)
 
                 # Detect cross-module dependencies for this expression
                 full_variables_by_table = {
@@ -1522,44 +1525,109 @@ class ASTGeneratorAPI:
         operation_code: str,
         engine,
     ) -> tuple:
-        """Build preconditions and precondition_variables sections."""
+        """Build preconditions and precondition_variables sections.
+
+        Handles both simple preconditions like {v_C_47.00} and compound
+        preconditions like {v_C_01.00} and {v_C_05.01} and {v_C_47.00}.
+
+        For compound preconditions, generates a full AST with BinOp nodes
+        for 'and' operators connecting PreconditionItem nodes.
+        """
         import re
 
         preconditions = {}
         precondition_variables = {}
 
-        # Extract table code from precondition or context
-        table_code = None
+        if not precondition:
+            return preconditions, precondition_variables
 
-        if precondition:
-            # Extract variable code from precondition reference like {v_F_44_04}
-            match = re.match(r"\{v_([^}]+)\}", precondition)
-            if match:
-                table_code = match.group(1)
+        # Extract all table codes from precondition (handles both simple and compound)
+        # Pattern matches {v_TABLE_CODE} references
+        table_matches = re.findall(r"\{v_([^}]+)\}", precondition)
 
-        if table_code:
-            # Query database for actual variable ID and version
+        if not table_matches:
+            return preconditions, precondition_variables
+
+        # Normalize table codes (F_44_04 -> F_44.04)
+        table_codes = [self._normalize_table_code(t) for t in table_matches]
+
+        # Get table info for all tables
+        table_infos = []
+        for table_code in table_codes:
             table_info = self._get_table_info(table_code, engine)
-
             if table_info:
-                precondition_var_id = table_info["table_vid"]
-                version_id = table_info["table_vid"]
-                precondition_code = f"p_{precondition_var_id}"
+                table_infos.append({
+                    "table_code": table_code,
+                    "variable_id": table_info["table_vid"],
+                })
+                # Add to precondition_variables
+                precondition_variables[str(table_info["table_vid"])] = "b"
 
-                preconditions[precondition_code] = {
-                    "ast": {
-                        "class_name": "PreconditionItem",
-                        "variable_id": precondition_var_id,
-                        "variable_code": table_code,
-                    },
-                    "affected_operations": [operation_code],
-                    "version_id": version_id,
-                    "code": precondition_code,
+        if not table_infos:
+            return preconditions, precondition_variables
+
+        # Build the AST based on number of tables
+        if len(table_infos) == 1:
+            # Simple precondition - single PreconditionItem
+            info = table_infos[0]
+            precondition_var_id = info["variable_id"]
+            precondition_code = f"p_{precondition_var_id}"
+
+            preconditions[precondition_code] = {
+                "ast": {
+                    "class_name": "PreconditionItem",
+                    "variable_id": precondition_var_id,
+                    "variable_code": info["table_code"],
+                },
+                "affected_operations": [operation_code],
+                "version_id": precondition_var_id,
+                "code": precondition_code,
+            }
+        else:
+            # Compound precondition - build BinOp tree with 'and' operators
+            # Create a unique key based on sorted variable IDs
+            sorted_var_ids = sorted([info["variable_id"] for info in table_infos])
+            precondition_code = "p_" + "_".join(str(vid) for vid in sorted_var_ids)
+
+            # Build AST: left-associative chain of BinOp 'and' nodes
+            # E.g., for [A, B, C]: ((A and B) and C)
+            ast = self._build_precondition_item_ast(table_infos[0])
+            for info in table_infos[1:]:
+                right_ast = self._build_precondition_item_ast(info)
+                ast = {
+                    "class_name": "BinOp",
+                    "op": "and",
+                    "left": ast,
+                    "right": right_ast,
                 }
 
-                precondition_variables[str(precondition_var_id)] = "b"
+            # Use the first variable's ID as version_id (for compatibility)
+            preconditions[precondition_code] = {
+                "ast": ast,
+                "affected_operations": [operation_code],
+                "version_id": sorted_var_ids[0],
+                "code": precondition_code,
+            }
 
         return preconditions, precondition_variables
+
+    def _build_precondition_item_ast(self, table_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a PreconditionItem AST node for a single table."""
+        return {
+            "class_name": "PreconditionItem",
+            "variable_id": table_info["variable_id"],
+            "variable_code": table_info["table_code"],
+        }
+
+    def _normalize_table_code(self, table_code: str) -> str:
+        """Normalize table code format (e.g., F_44_04 -> F_44.04)."""
+        import re
+        # Handle format like C_01_00 -> C_01.00 or F_44_04 -> F_44.04
+        match = re.match(r"([A-Z]+)_(\d+)_(\d+)", table_code)
+        if match:
+            return f"{match.group(1)}_{match.group(2)}.{match.group(3)}"
+        # Already in correct format or different format
+        return table_code
 
     def _extract_variables_from_ast(self, ast_dict: Dict[str, Any]) -> tuple:
         """
