@@ -350,6 +350,7 @@ class ASTGeneratorAPI:
         primary_module_vid: Optional[int] = None,
         module_code: Optional[str] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
+        module_version_number: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate enriched, engine-ready AST with framework structure (Level 3).
@@ -382,10 +383,10 @@ class ASTGeneratorAPI:
                 - operation_code (str): The operation code (required)
                 - precondition (Optional[str]): Optional precondition reference (e.g., {v_F_44_04})
             release_code: Optional release code (e.g., "4.0", "4.1", "4.2").
-                Mutually exclusive with release_id.
+                Mutually exclusive with release_id and module_version_number.
             table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
             release_id: Optional release ID to filter database lookups by specific release.
-                Mutually exclusive with release_code.
+                Mutually exclusive with release_code and module_version_number.
             output_path: Optional path (string or Path) to save the enriched_ast as JSON file.
                 If provided, the enriched_ast will be automatically saved to this location.
             primary_module_vid: Optional module version ID of the module being exported.
@@ -400,6 +401,11 @@ class ASTGeneratorAPI:
             preferred_module_dependencies: Optional list of module codes to prefer when
                 multiple dependency scopes are possible. If a table belongs to multiple modules,
                 the module in this list will be selected as the dependency.
+            module_version_number: Optional module version number (e.g., "4.1.0") to specify
+                which version of the module to use. Requires module_code to be specified.
+                Mutually exclusive with release_code and release_id.
+                If none of release_code, release_id, or module_version_number are provided,
+                the latest (active) module version is used.
 
         Returns:
             dict: {
@@ -409,8 +415,9 @@ class ASTGeneratorAPI:
             }
 
         Raises:
-            ValueError: If both release_id and release_code are specified, or if no
-                operation scope belongs to the specified module.
+            ValueError: If more than one of release_id, release_code, or module_version_number
+                are specified; if module_version_number is specified without module_code; or if
+                no operation scope belongs to the specified module.
 
         Example:
             >>> generator = ASTGeneratorAPI(database_path="data.db")
@@ -432,15 +439,29 @@ class ASTGeneratorAPI:
             ... )
         """
         # Validate mutually exclusive parameters
-        if release_id is not None and release_code is not None:
+        version_params = [release_id, release_code, module_version_number]
+        if sum(p is not None for p in version_params) > 1:
             raise ValueError(
-                "Specify a maximum of one of release_id or release_code."
+                "Specify a maximum of one of release_id, release_code, or module_version_number."
             )
 
-        # Resolve release_code to release_id if provided
+        # Validate module_version_number requires module_code
+        if module_version_number is not None and module_code is None:
+            raise ValueError(
+                "module_version_number requires module_code to be specified."
+            )
+
+        # Resolve version parameters to release_id
         effective_release_id = release_id
-        if release_code is not None and release_id is None:
+        effective_release_code = release_code
+
+        if release_code is not None:
             effective_release_id = self._resolve_release_code(release_code)
+        elif module_version_number is not None:
+            # Resolve module_version_number to release_id
+            effective_release_id, effective_release_code = self._resolve_module_version(
+                module_code, module_version_number
+            )
 
         # Normalize input to list of tuples
         expression_tuples = self._normalize_expressions_input(expressions)
@@ -450,7 +471,7 @@ class ASTGeneratorAPI:
             enriched_ast = self._enrich_ast_with_metadata_multi(
                 expression_tuples=expression_tuples,
                 table_context=table_context,
-                release_code=release_code,
+                release_code=effective_release_code,
                 release_id=effective_release_id,
                 primary_module_vid=primary_module_vid,
                 module_code=module_code,
@@ -877,7 +898,7 @@ class ASTGeneratorAPI:
                 precondition=precondition,
                 context=context,
                 operation_code=operation_code,
-                engine=engine,
+                release_id=release_id,
             )
 
         # Detect cross-module dependencies
@@ -1101,7 +1122,7 @@ class ASTGeneratorAPI:
                         precondition=precondition,
                         context=context,
                         operation_code=operation_code,
-                        engine=engine,
+                        release_id=release_id,
                     )
                     # Track which keys were generated for this precondition string
                     processed_preconditions[precondition] = list(preconds.keys())
@@ -1413,6 +1434,54 @@ class ASTGeneratorAPI:
         finally:
             session.close()
 
+    def _resolve_module_version(
+        self, module_code: str, module_version_number: str
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """
+        Resolve a module version number to its release ID and release code.
+
+        Args:
+            module_code: The module code (e.g., "COREP_LR")
+            module_version_number: The module version number (e.g., "4.1.0")
+
+        Returns:
+            Tuple of (release_id, release_code) if found, (None, None) otherwise.
+        """
+        from py_dpm.dpm.utils import get_engine
+        from py_dpm.dpm.models import ModuleVersion, Release
+        from sqlalchemy.orm import sessionmaker
+
+        engine = get_engine(database_path=self.database_path, connection_url=self.connection_url)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            # Find the module version by code and version number
+            module_version = (
+                session.query(ModuleVersion)
+                .filter(
+                    ModuleVersion.code == module_code,
+                    ModuleVersion.versionnumber == module_version_number
+                )
+                .first()
+            )
+            if not module_version:
+                raise ValueError(
+                    f"Module version '{module_version_number}' not found for module '{module_code}'."
+                )
+
+            # Get the release code from the start release
+            release = (
+                session.query(Release)
+                .filter(Release.releaseid == module_version.startreleaseid)
+                .first()
+            )
+            release_code = release.code if release else None
+
+            return module_version.startreleaseid, release_code
+        finally:
+            session.close()
+
     def _get_release_info(self, release_code: Optional[str], engine) -> Dict[str, Any]:
         """Get release information from database using SQLAlchemy."""
         from py_dpm.dpm.models import Release
@@ -1523,7 +1592,7 @@ class ASTGeneratorAPI:
         precondition: Optional[str],
         context: Optional[Dict[str, Any]],
         operation_code: str,
-        engine,
+        release_id: Optional[int] = None,
     ) -> tuple:
         """Build preconditions and precondition_variables sections.
 
@@ -1532,8 +1601,19 @@ class ASTGeneratorAPI:
 
         For compound preconditions, generates a full AST with BinOp nodes
         for 'and' operators connecting PreconditionItem nodes.
+
+        Uses ExplorerQueryAPI to fetch actual variable_id and variable_vid
+        from the database based on variable codes.
+
+        Args:
+            precondition: Precondition string like "{v_C_01.00}" or
+                "{v_C_01.00} and {v_C_05.01} and {v_C_47.00}"
+            context: Optional context dict
+            operation_code: Operation code to associate with this precondition
+            release_id: Optional release ID for filtering variable versions
         """
         import re
+        from py_dpm.api.dpm.explorer import ExplorerQueryAPI
 
         preconditions = {}
         precondition_variables = {}
@@ -1541,58 +1621,68 @@ class ASTGeneratorAPI:
         if not precondition:
             return preconditions, precondition_variables
 
-        # Extract all table codes from precondition (handles both simple and compound)
-        # Pattern matches {v_TABLE_CODE} references
-        table_matches = re.findall(r"\{v_([^}]+)\}", precondition)
+        # Extract all variable codes from precondition (handles both simple and compound)
+        # Pattern matches {v_VARIABLE_CODE} references
+        var_matches = re.findall(r"\{v_([^}]+)\}", precondition)
 
-        if not table_matches:
+        if not var_matches:
             return preconditions, precondition_variables
 
-        # Normalize table codes (F_44_04 -> F_44.04)
-        table_codes = [self._normalize_table_code(t) for t in table_matches]
+        # Normalize variable codes (F_44_04 -> F_44.04)
+        variable_codes = [self._normalize_table_code(v) for v in var_matches]
 
-        # Get table info for all tables
-        table_infos = []
-        for table_code in table_codes:
-            table_info = self._get_table_info(table_code, engine)
-            if table_info:
-                table_infos.append({
-                    "table_code": table_code,
-                    "variable_id": table_info["table_vid"],
+        # Batch lookup variable IDs from database (single query for efficiency)
+        explorer_api = ExplorerQueryAPI()
+        try:
+            variables_info = explorer_api.get_variables_by_codes(
+                variable_codes=variable_codes,
+                release_id=release_id,
+            )
+        finally:
+            explorer_api.close()
+
+        # Build variable infos list preserving order from precondition
+        var_infos = []
+        for var_code in variable_codes:
+            if var_code in variables_info:
+                info = variables_info[var_code]
+                var_infos.append({
+                    "variable_code": var_code,
+                    "variable_id": info["variable_id"],
+                    "variable_vid": info["variable_vid"],
                 })
                 # Add to precondition_variables
-                precondition_variables[str(table_info["table_vid"])] = "b"
+                precondition_variables[str(info["variable_vid"])] = "b"
 
-        if not table_infos:
+        if not var_infos:
             return preconditions, precondition_variables
 
-        # Build the AST based on number of tables
-        if len(table_infos) == 1:
+        # Build the AST based on number of variables
+        if len(var_infos) == 1:
             # Simple precondition - single PreconditionItem
-            info = table_infos[0]
-            precondition_var_id = info["variable_id"]
-            precondition_code = f"p_{precondition_var_id}"
+            info = var_infos[0]
+            precondition_code = f"p_{info['variable_vid']}"
 
             preconditions[precondition_code] = {
                 "ast": {
                     "class_name": "PreconditionItem",
-                    "variable_id": precondition_var_id,
-                    "variable_code": info["table_code"],
+                    "variable_id": info["variable_id"],
+                    "variable_code": info["variable_code"],
                 },
                 "affected_operations": [operation_code],
-                "version_id": precondition_var_id,
+                "version_id": info["variable_vid"],
                 "code": precondition_code,
             }
         else:
             # Compound precondition - build BinOp tree with 'and' operators
-            # Create a unique key based on sorted variable IDs
-            sorted_var_ids = sorted([info["variable_id"] for info in table_infos])
-            precondition_code = "p_" + "_".join(str(vid) for vid in sorted_var_ids)
+            # Create a unique key based on sorted variable VIDs
+            sorted_var_vids = sorted([info["variable_vid"] for info in var_infos])
+            precondition_code = "p_" + "_".join(str(vid) for vid in sorted_var_vids)
 
             # Build AST: left-associative chain of BinOp 'and' nodes
             # E.g., for [A, B, C]: ((A and B) and C)
-            ast = self._build_precondition_item_ast(table_infos[0])
-            for info in table_infos[1:]:
+            ast = self._build_precondition_item_ast(var_infos[0])
+            for info in var_infos[1:]:
                 right_ast = self._build_precondition_item_ast(info)
                 ast = {
                     "class_name": "BinOp",
@@ -1601,26 +1691,26 @@ class ASTGeneratorAPI:
                     "right": right_ast,
                 }
 
-            # Use the first variable's ID as version_id (for compatibility)
+            # Use the first variable's VID as version_id
             preconditions[precondition_code] = {
                 "ast": ast,
                 "affected_operations": [operation_code],
-                "version_id": sorted_var_ids[0],
+                "version_id": sorted_var_vids[0],
                 "code": precondition_code,
             }
 
         return preconditions, precondition_variables
 
-    def _build_precondition_item_ast(self, table_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Build a PreconditionItem AST node for a single table."""
+    def _build_precondition_item_ast(self, var_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a PreconditionItem AST node for a single variable."""
         return {
             "class_name": "PreconditionItem",
-            "variable_id": table_info["variable_id"],
-            "variable_code": table_info["table_code"],
+            "variable_id": var_info["variable_id"],
+            "variable_code": var_info["variable_code"],
         }
 
     def _normalize_table_code(self, table_code: str) -> str:
-        """Normalize table code format (e.g., F_44_04 -> F_44.04)."""
+        """Normalize table/variable code format (e.g., F_44_04 -> F_44.04)."""
         import re
         # Handle format like C_01_00 -> C_01.00 or F_44_04 -> F_44.04
         match = re.match(r"([A-Z]+)_(\d+)_(\d+)", table_code)

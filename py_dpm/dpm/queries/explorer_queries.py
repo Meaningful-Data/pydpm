@@ -353,3 +353,119 @@ class ExplorerQuery:
 
         results = q.all()
         return [dict(row._mapping) for row in results]
+
+    @staticmethod
+    def get_variable_by_code(
+        session: Session,
+        variable_code: str,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get variable_id and variable_vid for a given variable code.
+
+        This is useful for resolving precondition variable references like {v_C_01.00}
+        where the variable code is the table code (e.g., "C_01.00").
+
+        Args:
+            session: SQLAlchemy session
+            variable_code: The variable code to look up (e.g., "C_01.00")
+            release_id: Optional release ID to filter by
+            release_code: Optional release code to filter by
+
+        Returns:
+            Dict with variable_id and variable_vid if found, None otherwise.
+            If multiple versions exist, returns the one matching the release filter
+            or the latest active version if no filter is provided.
+        """
+        if release_id is not None and release_code is not None:
+            raise ValueError(
+                "Specify a maximum of one of release_id or release_code."
+            )
+
+        q = (
+            session.query(
+                VariableVersion.variableid.label("variable_id"),
+                VariableVersion.variablevid.label("variable_vid"),
+                VariableVersion.code.label("variable_code"),
+                VariableVersion.name.label("variable_name"),
+            )
+            .select_from(VariableVersion)
+            .filter(VariableVersion.code == variable_code)
+        )
+
+        # Apply release filtering
+        if release_id or release_code:
+            q = filter_by_release(
+                q,
+                start_col=VariableVersion.startreleaseid,
+                end_col=VariableVersion.endreleaseid,
+                release_id=release_id,
+                release_code=release_code,
+            )
+        else:
+            # Default to active-only (endreleaseid is NULL)
+            q = filter_active_only(q, end_col=VariableVersion.endreleaseid)
+
+        result = q.first()
+        if result:
+            return dict(result._mapping)
+        return None
+
+    @staticmethod
+    def get_variables_by_codes(
+        session: Session,
+        variable_codes: List[str],
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Batch lookup of variable_id and variable_vid for multiple variable codes.
+
+        This is more efficient than calling get_variable_by_code multiple times
+        when resolving multiple precondition variables.
+
+        Args:
+            session: SQLAlchemy session
+            variable_codes: List of variable codes to look up
+            release_id: Optional release ID to filter by
+            release_code: Optional release code to filter by
+
+        Returns:
+            Dict mapping variable_code to {variable_id, variable_vid, ...}
+            Only includes codes that were found in the database.
+        """
+        if release_id is not None and release_code is not None:
+            raise ValueError(
+                "Specify a maximum of one of release_id or release_code."
+            )
+
+        if not variable_codes:
+            return {}
+
+        q = (
+            session.query(
+                VariableVersion.variableid.label("variable_id"),
+                VariableVersion.variablevid.label("variable_vid"),
+                VariableVersion.code.label("variable_code"),
+                VariableVersion.name.label("variable_name"),
+            )
+            .select_from(VariableVersion)
+            .filter(VariableVersion.code.in_(variable_codes))
+        )
+
+        # Apply release filtering
+        if release_id or release_code:
+            q = filter_by_release(
+                q,
+                start_col=VariableVersion.startreleaseid,
+                end_col=VariableVersion.endreleaseid,
+                release_id=release_id,
+                release_code=release_code,
+            )
+        else:
+            # Default to active-only (endreleaseid is NULL)
+            q = filter_active_only(q, end_col=VariableVersion.endreleaseid)
+
+        results = q.all()
+        return {row.variable_code: dict(row._mapping) for row in results}
