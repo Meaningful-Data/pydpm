@@ -6,7 +6,7 @@ This module provides a clean, abstracted interface for generating ASTs from DPM-
 without exposing internal complexity or version compatibility issues.
 """
 
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
 import json
 from datetime import datetime
@@ -138,24 +138,6 @@ class ASTGeneratorAPI:
                     'original_expression': expression[:100] + "..." if len(expression) > 100 else expression
                 }
             }
-
-    def parse_batch(self, expressions: List[str]) -> List[Dict[str, Any]]:
-        """
-        Parse multiple expressions efficiently.
-
-        Args:
-            expressions: List of DPM-XL expression strings
-
-        Returns:
-            List of parse results (same format as parse_expression)
-        """
-        results = []
-        for i, expr in enumerate(expressions):
-            result = self.parse_expression(expr)
-            result['metadata']['batch_index'] = i
-            results.append(result)
-
-        return results
 
     def validate_expression(self, expression: str) -> Dict[str, Any]:
         """
@@ -333,43 +315,42 @@ class ASTGeneratorAPI:
                 "data_populated": False,
             }
 
-    def generate_complete_batch(
-        self,
-        expressions: List[str],
-        release_id: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Generate complete ASTs for multiple expressions.
-
-        Args:
-            expressions: List of DPM-XL expression strings
-            release_id: Optional release ID to filter database lookups by specific release.
-                If None, uses all available data (release-agnostic).
-
-        Returns:
-            list: List of result dictionaries (same format as generate_complete_ast)
-        """
-        results = []
-        for i, expr in enumerate(expressions):
-            result = self.generate_complete_ast(expr, release_id=release_id)
-            result["batch_index"] = i
-            results.append(result)
-        return results
-
     # ============================================================================
     # Enriched AST Generation (requires database)
     # ============================================================================
 
+    def _normalize_expressions_input(
+        self,
+        expressions: Union[str, List[Tuple[str, str, Optional[str]]]]
+    ) -> List[Tuple[str, str, Optional[str]]]:
+        """
+        Normalize input to list of (expression, operation_code, precondition) tuples.
+
+        Supports:
+        - Single expression string: "expr" -> [("expr", "default_code", None)]
+        - List of tuples: [("expr1", "op1", "precond1"), ("expr2", "op2", None)]
+
+        Args:
+            expressions: Either a single expression string or a list of tuples
+
+        Returns:
+            List of (expression, operation_code, precondition) tuples
+        """
+        if isinstance(expressions, str):
+            return [(expressions, "default_code", None)]
+        return expressions
+
     def generate_enriched_ast(
         self,
-        expression: str,
-        dpm_version: Optional[str] = None,
-        operation_code: Optional[str] = None,
+        expressions: Union[str, List[Tuple[str, str, Optional[str]]]],
+        release_code: Optional[str] = None,
         table_context: Optional[Dict[str, Any]] = None,
-        precondition: Optional[str] = None,
         release_id: Optional[int] = None,
         output_path: Optional[Union[str, Path]] = None,
         primary_module_vid: Optional[int] = None,
+        module_code: Optional[str] = None,
+        preferred_module_dependencies: Optional[List[str]] = None,
+        module_version_number: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate enriched, engine-ready AST with framework structure (Level 3).
@@ -377,6 +358,9 @@ class ASTGeneratorAPI:
         This extends generate_complete_ast() by wrapping the complete AST in an engine-ready
         framework structure with operations, variables, tables, and preconditions sections.
         This is the format required by business rule execution engines.
+
+        Supports both single expressions (for backward compatibility) and multiple
+        expression/operation/precondition tuples for generating scripts with multiple operations.
 
         **What you get:**
         - Everything from generate_complete_ast() PLUS:
@@ -392,13 +376,17 @@ class ASTGeneratorAPI:
         - Module exports with cross-module dependency tracking
 
         Args:
-            expression: DPM-XL expression string
-            dpm_version: DPM version code (e.g., "4.0", "4.1", "4.2")
-            operation_code: Optional operation code (defaults to "default_code")
+            expressions: Either a single DPM-XL expression string (backward compatible),
+                or a list of tuples: [(expression, operation_code, precondition), ...].
+                Each tuple contains:
+                - expression (str): The DPM-XL expression (required)
+                - operation_code (str): The operation code (required)
+                - precondition (Optional[str]): Optional precondition reference (e.g., {v_F_44_04})
+            release_code: Optional release code (e.g., "4.0", "4.1", "4.2").
+                Mutually exclusive with release_id and module_version_number.
             table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
-            precondition: Optional precondition variable reference (e.g., {v_F_44_04})
             release_id: Optional release ID to filter database lookups by specific release.
-                If None, uses all available data (release-agnostic).
+                Mutually exclusive with release_code and module_version_number.
             output_path: Optional path (string or Path) to save the enriched_ast as JSON file.
                 If provided, the enriched_ast will be automatically saved to this location.
             primary_module_vid: Optional module version ID of the module being exported.
@@ -406,6 +394,18 @@ class ASTGeneratorAPI:
                 other modules will be identified and added to dependency_modules and
                 cross_instance_dependencies fields. If None, cross-module detection uses
                 the first table's module as the primary module.
+            module_code: Optional module code (e.g., "FINREP9") to specify the main module.
+                The main module's URL will be used as the root key of the output.
+                If provided, this takes precedence over primary_module_vid for determining
+                the main module.
+            preferred_module_dependencies: Optional list of module codes to prefer when
+                multiple dependency scopes are possible. If a table belongs to multiple modules,
+                the module in this list will be selected as the dependency.
+            module_version_number: Optional module version number (e.g., "4.1.0") to specify
+                which version of the module to use. Requires module_code to be specified.
+                Mutually exclusive with release_code and release_id.
+                If none of release_code, release_id, or module_version_number are provided,
+                the latest (active) module version is used.
 
         Returns:
             dict: {
@@ -414,51 +414,68 @@ class ASTGeneratorAPI:
                 'error': str           # Error message if failed
             }
 
+        Raises:
+            ValueError: If more than one of release_id, release_code, or module_version_number
+                are specified; if module_version_number is specified without module_code; or if
+                no operation scope belongs to the specified module.
+
         Example:
             >>> generator = ASTGeneratorAPI(database_path="data.db")
+            >>> # Single expression (backward compatible)
             >>> result = generator.generate_enriched_ast(
             ...     "{tF_01.00, r0010, c0010}",
-            ...     dpm_version="4.2",
-            ...     operation_code="my_validation"
+            ...     release_code="4.2",
             ... )
-            >>> # result['enriched_ast'] contains framework structure ready for engines
             >>>
-            >>> # For module exports with cross-module dependency tracking:
+            >>> # Multiple expressions with operations and preconditions
             >>> result = generator.generate_enriched_ast(
-            ...     "{tC_26.00, r030, c010} * {tC_01.00, r0015, c0010}",
-            ...     dpm_version="4.2",
-            ...     operation_code="v2814_m",
-            ...     primary_module_vid=123,  # Module being exported
-            ...     release_id=42
+            ...     [
+            ...         ("{tF_01.00, r0010, c0010} = 0", "v1234_m", None),
+            ...         ("{tF_01.00, r0020, c0010} > 0", "v1235_m", "{v_F_44_04}"),
+            ...         ("{tF_01.00, r0030, c0010} >= 0", "v1236_m", "{v_F_44_04}"),  # Same precondition, deduplicated
+            ...     ],
+            ...     release_code="4.2",
+            ...     module_code="FINREP9",
             ... )
-            >>> # result['enriched_ast']['dependency_modules'] contains external module info
-            >>> # result['enriched_ast']['dependency_information']['cross_instance_dependencies']
-            >>> # contains list of external module dependencies
         """
+        # Validate mutually exclusive parameters
+        version_params = [release_id, release_code, module_version_number]
+        if sum(p is not None for p in version_params) > 1:
+            raise ValueError(
+                "Specify a maximum of one of release_id, release_code, or module_version_number."
+            )
+
+        # Validate module_version_number requires module_code
+        if module_version_number is not None and module_code is None:
+            raise ValueError(
+                "module_version_number requires module_code to be specified."
+            )
+
+        # Resolve version parameters to release_id
+        effective_release_id = release_id
+        effective_release_code = release_code
+
+        if release_code is not None:
+            effective_release_id = self._resolve_release_code(release_code)
+        elif module_version_number is not None:
+            # Resolve module_version_number to release_id
+            effective_release_id, effective_release_code = self._resolve_module_version(
+                module_code, module_version_number
+            )
+
+        # Normalize input to list of tuples
+        expression_tuples = self._normalize_expressions_input(expressions)
+
         try:
-            # Generate complete AST first
-            complete_result = self.generate_complete_ast(expression, release_id=release_id)
-
-            if not complete_result["success"]:
-                return {
-                    "success": False,
-                    "enriched_ast": None,
-                    "error": f"Failed to generate complete AST: {complete_result['error']}",
-                }
-
-            complete_ast = complete_result["ast"]
-            context = complete_result.get("context") or table_context
-
-            # Enrich with framework structure
-            enriched_ast = self._enrich_ast_with_metadata(
-                ast_dict=complete_ast,
-                expression=expression,
-                context=context,
-                dpm_version=dpm_version,
-                operation_code=operation_code,
-                precondition=precondition,
-                release_id=release_id,
+            # Enrich with framework structure for multiple expressions
+            enriched_ast = self._enrich_ast_with_metadata_multi(
+                expression_tuples=expression_tuples,
+                table_context=table_context,
+                release_code=effective_release_code,
+                release_id=effective_release_id,
                 primary_module_vid=primary_module_vid,
+                module_code=module_code,
+                preferred_module_dependencies=preferred_module_dependencies,
             )
 
             # Save to file if output_path is provided
@@ -732,11 +749,13 @@ class ASTGeneratorAPI:
         ast_dict: Dict[str, Any],
         expression: str,
         context: Optional[Dict[str, Any]],
-        dpm_version: Optional[str] = None,
+        release_code: Optional[str] = None,
         operation_code: Optional[str] = None,
         precondition: Optional[str] = None,
         release_id: Optional[int] = None,
         primary_module_vid: Optional[int] = None,
+        module_code: Optional[str] = None,
+        preferred_module_dependencies: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Add framework structure (operations, variables, tables, preconditions) to complete AST.
@@ -747,7 +766,7 @@ class ASTGeneratorAPI:
             ast_dict: Complete AST dictionary
             expression: Original DPM-XL expression
             context: Context dict with table, rows, columns, sheets, default, interval
-            dpm_version: DPM version code (e.g., "4.2")
+            release_code: Release code (e.g., "4.2")
             operation_code: Operation code (defaults to "default_code")
             precondition: Precondition variable reference (e.g., {v_F_44_04})
             release_id: Optional release ID to filter database lookups
@@ -766,25 +785,38 @@ class ASTGeneratorAPI:
         # Get current date for framework structure
         current_date = datetime.now().strftime("%Y-%m-%d")
 
-        # Query database for release information
-        release_info = self._get_release_info(dpm_version, engine)
+        # Detect primary module from the expression (or use provided module_code)
+        primary_module_info = self._get_primary_module_info(
+            expression=expression,
+            primary_module_vid=primary_module_vid,
+            release_id=release_id,
+            module_code=module_code,
+        )
 
-        # Build module info
+        # Query database for release information
+        release_info = self._get_release_info(release_code, engine)
+
+        # Build module info using detected primary module or defaults
         module_info = {
-            "module_code": "default",
-            "module_version": "1.0.0",
-            "framework_code": "default",
+            "module_code": primary_module_info.get("module_code", "default"),
+            "module_version": primary_module_info.get("module_version", "1.0.0"),
+            "framework_code": primary_module_info.get("framework_code", "default"),
             "dpm_release": {
                 "release": release_info["release"],
                 "publication_date": release_info["publication_date"],
             },
-            "dates": {"from": "2001-01-01", "to": None},
+            "dates": {
+                "from": primary_module_info.get("from_date", "2001-01-01"),
+                "to": primary_module_info.get("to_date"),
+            },
         }
 
         # Add coordinates to AST data entries
         ast_with_coords = self._add_coordinates_to_ast(ast_dict, context)
 
         # Build operations section
+        # Use module's from_date for from_submission_date (fallback to current date)
+        submission_date = primary_module_info.get("from_date", current_date)
         operations = {
             operation_code: {
                 "version_id": hash(expression) % 10000,
@@ -792,31 +824,68 @@ class ASTGeneratorAPI:
                 "expression": expression,
                 "root_operator_id": 24,  # Default for now
                 "ast": ast_with_coords,
-                "from_submission_date": current_date,
+                "from_submission_date": submission_date,
                 "severity": "Error",
             }
         }
 
         # Build variables section by extracting from the complete AST
-        all_variables, variables_by_table = self._extract_variables_from_ast(ast_with_coords)
+        # This gives us the tables referenced in the expression
+        _, variables_by_table = self._extract_variables_from_ast(ast_with_coords)
 
-        variables = all_variables
+        # Clean extra fields from data entries (after extraction, as it uses data_type)
+        self._clean_ast_data_entries(ast_with_coords)
+
+        all_variables = {}
         tables = {}
 
-        # Initialize DataDictionaryAPI to query open keys
+        # Get tables_with_modules to filter tables by primary module
+        tables_with_modules = primary_module_info.get("tables_with_modules", [])
+        primary_module_vid = primary_module_info.get("module_vid")
+
+        # Build mapping of table_code -> module_vid for filtering
+        table_to_module = {}
+        for table_info in tables_with_modules:
+            table_code = table_info.get("code", "")
+            module_vid = table_info.get("module_vid")
+            if table_code and module_vid:
+                table_to_module[table_code] = module_vid
+
+        # Initialize DataDictionaryAPI to query open keys and all variables
         from py_dpm.api.dpm import DataDictionaryAPI
         data_dict_api = DataDictionaryAPI(
             database_path=self.database_path,
             connection_url=self.connection_url
         )
 
-        # Build tables with their specific variables and open keys
-        for table_code, table_variables in variables_by_table.items():
+        # Build tables with ALL variables from database (not just from expression)
+        # Only include tables belonging to the primary module
+        for table_code in variables_by_table.keys():
+            # Check if this table belongs to the primary module
+            table_module_vid = table_to_module.get(table_code)
+            if table_module_vid and table_module_vid != primary_module_vid:
+                # This table belongs to a different module, skip it for the main tables section
+                continue
+
+            # Get table version info to get table_vid
+            table_info = data_dict_api.get_table_version(table_code, release_id)
+
+            if table_info and table_info.get("table_vid"):
+                table_vid = table_info["table_vid"]
+                # Get ALL variables for this table from database
+                table_variables = data_dict_api.get_all_variables_for_table(table_vid)
+            else:
+                # Fallback to expression variables if table not found
+                table_variables = variables_by_table[table_code]
+
             # Query open keys for this table
             open_keys_list = data_dict_api.get_open_keys_for_table(table_code, release_id)
             open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
 
             tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+
+            # Add table variables to all_variables
+            all_variables.update(table_variables)
 
         data_dict_api.close()
 
@@ -829,32 +898,44 @@ class ASTGeneratorAPI:
                 precondition=precondition,
                 context=context,
                 operation_code=operation_code,
-                engine=engine,
+                release_id=release_id,
             )
 
         # Detect cross-module dependencies
+        # Use ALL variables from tables (not just expression variables)
+        full_variables_by_table = {
+            table_code: table_data["variables"]
+            for table_code, table_data in tables.items()
+        }
+        # Use module_vid from primary_module_info (may have been resolved from module_code)
+        resolved_primary_module_vid = primary_module_info.get("module_vid") or primary_module_vid
         dependency_modules, cross_instance_dependencies = self._detect_cross_module_dependencies(
             expression=expression,
-            variables_by_table=variables_by_table,
-            primary_module_vid=primary_module_vid,
+            variables_by_table=full_variables_by_table,
+            primary_module_vid=resolved_primary_module_vid,
             operation_code=operation_code,
             release_id=release_id,
+            preferred_module_dependencies=preferred_module_dependencies,
         )
 
         # Build dependency information
+        # intra_instance_validations should be empty for cross-module operations
+        # (operations that have cross_instance_dependencies)
+        is_cross_module = bool(cross_instance_dependencies)
         dependency_info = {
-            "intra_instance_validations": [operation_code],
+            "intra_instance_validations": [] if is_cross_module else [operation_code],
             "cross_instance_dependencies": cross_instance_dependencies,
         }
 
         # Build complete structure
-        namespace = "default_module"
+        # Use module URI as namespace if available, otherwise use "default_module"
+        namespace = primary_module_info.get("module_uri", "default_module")
 
         return {
             namespace: {
                 **module_info,
                 "operations": operations,
-                "variables": variables,
+                "variables": all_variables,
                 "tables": tables,
                 "preconditions": preconditions,
                 "precondition_variables": precondition_variables,
@@ -863,32 +944,591 @@ class ASTGeneratorAPI:
             }
         }
 
-    def _get_release_info(self, dpm_version: Optional[str], engine) -> Dict[str, Any]:
+    def _enrich_ast_with_metadata_multi(
+        self,
+        expression_tuples: List[Tuple[str, str, Optional[str]]],
+        table_context: Optional[Dict[str, Any]],
+        release_code: Optional[str] = None,
+        release_id: Optional[int] = None,
+        primary_module_vid: Optional[int] = None,
+        module_code: Optional[str] = None,
+        preferred_module_dependencies: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add framework structure for multiple expressions (operations, variables, tables, preconditions).
+
+        This creates the engine-ready format with all metadata sections, aggregating
+        multiple expressions into a single script structure.
+
+        Args:
+            expression_tuples: List of (expression, operation_code, precondition) tuples
+            table_context: Context dict with table, rows, columns, sheets, default, interval
+            release_code: Release code (e.g., "4.2")
+            release_id: Optional release ID to filter database lookups
+            primary_module_vid: Module VID being exported (to identify external dependencies)
+            module_code: Optional module code to specify the main module
+            preferred_module_dependencies: Optional list of module codes to prefer for dependencies
+
+        Returns:
+            Dict with the enriched AST structure
+
+        Raises:
+            ValueError: If no operation scope belongs to the specified module
+        """
+        from py_dpm.dpm.utils import get_engine
+        from py_dpm.api.dpm import DataDictionaryAPI
+
+        # Initialize database connection
+        engine = get_engine(database_path=self.database_path, connection_url=self.connection_url)
+
+        # Get current date for framework structure
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        # Aggregated structures
+        all_operations = {}
+        all_variables = {}
+        all_tables = {}
+        all_preconditions = {}
+        all_precondition_variables = {}
+        all_dependency_modules = {}
+        all_cross_instance_deps = []
+        all_intra_instance_ops = []
+
+        # Track processed preconditions to avoid duplicates
+        # Maps precondition string -> list of precondition keys generated from it
+        processed_preconditions: Dict[str, List[str]] = {}
+
+        # Track all tables with their modules for validation
+        all_tables_with_modules = []
+
+        # Flag to track if at least one operation belongs to the primary module
+        has_primary_module_operation = False
+
+        # Initialize DataDictionaryAPI once for all expressions
+        data_dict_api = DataDictionaryAPI(
+            database_path=self.database_path,
+            connection_url=self.connection_url
+        )
+
+        # Primary module info will be determined from the first expression or module_code
+        primary_module_info = None
+        namespace = None
+
+        try:
+            for idx, (expression, operation_code, precondition) in enumerate(expression_tuples):
+                # Generate complete AST for this expression
+                complete_result = self.generate_complete_ast(expression, release_id=release_id)
+
+                if not complete_result["success"]:
+                    raise ValueError(
+                        f"Failed to generate complete AST for expression {idx + 1} "
+                        f"(operation '{operation_code}'): {complete_result['error']}"
+                    )
+
+                complete_ast = complete_result["ast"]
+                context = complete_result.get("context") or table_context
+
+                # Get primary module info from first expression (or use module_code)
+                if primary_module_info is None:
+                    primary_module_info = self._get_primary_module_info(
+                        expression=expression,
+                        primary_module_vid=primary_module_vid,
+                        release_id=release_id,
+                        module_code=module_code,
+                    )
+                    namespace = primary_module_info.get("module_uri", "default_module")
+
+                # Add coordinates to AST data entries
+                ast_with_coords = self._add_coordinates_to_ast(complete_ast, context)
+
+                # Build operation entry
+                submission_date = primary_module_info.get("from_date", current_date)
+                all_operations[operation_code] = {
+                    "version_id": hash(expression) % 10000,
+                    "code": operation_code,
+                    "expression": expression,
+                    "root_operator_id": 24,
+                    "ast": ast_with_coords,
+                    "from_submission_date": submission_date,
+                    "severity": "Error",
+                }
+
+                # Extract variables from this expression's AST
+                _, variables_by_table = self._extract_variables_from_ast(ast_with_coords)
+
+                # Clean extra fields from data entries
+                self._clean_ast_data_entries(ast_with_coords)
+
+                # Get tables with modules for this expression
+                from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
+                scopes_api = OperationScopesAPI(
+                    database_path=self.database_path,
+                    connection_url=self.connection_url
+                )
+                tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
+                    expression=expression,
+                    release_id=release_id
+                )
+                all_tables_with_modules.extend(tables_with_modules)
+
+                # Build mapping of table_code -> module_vid
+                # Prefer the module VID that matches the detected primary module
+                table_to_module = {}
+                primary_module_code = primary_module_info.get("module_code")
+
+                # First pass: record mappings for tables belonging to the primary module (by code)
+                if primary_module_code:
+                    for table_info in tables_with_modules:
+                        table_code = table_info.get("code", "")
+                        table_module_vid = table_info.get("module_vid")
+                        table_module_code = table_info.get("module_code")
+                        if (
+                            table_code
+                            and table_module_vid
+                            and table_module_code == primary_module_code
+                        ):
+                            table_to_module[table_code] = table_module_vid
+
+                # Second pass: fill in any remaining tables with the first available module VID
+                for table_info in tables_with_modules:
+                    table_code = table_info.get("code", "")
+                    table_module_vid = table_info.get("module_vid")
+                    if table_code and table_module_vid and table_code not in table_to_module:
+                        table_to_module[table_code] = table_module_vid
+
+                resolved_primary_module_vid = primary_module_info.get("module_vid") or primary_module_vid
+
+                # Process tables from this expression
+                for table_code in variables_by_table.keys():
+                    # Check if this table belongs to the primary module
+                    table_module_vid = table_to_module.get(table_code)
+
+                    if table_module_vid and table_module_vid != resolved_primary_module_vid:
+                        # This table belongs to a different module, skip for main tables
+                        continue
+
+                    # Skip if we already have this table
+                    if table_code in all_tables:
+                        # Table already added, it passed the module filter before
+                        has_primary_module_operation = True
+                        continue
+
+                    # Get table version info
+                    table_info = data_dict_api.get_table_version(table_code, release_id)
+
+                    if table_info and table_info.get("table_vid"):
+                        table_vid = table_info["table_vid"]
+                        table_variables = data_dict_api.get_all_variables_for_table(table_vid)
+                    else:
+                        table_variables = variables_by_table[table_code]
+
+                    # Query open keys for this table
+                    open_keys_list = data_dict_api.get_open_keys_for_table(table_code, release_id)
+                    open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
+
+                    all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+                    all_variables.update(table_variables)
+
+                    # We successfully added a table that passed the module filter
+                    # This means at least one operation references the primary module
+                    has_primary_module_operation = True
+
+                # Handle precondition (deduplicate by precondition string)
+                if precondition and precondition not in processed_preconditions:
+                    preconds, precond_vars = self._build_preconditions(
+                        precondition=precondition,
+                        context=context,
+                        operation_code=operation_code,
+                        release_id=release_id,
+                    )
+                    # Track which keys were generated for this precondition string
+                    processed_preconditions[precondition] = list(preconds.keys())
+                    # Merge preconditions
+                    for precond_key, precond_data in preconds.items():
+                        if precond_key not in all_preconditions:
+                            all_preconditions[precond_key] = precond_data
+                        else:
+                            # Add this operation to affected_operations if not already there
+                            if operation_code not in all_preconditions[precond_key]["affected_operations"]:
+                                all_preconditions[precond_key]["affected_operations"].append(operation_code)
+                    all_precondition_variables.update(precond_vars)
+                elif precondition and precondition in processed_preconditions:
+                    # Precondition already processed, add this operation ONLY to the matching precondition(s)
+                    matching_keys = processed_preconditions[precondition]
+                    for precond_key in matching_keys:
+                        if precond_key in all_preconditions:
+                            if operation_code not in all_preconditions[precond_key]["affected_operations"]:
+                                all_preconditions[precond_key]["affected_operations"].append(operation_code)
+
+                # Detect cross-module dependencies for this expression
+                full_variables_by_table = {
+                    table_code: table_data["variables"]
+                    for table_code, table_data in all_tables.items()
+                }
+                dep_modules, cross_deps = self._detect_cross_module_dependencies(
+                    expression=expression,
+                    variables_by_table=full_variables_by_table,
+                    primary_module_vid=resolved_primary_module_vid,
+                    operation_code=operation_code,
+                    release_id=release_id,
+                    preferred_module_dependencies=preferred_module_dependencies,
+                )
+
+                # Merge dependency modules (avoid table duplicates)
+                self._merge_dependency_modules(all_dependency_modules, dep_modules)
+
+                # Merge cross-instance dependencies (avoid duplicates)
+                self._merge_cross_instance_dependencies(all_cross_instance_deps, cross_deps)
+
+                # Track intra-instance operations
+                if not cross_deps:
+                    all_intra_instance_ops.append(operation_code)
+
+        finally:
+            data_dict_api.close()
+
+        # Validate: at least one operation must belong to the primary module
+        if not has_primary_module_operation and module_code:
+            raise ValueError(
+                f"No operation scope belongs to the specified module '{module_code}'. "
+                "At least one expression must reference tables from the primary module."
+            )
+
+        # Query database for release information
+        release_info = self._get_release_info(release_code, engine)
+
+        # Build module info
+        module_info = {
+            "module_code": primary_module_info.get("module_code", "default"),
+            "module_version": primary_module_info.get("module_version", "1.0.0"),
+            "framework_code": primary_module_info.get("framework_code", "default"),
+            "dpm_release": {
+                "release": release_info["release"],
+                "publication_date": release_info["publication_date"],
+            },
+            "dates": {
+                "from": primary_module_info.get("from_date", "2001-01-01"),
+                "to": primary_module_info.get("to_date"),
+            },
+        }
+
+        # Build dependency information
+        dependency_info = {
+            "intra_instance_validations": all_intra_instance_ops,
+            "cross_instance_dependencies": all_cross_instance_deps,
+        }
+
+        return {
+            namespace: {
+                **module_info,
+                "operations": all_operations,
+                "variables": all_variables,
+                "tables": all_tables,
+                "preconditions": all_preconditions,
+                "precondition_variables": all_precondition_variables,
+                "dependency_information": dependency_info,
+                "dependency_modules": all_dependency_modules,
+            }
+        }
+
+    def _merge_dependency_modules(
+        self,
+        existing: Dict[str, Any],
+        new: Dict[str, Any]
+    ) -> None:
+        """
+        Merge new dependency_modules into existing, avoiding table duplicates.
+
+        Args:
+            existing: Existing dependency_modules dict (modified in place)
+            new: New dependency_modules dict to merge
+        """
+        for uri, module_data in new.items():
+            if uri not in existing:
+                existing[uri] = module_data
+            else:
+                # Merge tables (avoid duplicates)
+                for table_code, table_data in module_data.get("tables", {}).items():
+                    if table_code not in existing[uri].get("tables", {}):
+                        existing[uri].setdefault("tables", {})[table_code] = table_data
+                # Merge variables
+                existing[uri].setdefault("variables", {}).update(
+                    module_data.get("variables", {})
+                )
+
+    def _merge_cross_instance_dependencies(
+        self,
+        existing: List[Dict[str, Any]],
+        new: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Merge new cross_instance_dependencies into existing, avoiding duplicates.
+
+        Duplicates are identified by the set of module URIs involved.
+
+        Args:
+            existing: Existing list (modified in place)
+            new: New list to merge
+        """
+        def get_module_uris(dep: Dict[str, Any]) -> tuple:
+            """Extract sorted URIs from modules list for deduplication."""
+            modules = dep.get("modules", [])
+            uris = []
+            for m in modules:
+                if isinstance(m, dict):
+                    uris.append(m.get("URI", ""))
+                else:
+                    uris.append(str(m))
+            return tuple(sorted(uris))
+
+        # Build a set of existing module URI combinations for deduplication
+        existing_module_sets = set()
+        for dep in existing:
+            existing_module_sets.add(get_module_uris(dep))
+
+        for dep in new:
+            dep_uris = get_module_uris(dep)
+            if dep_uris not in existing_module_sets:
+                existing.append(dep)
+                existing_module_sets.add(dep_uris)
+            else:
+                # Merge affected_operations for existing dependency
+                for existing_dep in existing:
+                    if get_module_uris(existing_dep) == dep_uris:
+                        for op in dep.get("affected_operations", []):
+                            if op not in existing_dep.get("affected_operations", []):
+                                existing_dep.setdefault("affected_operations", []).append(op)
+                        break
+
+    def _get_primary_module_info(
+        self,
+        expression: str,
+        primary_module_vid: Optional[int],
+        release_id: Optional[int],
+        module_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Detect and return metadata for the primary module from the expression.
+
+        Args:
+            expression: DPM-XL expression
+            primary_module_vid: Optional module VID (if known)
+            release_id: Optional release ID for filtering
+            module_code: Optional module code (e.g., "FINREP9") - takes precedence over
+                primary_module_vid if provided
+
+        Returns:
+            Dict with module_uri, module_code, module_version, framework_code,
+            from_date, to_date, module_vid
+        """
+        from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
+        from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
+
+        default_info = {
+            "module_uri": "default_module",
+            "module_code": "default",
+            "module_version": "1.0.0",
+            "framework_code": "default",
+            "from_date": "2001-01-01",
+            "to_date": None,
+            "module_vid": None,
+        }
+
+        try:
+            scopes_api = OperationScopesAPI(
+                database_path=self.database_path,
+                connection_url=self.connection_url
+            )
+
+            # Get tables with module metadata from expression
+            tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
+                expression=expression,
+                release_id=release_id
+            )
+
+            if not tables_with_modules:
+                scopes_api.close()
+                return default_info
+
+            # Determine primary module
+            # Priority: module_code (param) > primary_module_vid > first table
+            primary_table = None
+
+            if module_code:
+                # Find table matching the provided module_code
+                for table_info in tables_with_modules:
+                    if table_info.get("module_code") == module_code:
+                        primary_table = table_info
+                        break
+            elif primary_module_vid:
+                # Find table matching the provided module VID
+                for table_info in tables_with_modules:
+                    if table_info.get("module_vid") == primary_module_vid:
+                        primary_table = table_info
+                        break
+
+            # If no match found, use first table
+            if not primary_table:
+                primary_table = tables_with_modules[0]
+
+            resolved_module_code = primary_table.get("module_code")
+            module_vid = primary_table.get("module_vid")
+
+            # Get module URI
+            try:
+                module_uri = ExplorerQuery.get_module_url(
+                    scopes_api.session,
+                    module_code=resolved_module_code,
+                    release_id=release_id,
+                )
+                # Remove .json extension if present
+                if module_uri and module_uri.endswith(".json"):
+                    module_uri = module_uri[:-5]
+            except Exception:
+                module_uri = "default_module"
+
+            # Get module version dates from scopes metadata
+            from_date = "2001-01-01"
+            to_date = None
+            scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
+                expression=expression,
+                release_id=release_id
+            )
+            for scope_info in scopes_metadata:
+                for module in scope_info.module_versions:
+                    if module.get("module_vid") == module_vid:
+                        from_date = module.get("from_reference_date", from_date)
+                        to_date = module.get("to_reference_date", to_date)
+                        break
+
+            scopes_api.close()
+
+            return {
+                "module_uri": module_uri or "default_module",
+                "module_code": resolved_module_code or "default",
+                "module_version": primary_table.get("module_version", "1.0.0"),
+                "framework_code": resolved_module_code or "default",  # Framework code typically matches module code
+                "from_date": str(from_date) if from_date else "2001-01-01",
+                "to_date": str(to_date) if to_date else None,
+                "module_vid": module_vid,
+                "tables_with_modules": tables_with_modules,  # Include table-to-module mapping
+            }
+
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to detect primary module info: {e}")
+            return {**default_info, "tables_with_modules": []}
+
+    def _resolve_release_code(self, release_code: str) -> Optional[int]:
+        """
+        Resolve a release code (e.g., "4.2") to its release ID.
+
+        Args:
+            release_code: The release code string (e.g., "4.2")
+
+        Returns:
+            The release ID if found, None otherwise.
+        """
+        from py_dpm.dpm.utils import get_engine
+        from py_dpm.dpm.models import Release
+        from sqlalchemy.orm import sessionmaker
+
+        engine = get_engine(database_path=self.database_path, connection_url=self.connection_url)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            release = (
+                session.query(Release)
+                .filter(Release.code == release_code)
+                .first()
+            )
+            if release:
+                return release.releaseid
+            return None
+        except Exception:
+            return None
+        finally:
+            session.close()
+
+    def _resolve_module_version(
+        self, module_code: str, module_version_number: str
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """
+        Resolve a module version number to its release ID and release code.
+
+        Args:
+            module_code: The module code (e.g., "COREP_LR")
+            module_version_number: The module version number (e.g., "4.1.0")
+
+        Returns:
+            Tuple of (release_id, release_code) if found, (None, None) otherwise.
+        """
+        from py_dpm.dpm.utils import get_engine
+        from py_dpm.dpm.models import ModuleVersion, Release
+        from sqlalchemy.orm import sessionmaker
+
+        engine = get_engine(database_path=self.database_path, connection_url=self.connection_url)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            # Find the module version by code and version number
+            module_version = (
+                session.query(ModuleVersion)
+                .filter(
+                    ModuleVersion.code == module_code,
+                    ModuleVersion.versionnumber == module_version_number
+                )
+                .first()
+            )
+            if not module_version:
+                raise ValueError(
+                    f"Module version '{module_version_number}' not found for module '{module_code}'."
+                )
+
+            # Get the release code from the start release
+            release = (
+                session.query(Release)
+                .filter(Release.releaseid == module_version.startreleaseid)
+                .first()
+            )
+            release_code = release.code if release else None
+
+            return module_version.startreleaseid, release_code
+        finally:
+            session.close()
+
+    def _get_release_info(self, release_code: Optional[str], engine) -> Dict[str, Any]:
         """Get release information from database using SQLAlchemy."""
         from py_dpm.dpm.models import Release
         from sqlalchemy.orm import sessionmaker
+
+        def format_date(date_value) -> str:
+            """Format date whether it's a string or datetime object."""
+            if date_value is None:
+                return "2001-01-01"
+            if isinstance(date_value, str):
+                return date_value
+            # Assume it's a datetime-like object
+            return date_value.strftime("%Y-%m-%d")
 
         Session = sessionmaker(bind=engine)
         session = Session()
 
         try:
-            if dpm_version:
+            if release_code:
                 # Query for specific version
-                version_float = float(dpm_version)
                 release = (
                     session.query(Release)
-                    .filter(Release.code == str(version_float))
+                    .filter(Release.code == release_code)
                     .first()
                 )
 
                 if release:
                     return {
-                        "release": str(release.code) if release.code else dpm_version,
-                        "publication_date": (
-                            release.date.strftime("%Y-%m-%d")
-                            if release.date
-                            else "2001-01-01"
-                        ),
+                        "release": str(release.code) if release.code else release_code,
+                        "publication_date": format_date(release.date),
                     }
 
             # Fallback: get latest released version
@@ -902,9 +1542,7 @@ class ASTGeneratorAPI:
             if release:
                 return {
                     "release": str(release.code) if release.code else "4.1",
-                    "publication_date": (
-                        release.date.strftime("%Y-%m-%d") if release.date else "2001-01-01"
-                    ),
+                    "publication_date": format_date(release.date),
                 }
 
             # Final fallback
@@ -971,46 +1609,132 @@ class ASTGeneratorAPI:
         precondition: Optional[str],
         context: Optional[Dict[str, Any]],
         operation_code: str,
-        engine,
+        release_id: Optional[int] = None,
     ) -> tuple:
-        """Build preconditions and precondition_variables sections."""
+        """Build preconditions and precondition_variables sections.
+
+        Handles both simple preconditions like {v_C_47.00} and compound
+        preconditions like {v_C_01.00} and {v_C_05.01} and {v_C_47.00}.
+
+        For compound preconditions, generates a full AST with BinOp nodes
+        for 'and' operators connecting PreconditionItem nodes.
+
+        Uses ExplorerQueryAPI to fetch actual variable_id and variable_vid
+        from the database based on variable codes.
+
+        Args:
+            precondition: Precondition string like "{v_C_01.00}" or
+                "{v_C_01.00} and {v_C_05.01} and {v_C_47.00}"
+            context: Optional context dict
+            operation_code: Operation code to associate with this precondition
+            release_id: Optional release ID for filtering variable versions
+        """
         import re
+        from py_dpm.api.dpm.explorer import ExplorerQueryAPI
 
         preconditions = {}
         precondition_variables = {}
 
-        # Extract table code from precondition or context
-        table_code = None
+        if not precondition:
+            return preconditions, precondition_variables
 
-        if precondition:
-            # Extract variable code from precondition reference like {v_F_44_04}
-            match = re.match(r"\{v_([^}]+)\}", precondition)
-            if match:
-                table_code = match.group(1)
+        # Extract all variable codes from precondition (handles both simple and compound)
+        # Pattern matches {v_VARIABLE_CODE} references
+        var_matches = re.findall(r"\{v_([^}]+)\}", precondition)
 
-        if table_code:
-            # Query database for actual variable ID and version
-            table_info = self._get_table_info(table_code, engine)
+        if not var_matches:
+            return preconditions, precondition_variables
 
-            if table_info:
-                precondition_var_id = table_info["table_vid"]
-                version_id = table_info["table_vid"]
-                precondition_code = f"p_{precondition_var_id}"
+        # Normalize variable codes (F_44_04 -> F_44.04)
+        variable_codes = [self._normalize_table_code(v) for v in var_matches]
 
-                preconditions[precondition_code] = {
-                    "ast": {
-                        "class_name": "PreconditionItem",
-                        "variable_id": precondition_var_id,
-                        "variable_code": table_code,
-                    },
-                    "affected_operations": [operation_code],
-                    "version_id": version_id,
-                    "code": precondition_code,
+        # Batch lookup variable IDs from database (single query for efficiency)
+        explorer_api = ExplorerQueryAPI()
+        try:
+            variables_info = explorer_api.get_variables_by_codes(
+                variable_codes=variable_codes,
+                release_id=release_id,
+            )
+        finally:
+            explorer_api.close()
+
+        # Build variable infos list preserving order from precondition
+        var_infos = []
+        for var_code in variable_codes:
+            if var_code in variables_info:
+                info = variables_info[var_code]
+                var_infos.append({
+                    "variable_code": var_code,
+                    "variable_id": info["variable_id"],
+                    "variable_vid": info["variable_vid"],
+                })
+                # Add to precondition_variables
+                precondition_variables[str(info["variable_vid"])] = "b"
+
+        if not var_infos:
+            return preconditions, precondition_variables
+
+        # Build the AST based on number of variables
+        if len(var_infos) == 1:
+            # Simple precondition - single PreconditionItem
+            info = var_infos[0]
+            precondition_code = f"p_{info['variable_vid']}"
+
+            preconditions[precondition_code] = {
+                "ast": {
+                    "class_name": "PreconditionItem",
+                    "variable_id": info["variable_id"],
+                    "variable_code": info["variable_code"],
+                },
+                "affected_operations": [operation_code],
+                "version_id": info["variable_vid"],
+                "code": precondition_code,
+            }
+        else:
+            # Compound precondition - build BinOp tree with 'and' operators
+            # Create a unique key based on sorted variable VIDs
+            sorted_var_vids = sorted([info["variable_vid"] for info in var_infos])
+            precondition_code = "p_" + "_".join(str(vid) for vid in sorted_var_vids)
+
+            # Build AST: left-associative chain of BinOp 'and' nodes
+            # E.g., for [A, B, C]: ((A and B) and C)
+            ast = self._build_precondition_item_ast(var_infos[0])
+            for info in var_infos[1:]:
+                right_ast = self._build_precondition_item_ast(info)
+                ast = {
+                    "class_name": "BinOp",
+                    "op": "and",
+                    "left": ast,
+                    "right": right_ast,
                 }
 
-                precondition_variables[str(precondition_var_id)] = "b"
+            # Use the first variable's VID as version_id
+            preconditions[precondition_code] = {
+                "ast": ast,
+                "affected_operations": [operation_code],
+                "version_id": sorted_var_vids[0],
+                "code": precondition_code,
+            }
 
         return preconditions, precondition_variables
+
+    def _build_precondition_item_ast(self, var_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a PreconditionItem AST node for a single variable."""
+        return {
+            "class_name": "PreconditionItem",
+            "variable_id": var_info["variable_id"],
+            "variable_code": var_info["variable_code"],
+        }
+
+    def _normalize_table_code(self, table_code: str) -> str:
+        """Normalize table/variable code format (e.g., F_44_04 -> F_44.04)."""
+        import re
+        # Handle format like C_01_00 -> C_01.00 or F_44_04 -> F_44.04
+        match = re.match(r"([A-Z]+)_(\d+)_(\d+)", table_code)
+        if match:
+            return f"{match.group(1)}_{match.group(2)}.{match.group(3)}"
+        # Already in correct format or different format
+        return table_code
 
     def _extract_variables_from_ast(self, ast_dict: Dict[str, Any]) -> tuple:
         """
@@ -1132,6 +1856,7 @@ class ASTGeneratorAPI:
         primary_module_vid: Optional[int],
         operation_code: str,
         release_id: Optional[int] = None,
+        preferred_module_dependencies: Optional[List[str]] = None,
     ) -> tuple:
         """
         Detect cross-module dependencies for a single expression.
@@ -1145,6 +1870,8 @@ class ASTGeneratorAPI:
             primary_module_vid: The module being exported (if known)
             operation_code: Current operation code
             release_id: Optional release ID for filtering
+            preferred_module_dependencies: Optional list of module codes to prefer when
+                a table belongs to multiple modules
 
         Returns:
             Tuple of (dependency_modules, cross_instance_dependencies)
@@ -1198,30 +1925,54 @@ class ASTGeneratorAPI:
                 return ref or "T"
 
             # Helper to lookup variables for a table
-            def get_table_variables(table_code: str) -> dict:
+            # For external module tables, fetch from database if not in variables_by_table
+            from py_dpm.api.dpm import DataDictionaryAPI
+            data_dict_api = DataDictionaryAPI(
+                database_path=self.database_path,
+                connection_url=self.connection_url
+            )
+
+            def get_table_variables(table_code: str, table_vid: int = None) -> dict:
                 if not table_code:
                     return {}
+                # First try from passed variables_by_table
                 variables = variables_by_table.get(table_code)
                 if not variables:
                     variables = variables_by_table.get(f"t{table_code}", {})
+                # If still empty and table_vid is provided, fetch from database
+                if not variables and table_vid:
+                    variables = data_dict_api.get_all_variables_for_table(table_vid)
                 return variables or {}
 
             # Group external tables by module
+            # If preferred_module_dependencies is set, only include those modules
             external_modules = {}
+
+            # TEMPORARY WORKAROUND: Also collect primary module tables to add to dependency_modules
+            # This is conceptually wrong but required for current implementation.
+            # See /docs/dependency_modules_main_tables_workaround.md for how to revert this.
+            primary_module_tables = []
+
             for table_info in tables_with_modules:
                 module_vid = table_info.get("module_vid")
                 if module_vid == primary_module_vid:
-                    continue  # Skip primary module
+                    # Collect primary module tables for later inclusion in dependency_modules
+                    primary_module_tables.append(table_info)
+                    continue  # Skip for now, will add later
 
-                module_code = table_info.get("module_code")
-                if not module_code:
+                ext_module_code = table_info.get("module_code")
+                if not ext_module_code:
+                    continue
+
+                # If preferred_module_dependencies is set, only include preferred modules
+                if preferred_module_dependencies and ext_module_code not in preferred_module_dependencies:
                     continue
 
                 # Get module URI
                 try:
                     module_uri = ExplorerQuery.get_module_url(
                         scopes_api.session,
-                        module_code=module_code,
+                        module_code=ext_module_code,
                         release_id=release_id,
                     )
                     if module_uri.endswith(".json"):
@@ -1248,12 +1999,28 @@ class ASTGeneratorAPI:
 
                 # Add table and variables
                 if table_code:
-                    table_variables = get_table_variables(table_code)
+                    table_vid = table_info.get("table_vid")
+                    table_variables = get_table_variables(table_code, table_vid)
                     external_modules[module_uri]["tables"][table_code] = {
                         "variables": table_variables,
                         "open_keys": {}
                     }
                     external_modules[module_uri]["variables"].update(table_variables)
+
+            # TEMPORARY WORKAROUND: Add primary module tables to each dependency module entry
+            # This includes main module tables/variables in dependency_modules for cross-module validations
+            # See /docs/dependency_modules_main_tables_workaround.md for how to revert this.
+            for uri in external_modules:
+                for table_info in primary_module_tables:
+                    table_code = table_info.get("code")
+                    if table_code:
+                        table_vid = table_info.get("table_vid")
+                        table_variables = get_table_variables(table_code, table_vid)
+                        external_modules[uri]["tables"][table_code] = {
+                            "variables": table_variables,
+                            "open_keys": {}
+                        }
+                        external_modules[uri]["variables"].update(table_variables)
 
             # Get date info from scopes metadata
             scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
@@ -1297,6 +2064,8 @@ class ASTGeneratorAPI:
                     "to_reference_date": str(to_date) if to_date else ""
                 })
 
+            # Close data_dict_api before returning
+            data_dict_api.close()
             return dependency_modules, cross_instance_dependencies
 
         except Exception as e:
@@ -1308,53 +2077,96 @@ class ASTGeneratorAPI:
     def _add_coordinates_to_ast(
         self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """Add x/y/z coordinates to data entries in AST."""
+        """
+        Add x/y/z coordinates to data entries in AST.
+
+        Coordinates are assigned based on:
+        - x: row position (1-indexed)
+        - y: column position (1-indexed)
+        - z: sheet position (1-indexed)
+
+        If context provides column/row/sheet lists, those are used for ordering.
+        Otherwise, the order is extracted from the data entries themselves.
+        """
         import copy
 
         def add_coords_to_node(node):
             if isinstance(node, dict):
                 # Handle VarID nodes with data arrays
                 if node.get("class_name") == "VarID" and "data" in node:
-                    # Get column information from context
-                    cols = []
-                    if context and "columns" in context and context["columns"]:
-                        cols = context["columns"]
+                    data_entries = node["data"]
+                    if not data_entries:
+                        return
 
-                    # Group data entries by row to assign coordinates correctly
-                    entries_by_row = {}
-                    for data_entry in node["data"]:
-                        row_code = data_entry.get("row", "")
-                        if row_code not in entries_by_row:
-                            entries_by_row[row_code] = []
-                        entries_by_row[row_code].append(data_entry)
+                    # Get context lists (may be empty)
+                    context_cols = []
+                    context_rows = []
+                    context_sheets = []
+                    if context:
+                        context_cols = context.get("columns") or []
+                        context_rows = context.get("rows") or []
+                        context_sheets = context.get("sheets") or []
 
-                    # Assign coordinates based on column order and row grouping
-                    rows = list(entries_by_row.keys())
-                    for x_index, row_code in enumerate(rows, 1):
-                        for data_entry in entries_by_row[row_code]:
-                            column_code = data_entry.get("column", "")
+                    # Extract unique rows, columns, sheets from data entries
+                    # Use these if context doesn't provide them
+                    data_rows = []
+                    data_cols = []
+                    data_sheets = []
+                    seen_rows = set()
+                    seen_cols = set()
+                    seen_sheets = set()
 
-                            # Find y coordinate based on column position in context
-                            y_index = 1  # default
-                            if cols and column_code in cols:
-                                y_index = cols.index(column_code) + 1
-                            elif cols:
-                                # Fallback to order in data
-                                row_columns = [
-                                    entry.get("column", "")
-                                    for entry in entries_by_row[row_code]
-                                ]
-                                if column_code in row_columns:
-                                    y_index = row_columns.index(column_code) + 1
+                    for entry in data_entries:
+                        row = entry.get("row", "")
+                        col = entry.get("column", "")
+                        sheet = entry.get("sheet", "")
+                        if row and row not in seen_rows:
+                            data_rows.append(row)
+                            seen_rows.add(row)
+                        if col and col not in seen_cols:
+                            data_cols.append(col)
+                            seen_cols.add(col)
+                        if sheet and sheet not in seen_sheets:
+                            data_sheets.append(sheet)
+                            seen_sheets.add(sheet)
 
-                            # Always add y coordinate
-                            data_entry["y"] = y_index
+                    # Sort for consistent ordering
+                    data_rows.sort()
+                    data_cols.sort()
+                    data_sheets.sort()
 
-                            # Add x coordinate only if there are multiple rows
+                    # Use context lists if provided, otherwise use extracted lists
+                    rows = context_rows if context_rows else data_rows
+                    cols = context_cols if context_cols else data_cols
+                    sheets = context_sheets if context_sheets else data_sheets
+
+                    # Assign coordinates to each data entry
+                    for entry in data_entries:
+                        row_code = entry.get("row", "")
+                        col_code = entry.get("column", "")
+                        sheet_code = entry.get("sheet", "")
+
+                        # Calculate x coordinate (row position)
+                        if rows and row_code in rows:
+                            x_index = rows.index(row_code) + 1
+                            # Only add x if there are multiple rows
                             if len(rows) > 1:
-                                data_entry["x"] = x_index
+                                entry["x"] = x_index
 
-                            # TODO: Add z coordinate for sheets when needed
+                        # Calculate y coordinate (column position)
+                        if cols and col_code in cols:
+                            y_index = cols.index(col_code) + 1
+                            entry["y"] = y_index
+                        elif not cols:
+                            # Default to 1 if no column info
+                            entry["y"] = 1
+
+                        # Calculate z coordinate (sheet position)
+                        if sheets and sheet_code in sheets:
+                            z_index = sheets.index(sheet_code) + 1
+                            # Only add z if there are multiple sheets
+                            if len(sheets) > 1:
+                                entry["z"] = z_index
 
                 # Recursively process child nodes
                 for key, value in node.items():
@@ -1368,6 +2180,44 @@ class ASTGeneratorAPI:
         result = copy.deepcopy(ast_dict)
         add_coords_to_node(result)
         return result
+
+    def _clean_ast_data_entries(self, ast_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove extra fields from data entries in the AST.
+
+        Keeps only the fields required by the engine:
+        - datapoint, operand_reference_id, y, column, x (if multiple rows), z (if multiple sheets)
+
+        Removes internal/debug fields:
+        - data_type, cell_code, table_code, table_vid, row
+        """
+        # Fields to keep in data entries
+        ALLOWED_FIELDS = {"datapoint", "operand_reference_id", "x", "y", "z", "column", "sheet"}
+
+        def clean_node(node):
+            if isinstance(node, dict):
+                # Handle VarID nodes with data arrays
+                if node.get("class_name") == "VarID" and "data" in node:
+                    cleaned_data = []
+                    for data_entry in node["data"]:
+                        # Keep only allowed fields
+                        cleaned_entry = {
+                            k: v for k, v in data_entry.items() if k in ALLOWED_FIELDS
+                        }
+                        cleaned_data.append(cleaned_entry)
+                    node["data"] = cleaned_data
+
+                # Recursively process child nodes
+                for key, value in node.items():
+                    if isinstance(value, (dict, list)):
+                        clean_node(value)
+            elif isinstance(node, list):
+                for item in node:
+                    clean_node(item)
+
+        # Modify in place (ast_dict is already a copy from _add_coordinates_to_ast)
+        clean_node(ast_dict)
+        return ast_dict
 
 
 # Convenience functions for simple usage
@@ -1400,18 +2250,3 @@ def validate_expression(expression: str) -> bool:
     generator = ASTGeneratorAPI()
     result = generator.validate_expression(expression)
     return result['valid']
-
-
-def parse_batch(expressions: List[str], compatibility_mode: str = "auto") -> List[Dict[str, Any]]:
-    """
-    Simple function to parse multiple expressions.
-
-    Args:
-        expressions: List of DPM-XL expression strings
-        compatibility_mode: Version compatibility mode
-
-    Returns:
-        List of parse results
-    """
-    generator = ASTGeneratorAPI(compatibility_mode=compatibility_mode)
-    return generator.parse_batch(expressions)

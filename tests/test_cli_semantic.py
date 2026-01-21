@@ -123,9 +123,9 @@ def test_semantic_exception(runner):
         assert "Semantic validation failed" in result.output
 
 
-def test_semantic_with_dpm_version(runner):
+def test_semantic_with_release_code(runner):
     expression = "{tC_01.00, r0100, c0010}"
-    dpm_version = "4.2"
+    release_code = "4.2"
     release_id = 5
 
     with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
@@ -150,7 +150,7 @@ def test_semantic_with_dpm_version(runner):
         )
 
         result = runner.invoke(
-            main, ["semantic", expression, "--dpm-version", dpm_version]
+            main, ["semantic", expression, "--release-code", release_code]
         )
 
         # Verify SemanticAPI was initialized and called correctly
@@ -164,9 +164,9 @@ def test_semantic_with_dpm_version(runner):
         assert result.exit_code == 0
 
 
-def test_semantic_dpm_version_not_found(runner):
+def test_semantic_release_code_not_found(runner):
     expression = "{}"
-    dpm_version = "99.9"
+    release_code = "99.9"
 
     with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
         mock_api_instance = MockAPI.return_value
@@ -176,22 +176,22 @@ def test_semantic_dpm_version_not_found(runner):
         )
 
         result = runner.invoke(
-            main, ["semantic", expression, "--dpm-version", dpm_version]
+            main, ["semantic", expression, "--release-code", release_code]
         )
 
         assert result.exit_code == 1
-        assert f"Error: DPM version '{dpm_version}' not found." in result.output
+        assert f"Error: Release code '{release_code}' not found." in result.output
 
 
 def test_semantic_conflict_flags(runner):
     expression = "{}"
 
     result = runner.invoke(
-        main, ["semantic", expression, "--dpm-version", "4.2", "--release-id", "5"]
+        main, ["semantic", expression, "--release-code", "4.2", "--release-id", "5"]
     )
 
     assert result.exit_code != 0
-    assert "Cannot provide both --release-id and --dpm-version" in result.output
+    assert "Cannot provide both --release-id and --release-code" in result.output
 
 
 def test_syntax_valid_expression(runner):

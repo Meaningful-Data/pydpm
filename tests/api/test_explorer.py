@@ -219,6 +219,7 @@ class TestDPMExplorer(unittest.TestCase):
             row_code="0010",
             column_code="0100",
             sheet_code="0001",
+            module_code=None,
             release_id=1,
             release_code=None,
             date=None,
@@ -266,3 +267,317 @@ class TestExplorerQueryModuleUrlIntegration(unittest.TestCase):
             "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/frm/2.0/mod/mod_x.json"
         )
         self.assertEqual(url, expected_url)
+
+
+class TestGetVariableByCode(unittest.TestCase):
+    """Tests for get_variable_by_code and get_variables_by_codes methods."""
+
+    def setUp(self):
+        self.mock_api = MagicMock()
+        self.mock_session = MagicMock()
+        self.mock_api.session = self.mock_session
+        self.explorer = ExplorerQueryAPI(data_dict_api=self.mock_api)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variable_by_code")
+    def test_get_variable_by_code_delegates_to_query(self, mock_get_variable_by_code):
+        """Test that API method delegates to query layer correctly."""
+        # Arrange
+        expected_result = {
+            "variable_id": 2201,
+            "variable_vid": 2201,
+            "variable_code": "C_01.00",
+            "variable_name": "Filing indicator for C_01.00",
+        }
+        mock_get_variable_by_code.return_value = expected_result
+
+        # Act
+        result = self.explorer.get_variable_by_code(
+            variable_code="C_01.00",
+            release_id=3,
+        )
+
+        # Assert
+        mock_get_variable_by_code.assert_called_once_with(
+            self.mock_api.session,
+            variable_code="C_01.00",
+            release_id=3,
+            release_code=None,
+        )
+        self.assertEqual(result, expected_result)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variable_by_code")
+    def test_get_variable_by_code_with_release_code(self, mock_get_variable_by_code):
+        """Test get_variable_by_code with release_code parameter."""
+        expected_result = {
+            "variable_id": 1935,
+            "variable_vid": 1935,
+            "variable_code": "C_47.00",
+            "variable_name": "Filing indicator for C_47.00",
+        }
+        mock_get_variable_by_code.return_value = expected_result
+
+        result = self.explorer.get_variable_by_code(
+            variable_code="C_47.00",
+            release_code="4.2",
+        )
+
+        mock_get_variable_by_code.assert_called_once_with(
+            self.mock_api.session,
+            variable_code="C_47.00",
+            release_id=None,
+            release_code="4.2",
+        )
+        self.assertEqual(result, expected_result)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variable_by_code")
+    def test_get_variable_by_code_not_found(self, mock_get_variable_by_code):
+        """Test get_variable_by_code returns None when variable not found."""
+        mock_get_variable_by_code.return_value = None
+
+        result = self.explorer.get_variable_by_code(variable_code="NONEXISTENT")
+
+        self.assertIsNone(result)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variables_by_codes")
+    def test_get_variables_by_codes_delegates_to_query(self, mock_get_variables_by_codes):
+        """Test that batch API method delegates to query layer correctly."""
+        # Arrange
+        expected_result = {
+            "C_01.00": {
+                "variable_id": 2201,
+                "variable_vid": 2201,
+                "variable_code": "C_01.00",
+                "variable_name": "Filing indicator for C_01.00",
+            },
+            "C_47.00": {
+                "variable_id": 1935,
+                "variable_vid": 1935,
+                "variable_code": "C_47.00",
+                "variable_name": "Filing indicator for C_47.00",
+            },
+        }
+        mock_get_variables_by_codes.return_value = expected_result
+
+        # Act
+        result = self.explorer.get_variables_by_codes(
+            variable_codes=["C_01.00", "C_47.00"],
+            release_id=3,
+        )
+
+        # Assert
+        mock_get_variables_by_codes.assert_called_once_with(
+            self.mock_api.session,
+            variable_codes=["C_01.00", "C_47.00"],
+            release_id=3,
+            release_code=None,
+        )
+        self.assertEqual(result, expected_result)
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variables_by_codes")
+    def test_get_variables_by_codes_empty_list(self, mock_get_variables_by_codes):
+        """Test get_variables_by_codes with empty list returns empty dict."""
+        mock_get_variables_by_codes.return_value = {}
+
+        result = self.explorer.get_variables_by_codes(variable_codes=[])
+
+        mock_get_variables_by_codes.assert_called_once_with(
+            self.mock_api.session,
+            variable_codes=[],
+            release_id=None,
+            release_code=None,
+        )
+        self.assertEqual(result, {})
+
+    @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variables_by_codes")
+    def test_get_variables_by_codes_partial_match(self, mock_get_variables_by_codes):
+        """Test that only found variables are returned (missing codes excluded)."""
+        # Only C_01.00 found, C_99.99 not in database
+        expected_result = {
+            "C_01.00": {
+                "variable_id": 2201,
+                "variable_vid": 2201,
+                "variable_code": "C_01.00",
+                "variable_name": "Filing indicator for C_01.00",
+            },
+        }
+        mock_get_variables_by_codes.return_value = expected_result
+
+        result = self.explorer.get_variables_by_codes(
+            variable_codes=["C_01.00", "C_99.99"],
+            release_code="4.2",
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertIn("C_01.00", result)
+        self.assertNotIn("C_99.99", result)
+
+
+class TestExplorerQueryVariableByCodeIntegration(unittest.TestCase):
+    """Integration tests for get_variable_by_code using in-memory SQLite."""
+
+    def setUp(self):
+        from py_dpm.dpm.models import VariableVersion
+
+        # Use an in-memory SQLite database for integration-style testing
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        SessionLocal = sessionmaker(bind=self.engine)
+        self.session = SessionLocal()
+
+        # Create test releases
+        release_1 = Release(releaseid=1, code="4.1")
+        release_2 = Release(releaseid=2, code="4.2")
+
+        # Create test variable versions
+        # Variable active in release 4.1 only (ended in 4.2)
+        var_v1 = VariableVersion(
+            variablevid=1001,
+            variableid=1001,
+            code="C_01.00",
+            name="Filing indicator for C_01.00 (v4.1)",
+            startreleaseid=1,
+            endreleaseid=2,
+        )
+        # Variable active in release 4.2 (current)
+        var_v2 = VariableVersion(
+            variablevid=2001,
+            variableid=2001,
+            code="C_01.00",
+            name="Filing indicator for C_01.00 (v4.2)",
+            startreleaseid=2,
+            endreleaseid=None,
+        )
+        # Another variable active in both releases
+        var_v3 = VariableVersion(
+            variablevid=3001,
+            variableid=3001,
+            code="C_47.00",
+            name="Filing indicator for C_47.00",
+            startreleaseid=1,
+            endreleaseid=None,
+        )
+
+        self.session.add_all([release_1, release_2, var_v1, var_v2, var_v3])
+        self.session.commit()
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def test_get_variable_by_code_active_only(self):
+        """Test that default behavior returns active-only (endreleaseid is NULL)."""
+        result = ExplorerQuery.get_variable_by_code(
+            self.session,
+            variable_code="C_01.00",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["variable_vid"], 2001)
+        self.assertEqual(result["variable_code"], "C_01.00")
+        self.assertIn("v4.2", result["variable_name"])
+
+    def test_get_variable_by_code_with_release_id(self):
+        """Test filtering by release_id returns correct version."""
+        # Release 1 should return the v4.1 version
+        result = ExplorerQuery.get_variable_by_code(
+            self.session,
+            variable_code="C_01.00",
+            release_id=1,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["variable_vid"], 1001)
+        self.assertIn("v4.1", result["variable_name"])
+
+    def test_get_variable_by_code_with_release_code(self):
+        """Test filtering by release_code returns correct version."""
+        result = ExplorerQuery.get_variable_by_code(
+            self.session,
+            variable_code="C_01.00",
+            release_code="4.2",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["variable_vid"], 2001)
+
+    def test_get_variable_by_code_not_found(self):
+        """Test returns None when variable code doesn't exist."""
+        result = ExplorerQuery.get_variable_by_code(
+            self.session,
+            variable_code="NONEXISTENT",
+        )
+
+        self.assertIsNone(result)
+
+    def test_get_variable_by_code_mutual_exclusion_error(self):
+        """Test that providing both release_id and release_code raises error."""
+        with self.assertRaises(ValueError) as ctx:
+            ExplorerQuery.get_variable_by_code(
+                self.session,
+                variable_code="C_01.00",
+                release_id=1,
+                release_code="4.2",
+            )
+
+        self.assertIn("maximum of one", str(ctx.exception))
+
+    def test_get_variables_by_codes_batch(self):
+        """Test batch lookup returns multiple variables."""
+        result = ExplorerQuery.get_variables_by_codes(
+            self.session,
+            variable_codes=["C_01.00", "C_47.00"],
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertIn("C_01.00", result)
+        self.assertIn("C_47.00", result)
+        # Should return active versions (endreleaseid is NULL)
+        self.assertEqual(result["C_01.00"]["variable_vid"], 2001)
+        self.assertEqual(result["C_47.00"]["variable_vid"], 3001)
+
+    def test_get_variables_by_codes_empty_list(self):
+        """Test empty input returns empty dict without database query."""
+        result = ExplorerQuery.get_variables_by_codes(
+            self.session,
+            variable_codes=[],
+        )
+
+        self.assertEqual(result, {})
+
+    def test_get_variables_by_codes_partial_match(self):
+        """Test that missing codes are simply not included in result."""
+        result = ExplorerQuery.get_variables_by_codes(
+            self.session,
+            variable_codes=["C_01.00", "NONEXISTENT", "C_47.00"],
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertIn("C_01.00", result)
+        self.assertIn("C_47.00", result)
+        self.assertNotIn("NONEXISTENT", result)
+
+    def test_get_variables_by_codes_with_release_id(self):
+        """Test batch lookup with release_id filter."""
+        result = ExplorerQuery.get_variables_by_codes(
+            self.session,
+            variable_codes=["C_01.00", "C_47.00"],
+            release_id=1,
+        )
+
+        self.assertEqual(len(result), 2)
+        # Release 1 should return v4.1 version for C_01.00
+        self.assertEqual(result["C_01.00"]["variable_vid"], 1001)
+        # C_47.00 is active in both releases
+        self.assertEqual(result["C_47.00"]["variable_vid"], 3001)
+
+    def test_get_variables_by_codes_mutual_exclusion_error(self):
+        """Test that providing both release_id and release_code raises error."""
+        with self.assertRaises(ValueError) as ctx:
+            ExplorerQuery.get_variables_by_codes(
+                self.session,
+                variable_codes=["C_01.00"],
+                release_id=1,
+                release_code="4.2",
+            )
+
+        self.assertIn("maximum of one", str(ctx.exception))

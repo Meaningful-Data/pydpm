@@ -236,3 +236,75 @@ class ExplorerQueryAPI:
             release_code=release_code,
             date=date,
         )
+
+    def get_variable_by_code(
+        self,
+        variable_code: str,
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get variable_id and variable_vid for a given variable code.
+
+        This is useful for resolving precondition variable references like {v_C_01.00}
+        where the variable code corresponds to a table's filing indicator variable.
+
+        Args:
+            variable_code: The variable code to look up (e.g., "C_01.00")
+            release_id: Optional release ID to filter by (mutually exclusive with release_code)
+            release_code: Optional release code to filter by (mutually exclusive with release_id)
+
+        Returns:
+            Dict with variable_id, variable_vid, variable_code, variable_name if found,
+            None otherwise.
+
+        Example:
+            >>> api = ExplorerQueryAPI()
+            >>> result = api.get_variable_by_code("C_01.00", release_code="4.2")
+            >>> print(result)
+            {'variable_id': 2201, 'variable_vid': 2201, 'variable_code': 'C_01.00', 'variable_name': '...'}
+        """
+        return ExplorerQuery.get_variable_by_code(
+            self.api.session,
+            variable_code=variable_code,
+            release_id=release_id,
+            release_code=release_code,
+        )
+
+    def get_variables_by_codes(
+        self,
+        variable_codes: List[str],
+        release_id: Optional[int] = None,
+        release_code: Optional[str] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Batch lookup of variable_id and variable_vid for multiple variable codes.
+
+        This is more efficient than calling get_variable_by_code multiple times
+        when resolving multiple precondition variables, as it performs a single
+        database query.
+
+        Args:
+            variable_codes: List of variable codes to look up
+            release_id: Optional release ID to filter by (mutually exclusive with release_code)
+            release_code: Optional release code to filter by (mutually exclusive with release_id)
+
+        Returns:
+            Dict mapping variable_code to {variable_id, variable_vid, variable_code, variable_name}.
+            Only includes codes that were found in the database.
+
+        Example:
+            >>> api = ExplorerQueryAPI()
+            >>> result = api.get_variables_by_codes(["C_01.00", "C_47.00"], release_code="4.2")
+            >>> print(result)
+            {
+                'C_01.00': {'variable_id': 2201, 'variable_vid': 2201, ...},
+                'C_47.00': {'variable_id': 1935, 'variable_vid': 1935, ...}
+            }
+        """
+        return ExplorerQuery.get_variables_by_codes(
+            self.api.session,
+            variable_codes=variable_codes,
+            release_id=release_id,
+            release_code=release_code,
+        )

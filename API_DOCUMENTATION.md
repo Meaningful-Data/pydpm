@@ -326,7 +326,6 @@ Generate enriched ASTs with metadata and data field information.
 ```python
 from py_dpm.api.dpm_xl import (
     generate_complete_ast,
-    generate_complete_batch,
     generate_enriched_ast,
     enrich_ast_with_metadata,
 )
