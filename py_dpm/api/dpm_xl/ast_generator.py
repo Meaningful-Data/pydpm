@@ -1072,11 +1072,28 @@ class ASTGeneratorAPI:
                 all_tables_with_modules.extend(tables_with_modules)
 
                 # Build mapping of table_code -> module_vid
+                # Prefer the module VID that matches the detected primary module
                 table_to_module = {}
+                primary_module_code = primary_module_info.get("module_code")
+
+                # First pass: record mappings for tables belonging to the primary module (by code)
+                if primary_module_code:
+                    for table_info in tables_with_modules:
+                        table_code = table_info.get("code", "")
+                        table_module_vid = table_info.get("module_vid")
+                        table_module_code = table_info.get("module_code")
+                        if (
+                            table_code
+                            and table_module_vid
+                            and table_module_code == primary_module_code
+                        ):
+                            table_to_module[table_code] = table_module_vid
+
+                # Second pass: fill in any remaining tables with the first available module VID
                 for table_info in tables_with_modules:
                     table_code = table_info.get("code", "")
                     table_module_vid = table_info.get("module_vid")
-                    if table_code and table_module_vid:
+                    if table_code and table_module_vid and table_code not in table_to_module:
                         table_to_module[table_code] = table_module_vid
 
                 resolved_primary_module_vid = primary_module_info.get("module_vid") or primary_module_vid

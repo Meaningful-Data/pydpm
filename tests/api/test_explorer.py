@@ -219,6 +219,7 @@ class TestDPMExplorer(unittest.TestCase):
             row_code="0010",
             column_code="0100",
             sheet_code="0001",
+            module_code=None,
             release_id=1,
             release_code=None,
             date=None,

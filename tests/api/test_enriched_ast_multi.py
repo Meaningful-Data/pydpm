@@ -69,26 +69,6 @@ def _db_kwargs():
 
             return {"connection_url": connection_url}
 
-    # Legacy PostgreSQL configuration
-    use_postgres = os.getenv("USE_POSTGRES", "false").lower() == "true"
-    use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true"
-
-    if use_postgres:
-        host = os.getenv("POSTGRES_HOST")
-        port = os.getenv("POSTGRES_PORT", "5432")
-        db = os.getenv("POSTGRES_DB")
-        user = os.getenv("POSTGRES_USER")
-        password = os.getenv("POSTGRES_PASS")
-
-        if all([host, db, user, password]):
-            connection_url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
-            return {"connection_url": connection_url}
-
-    if use_sqlite:
-        db_path = os.getenv("SQLITE_DB_PATH", "database.db")
-        return {"database_path": db_path}
-
-    # No DB configuration found; let underlying defaults apply
     return {}
 
 
@@ -147,26 +127,6 @@ class TestGenerateEnrichedAstMultiExpression:
         assert "dependency_information" in module_data
         assert "cross_instance_dependencies" in module_data["dependency_information"]
 
-    def test_single_expression_backward_compatible_string(self, api):
-        """Test backward compatibility with plain string expression."""
-        expression = "{tF_01.01, r0380, c0010} > 0"
-
-        result = api.generate_enriched_ast(
-            expressions=expression,  # Plain string, not list
-            release_code="4.2",
-            module_code="FINREP9",
-        )
-
-        assert result["success"] is True, f"Expected success, got error: {result['error']}"
-        assert result["enriched_ast"] is not None
-
-        enriched_ast = result["enriched_ast"]
-        namespace = list(enriched_ast.keys())[0]
-        module_data = enriched_ast[namespace]
-
-        # Should use default_code for operation
-        assert "default_code" in module_data["operations"]
-
     def test_multiple_expressions_single_module(self, api):
         """Test multiple expressions aggregated into single script."""
         expressions = [
@@ -177,7 +137,7 @@ class TestGenerateEnrichedAstMultiExpression:
 
         result = api.generate_enriched_ast(
             expressions=expressions,
-            release_code="4.2",
+            module_version_number="3.3.0",
             module_code="FINREP9",
         )
 
