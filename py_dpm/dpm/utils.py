@@ -117,6 +117,13 @@ def create_engine_from_url(connection_url, pool_config=None):
     # Detect database type from URL scheme
     is_sqlite = connection_url.startswith("sqlite://")
 
+    # For PostgreSQL, ensure ISO datestyle if not already set
+    # This prevents date parsing errors when PostgreSQL returns dates in locale format
+    is_postgres = connection_url.startswith("postgresql://")
+    if is_postgres and "datestyle" not in connection_url.lower():
+        separator = "&" if "?" in connection_url else "?"
+        connection_url = f"{connection_url}{separator}options=-c%20datestyle%3DISO"
+
     # For SQLite URLs, always create a fresh engine to avoid
     # surprising cross-test or cross-call state sharing, especially
     # for in-memory databases. For server-based databases, reuse the
@@ -166,6 +173,14 @@ def create_engine_object(url):
 
     # Detect database type from URL scheme (not from environment variables)
     is_sqlite = url_str.startswith("sqlite://")
+
+    # For PostgreSQL, ensure ISO datestyle if not already set
+    # This prevents date parsing errors when PostgreSQL returns dates in locale format
+    is_postgres = url_str.startswith("postgresql://")
+    if is_postgres and "datestyle" not in url_str.lower():
+        separator = "&" if "?" in url_str else "?"
+        url_str = f"{url_str}{separator}options=-c%20datestyle%3DISO"
+        url = url_str  # Use modified URL for engine creation
 
     # Only reuse engines for non-SQLite URLs. SQLite (especially in-memory)
     # should create independent engines to avoid leaking state between calls.
@@ -230,6 +245,7 @@ def get_engine(owner=None, database_path=None, connection_url=None, pool_config=
                 port = db_port or "5432"
                 connection_url = (
                     f"postgresql://{db_user}:{db_password}@{db_host}:{port}/{db_name}"
+                    "?options=-c%20datestyle%3DISO"
                 )
                 return create_engine_object(connection_url)
             else:
@@ -277,6 +293,7 @@ def get_engine(owner=None, database_path=None, connection_url=None, pool_config=
             connection_url = (
                 f"postgresql://{postgres_user}:{postgres_pass}@"
                 f"{postgres_host}:{postgres_port}/{postgres_db}"
+                "?options=-c%20datestyle%3DISO"
             )
             return create_engine_object(connection_url)
 
