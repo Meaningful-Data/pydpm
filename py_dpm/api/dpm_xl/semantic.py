@@ -44,7 +44,10 @@ class SemanticAPI:
     """
 
     def __init__(
-        self, database_path: Optional[str] = None, connection_url: Optional[str] = None
+        self,
+        database_path: Optional[str] = None,
+        connection_url: Optional[str] = None,
+        pool_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize the Semantic API.
@@ -53,9 +56,12 @@ class SemanticAPI:
             database_path (Optional[str]): Path to SQLite database. If None, uses default from environment.
             connection_url (Optional[str]): Full SQLAlchemy connection URL (e.g., postgresql://user:pass@host:port/db).
                                           Takes precedence over database_path.
+            pool_config (Optional[Dict[str, Any]]): Connection pool configuration for PostgreSQL/MySQL.
+                Supported keys: pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping.
         """
         self.database_path = database_path
         self.connection_url = connection_url
+        self.pool_config = pool_config
         # Store last parsed AST for consumers that need it (e.g. complete AST generation)
         self.ast = None
 
@@ -65,7 +71,7 @@ class SemanticAPI:
             from py_dpm.dpm.utils import create_engine_from_url
 
             # Create engine for the connection URL (supports SQLite, PostgreSQL, MySQL, etc.)
-            self.engine = create_engine_from_url(connection_url)
+            self.engine = create_engine_from_url(connection_url, pool_config=pool_config)
             session_maker = sessionmaker(bind=self.engine)
             self.session = session_maker()
 

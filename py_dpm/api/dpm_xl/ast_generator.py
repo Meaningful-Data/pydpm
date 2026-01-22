@@ -48,6 +48,7 @@ class ASTGeneratorAPI:
 
     def __init__(self, database_path: Optional[str] = None,
                  connection_url: Optional[str] = None,
+                 pool_config: Optional[Dict[str, Any]] = None,
                  compatibility_mode: str = "auto",
                  enable_semantic_validation: bool = False):
         """
@@ -56,13 +57,19 @@ class ASTGeneratorAPI:
         Args:
             database_path: Optional path to SQLite data dictionary database
             connection_url: Optional SQLAlchemy connection URL for PostgreSQL
+            pool_config: Connection pool configuration for PostgreSQL/MySQL
             compatibility_mode: "auto", "3.1.0", "4.0.0", or "current"
             enable_semantic_validation: Enable semantic validation (requires database)
         """
         self.syntax_api = SyntaxAPI()
-        self.semantic_api = SemanticAPI(database_path=database_path, connection_url=connection_url) if enable_semantic_validation else None
+        self.semantic_api = SemanticAPI(
+            database_path=database_path,
+            connection_url=connection_url,
+            pool_config=pool_config
+        ) if enable_semantic_validation else None
         self.database_path = database_path
         self.connection_url = connection_url
+        self.pool_config = pool_config
         self.compatibility_mode = compatibility_mode
         self.enable_semantic = enable_semantic_validation
 

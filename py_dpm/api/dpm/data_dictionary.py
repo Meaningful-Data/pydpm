@@ -50,7 +50,10 @@ class DataDictionaryAPI:
     """
 
     def __init__(
-        self, database_path: Optional[str] = None, connection_url: Optional[str] = None
+        self,
+        database_path: Optional[str] = None,
+        connection_url: Optional[str] = None,
+        pool_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize the Data Dictionary API.
@@ -58,8 +61,14 @@ class DataDictionaryAPI:
         Args:
             database_path: Path to SQLite database (optional)
             connection_url: SQLAlchemy connection URL for PostgreSQL (optional)
+            pool_config: Connection pool configuration for PostgreSQL/MySQL (optional)
+                Supported keys: pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping.
         """
-        engine = get_engine(database_path=database_path, connection_url=connection_url)
+        engine = get_engine(
+            database_path=database_path,
+            connection_url=connection_url,
+            pool_config=pool_config
+        )
         self.session = get_session()
 
     # ==================== Release Query Methods ====================

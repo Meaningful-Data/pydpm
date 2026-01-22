@@ -84,7 +84,7 @@ sessionMakerObject = None
 _current_engine_url = None
 
 
-def create_engine_from_url(connection_url):
+def create_engine_from_url(connection_url, pool_config=None):
     """
     Create SQLAlchemy engine from a connection URL with appropriate pooling parameters.
 
@@ -96,6 +96,12 @@ def create_engine_from_url(connection_url):
 
     Args:
         connection_url (str): SQLAlchemy connection URL (e.g., 'sqlite:///path.db', 'postgresql://user:pass@host/db')
+        pool_config (dict, optional): Custom pool configuration. Supported keys:
+            - pool_size (int): Maximum number of connections to maintain in the pool (default: 20)
+            - max_overflow (int): Maximum overflow connections beyond pool_size (default: 10)
+            - pool_timeout (int): Seconds to wait before giving up on getting a connection (default: 30)
+            - pool_recycle (int): Seconds before recycling connections (default: 180)
+            - pool_pre_ping (bool): Health check connections before using from pool (default: True)
 
     Returns:
         sqlalchemy.engine.Engine: Configured database engine
@@ -103,6 +109,8 @@ def create_engine_from_url(connection_url):
     Examples:
         >>> engine = create_engine_from_url('sqlite:///database.db')
         >>> engine = create_engine_from_url('postgresql://user:pass@localhost/mydb')
+        >>> engine = create_engine_from_url('postgresql://user:pass@localhost/mydb',
+        ...                                   pool_config={'pool_size': 5, 'max_overflow': 10})
     """
     global engine, sessionMakerObject, _current_engine_url
 
@@ -123,12 +131,22 @@ def create_engine_from_url(connection_url):
         engine = create_engine(connection_url, pool_pre_ping=True)
     else:
         # Server-based databases (PostgreSQL, MySQL, etc.) with connection pooling
+        # Default pool configuration
+        default_pool_config = {
+            'pool_size': 20,
+            'max_overflow': 10,
+            'pool_timeout': 30,
+            'pool_recycle': 180,
+            'pool_pre_ping': True,
+        }
+
+        # Merge custom pool_config with defaults
+        if pool_config:
+            default_pool_config.update(pool_config)
+
         engine = create_engine(
             connection_url,
-            pool_size=20,
-            max_overflow=10,
-            pool_recycle=180,
-            pool_pre_ping=True,
+            **default_pool_config
         )
 
     # Initialize global sessionMakerObject
@@ -170,7 +188,7 @@ def create_engine_object(url):
     return engine
 
 
-def get_engine(owner=None, database_path=None, connection_url=None):
+def get_engine(owner=None, database_path=None, connection_url=None, pool_config=None):
     """
     Get database engine based on configuration or explicit parameters.
 
@@ -184,13 +202,14 @@ def get_engine(owner=None, database_path=None, connection_url=None):
         owner: Owner for SQL Server databases (EBA/EIOPA) - legacy support
         database_path: Explicit SQLite database path
         connection_url: Explicit SQLAlchemy connection URL (e.g., for PostgreSQL)
+        pool_config: Connection pool configuration dict (for PostgreSQL/MySQL)
 
     Returns:
         SQLAlchemy Engine
     """
     # Priority 1: If explicit connection URL is provided, use it directly
     if connection_url:
-        return create_engine_from_url(connection_url)
+        return create_engine_from_url(connection_url, pool_config=pool_config)
 
     # Priority 2: If explicit database_path is provided, use SQLite with that path
     if database_path:
