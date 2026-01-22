@@ -55,9 +55,10 @@ def test_generate_complete_ast_uses_semantic_api_without_legacy_api(monkeypatch)
     start_ast = ast_nodes.Start(children=[with_expr])
 
     class DummySemanticAPI:
-        def __init__(self, database_path=None, connection_url=None):
+        def __init__(self, database_path=None, connection_url=None, pool_config=None):
             self.database_path = database_path
             self.connection_url = connection_url
+            self.pool_config = pool_config
             # Expose the AST as SemanticAPI.validate_expression would
             self.ast = start_ast
 
