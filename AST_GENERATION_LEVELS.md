@@ -6,7 +6,7 @@ This document explains the three levels of AST generation available in the `ASTG
 
 | Feature | Level 1: Basic AST | Level 2: Complete AST | Level 3: Enriched AST |
 |---------|-------------------|----------------------|----------------------|
-| **Method** | `parse_expression()` | `generate_complete_ast()` | `generate_enriched_ast()` |
+| **Method** | `parse_expression()` | `generate_complete_ast()` | `generate_validations_script()` |
 | **Database Required** | ❌ No | ✅ Yes | ✅ Yes |
 | **Semantic Validation** | ❌ No | ✅ Yes | ✅ Yes |
 | **Data Fields** | ❌ No | ✅ Yes (datapoint IDs, operand refs) | ✅ Yes |
@@ -117,7 +117,7 @@ result = generator.generate_complete_ast(
 
 ---
 
-## Level 3: Enriched AST (`generate_enriched_ast`)
+## Level 3: Validations Script (`generate_validations_script`)
 
 ### What You Get
 - ✅ Everything from Level 2, PLUS:
@@ -132,11 +132,9 @@ result = generator.generate_complete_ast(
 from py_dpm.api import ASTGeneratorAPI
 
 generator = ASTGeneratorAPI(database_path="data.db")
-result = generator.generate_enriched_ast(
-    expression="{tC_01.00, r0100, c0010}",
-    release_code="4.2",
-    operation_code="my_validation",
-    precondition="{v_F_44_04}"
+result = generator.generate_validations_script(
+    expressions="{tC_01.00, r0100, c0010}",
+    release_code="4.2"
 )
 
 # Result structure:
@@ -208,7 +206,7 @@ result = generator.generate_enriched_ast(
 
 ```
 Do you need to feed this to a business rule execution engine?
-├─ YES → Use Level 3 (generate_enriched_ast)
+├─ YES → Use Level 3 (generate_validations_script)
 └─ NO
    ├─ Do you need datapoint IDs and operand references?
    │  ├─ YES → Use Level 2 (generate_complete_ast)
@@ -245,11 +243,10 @@ print(f"Level 2 - AST keys: {complete['ast'].keys()}")
 # Output: dict_keys(['class_name', 'table', 'rows', 'cols', 'data', ...])
 # Has 'data' field with datapoint IDs!
 
-# Level 3: Enriched AST (with database + framework)
-enriched = generator_complete.generate_enriched_ast(
+# Level 3: Validations Script (with database + framework)
+enriched = generator_complete.generate_validations_script(
     expression,
-    release_code="4.2",
-    operation_code="validation_1"
+    release_code="4.2"
 )
 print(f"Level 3 - Top-level keys: {enriched['enriched_ast'].keys()}")
 # Output: dict_keys(['default_module'])
@@ -266,6 +263,6 @@ print(f"Level 3 - Module sections: {enriched['enriched_ast']['default_module'].k
 |-----------|-----------|-------------|
 | 1 - Basic | `parse_expression()` | Syntax validation, quick parsing |
 | 2 - Complete | `generate_complete_ast()` | AST analysis with metadata |
-| 3 - Enriched | `generate_enriched_ast()` | Business rule engines |
+| 3 - Validations Script | `generate_validations_script()` | Business rule engines |
 
 **Rule of thumb:** Start with the simplest level that meets your needs. Only use Level 3 if you're feeding the AST to an execution engine.

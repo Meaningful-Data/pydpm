@@ -11,10 +11,7 @@ from py_dpm.api.dpm_xl import (
     SemanticAPI,
     ASTGeneratorAPI,
     OperationScopesAPI,
-    generate_complete_ast,
-    generate_enriched_ast,
-    enrich_ast_with_metadata,
-    parse_with_data_fields,
+    generate_validations_script,
 )
 
 # Import from general DPM API
@@ -40,9 +37,6 @@ __all__ = [
     "SemanticAPI",
     "ASTGeneratorAPI",
     "OperationScopesAPI",
-    # Complete AST functions (backwards compatibility)
-    "generate_complete_ast",
-    "generate_enriched_ast",
-    "enrich_ast_with_metadata",
-    "parse_with_data_fields",
+    # Standalone function
+    "generate_validations_script",
 ]

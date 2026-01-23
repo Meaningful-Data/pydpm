@@ -317,43 +317,42 @@ print(ast)
 
 ---
 
-### Complete AST Functions
+### Validations Script Function
 
-Generate enriched ASTs with metadata and data field information.
+Generate engine-ready validations scripts with framework structure.
 
-#### Functions
+#### Function
 
 ```python
-from py_dpm.api.dpm_xl import (
-    generate_complete_ast,
-    generate_enriched_ast,
-    enrich_ast_with_metadata,
-)
+from py_dpm.api.dpm_xl import generate_validations_script
 ```
 
-##### `generate_complete_ast(expression, database_path=None, connection_url=None)`
+##### `generate_validations_script(expressions, database_path=None, connection_url=None, release_code=None, ...)`
 
-Generates a complete AST with all data fields populated.
+Generates an engine-ready validations script with AST and framework structure.
 
 **Parameters:**
-- `expression` (str): The DPM-XL expression
-- `database_path` (Optional[str]): Path to database
-- `connection_url` (Optional[str]): Database connection URL
+- `expressions`: Single expression string or list of (expression, operation_code, precondition) tuples
+- `database_path` (Optional[str]): Path to SQLite database
+- `connection_url` (Optional[str]): PostgreSQL connection URL
+- `release_code` (Optional[str]): DPM release code (e.g., "4.2")
+- `module_code` (Optional[str]): Module code (e.g., "FINREP9")
 
 **Returns:**
-- `dict`: Complete AST with metadata
+- `dict`: `{'success': bool, 'enriched_ast': dict, 'error': str}`
 
 **Example:**
 ```python
-from py_dpm.api.dpm_xl import generate_complete_ast
+from py_dpm.api.dpm_xl import generate_validations_script
 
-ast = generate_complete_ast(
+result = generate_validations_script(
     "{tC_01.00, r0100, c0010}",
-    database_path="data.db"
+    database_path="data.db",
+    release_code="4.2"
 )
 
-# AST includes data fields like table info, cell metadata, etc.
-print(ast['data_fields']['table_info'])
+if result["success"]:
+    print(result["enriched_ast"])
 ```
 
 ---

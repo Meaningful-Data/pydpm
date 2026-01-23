@@ -81,8 +81,8 @@ py_dpm/
 
 ```python
 # Import DPM-XL APIs
-from py_dpm.api import SyntaxAPI, SemanticAPI, ASTGenerator
-from py_dpm.api import generate_complete_ast, generate_enriched_ast
+from py_dpm.api import SyntaxAPI, SemanticAPI, ASTGeneratorAPI
+from py_dpm.api import generate_validations_script
 
 # Import General DPM APIs
 from py_dpm.api import MigrationAPI, DataDictionaryAPI, DPMExplorer, OperationScopesAPI

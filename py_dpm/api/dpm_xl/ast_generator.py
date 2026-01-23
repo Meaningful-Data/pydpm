@@ -32,7 +32,7 @@ class ASTGeneratorAPI:
        - Returns: AST with data fields populated (datapoint IDs, operand references)
        - Use for: AST analysis with complete metadata, matching json_scripts/*.json format
 
-    3. **Enriched AST** (generate_enriched_ast):
+    3. **Validations Script** (generate_validations_script):
        - Requires database connection
        - Extends complete AST with framework structure for execution engines
        - Returns: Engine-ready AST with operations, variables, tables, preconditions sections
@@ -90,7 +90,7 @@ class ASTGeneratorAPI:
 
         **What you DON'T get:**
         - Data fields (datapoint IDs, operand references) - use generate_complete_ast()
-        - Framework structure - use generate_enriched_ast()
+        - Framework structure - use generate_validations_script()
 
         Args:
             expression: DPM-XL expression string
@@ -347,7 +347,7 @@ class ASTGeneratorAPI:
             return [(expressions, "default_code", None)]
         return expressions
 
-    def generate_enriched_ast(
+    def generate_validations_script(
         self,
         expressions: Union[str, List[Tuple[str, str, Optional[str]]]],
         release_code: Optional[str] = None,
@@ -360,9 +360,9 @@ class ASTGeneratorAPI:
         module_version_number: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Generate enriched, engine-ready AST with framework structure (Level 3).
+        Generate validations script with engine-ready AST and framework structure.
 
-        This extends generate_complete_ast() by wrapping the complete AST in an engine-ready
+        This method generates the complete validations script by wrapping ASTs in an engine-ready
         framework structure with operations, variables, tables, and preconditions sections.
         This is the format required by business rule execution engines.
 
@@ -370,7 +370,7 @@ class ASTGeneratorAPI:
         expression/operation/precondition tuples for generating scripts with multiple operations.
 
         **What you get:**
-        - Everything from generate_complete_ast() PLUS:
+        - Complete AST with data fields PLUS:
         - Framework structure: operations, variables, tables, preconditions
         - Module metadata: version, release info, dates
         - Dependency information (including cross-module dependencies)
@@ -428,14 +428,14 @@ class ASTGeneratorAPI:
 
         Example:
             >>> generator = ASTGeneratorAPI(database_path="data.db")
-            >>> # Single expression (backward compatible)
-            >>> result = generator.generate_enriched_ast(
+            >>> # Single expression
+            >>> result = generator.generate_validations_script(
             ...     "{tF_01.00, r0010, c0010}",
             ...     release_code="4.2",
             ... )
             >>>
             >>> # Multiple expressions with operations and preconditions
-            >>> result = generator.generate_enriched_ast(
+            >>> result = generator.generate_validations_script(
             ...     [
             ...         ("{tF_01.00, r0010, c0010} = 0", "v1234_m", None),
             ...         ("{tF_01.00, r0020, c0010} > 0", "v1235_m", "{v_F_44_04}"),
