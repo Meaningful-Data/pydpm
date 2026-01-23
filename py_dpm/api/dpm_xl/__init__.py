@@ -9,13 +9,7 @@ from py_dpm.api.dpm_xl.semantic import SemanticAPI
 from py_dpm.api.dpm_xl.ast_generator import ASTGeneratorAPI
 from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
 
-# Backwards-compatible standalone functions (delegate to ASTGeneratorAPI)
-from py_dpm.api.dpm_xl.complete_ast import (
-    generate_complete_ast,
-    generate_enriched_ast,
-    enrich_ast_with_metadata,
-    parse_with_data_fields,
-)
+from py_dpm.api.dpm_xl.complete_ast import generate_validations_script
 
 __all__ = [
     # Class-based APIs
@@ -23,9 +17,6 @@ __all__ = [
     "SemanticAPI",
     "ASTGeneratorAPI",
     "OperationScopesAPI",
-    # Standalone functions (backwards compatibility)
-    "generate_complete_ast",
-    "generate_enriched_ast",
-    "enrich_ast_with_metadata",
-    "parse_with_data_fields",
+    # Standalone function
+    "generate_validations_script",
 ]

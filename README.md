@@ -177,22 +177,21 @@ else:
     print(f"Error: {result.error}")
 ```
 
-#### Complete AST Generation
+#### Validations Script Generation
 
 ```python
-from py_dpm.api import generate_complete_ast, generate_enriched_ast
+from py_dpm.api import generate_validations_script
 
-# Generate complete AST with data fields
-result = generate_complete_ast("{tT_01.00, r0010, c0010}", release_id=123)
-if result.success:
-    print(f"AST: {result.ast}")
-    print(f"Data fields: {result.data_fields}")
+# Generate engine-ready validations script
+result = generate_validations_script(
+    "{tT_01.00, r0010, c0010}",
+    database_path="data.db",
+    release_code="4.2"
+)
+if result["success"]:
+    print(f"Enriched AST: {result['enriched_ast']}")
 else:
-    print(f"Errors: {result.errors}")
-
-# Generate enriched AST (ready for execution engine)
-enriched = generate_enriched_ast("{tT_01.00, r0010, c0010}", release_id=123)
-print(f"Enriched AST: {enriched}")
+    print(f"Error: {result['error']}")
 ```
 
 #### Migration

@@ -1,5 +1,5 @@
 """
-Integration tests for generate_enriched_ast with multi-expression support.
+Integration tests for generate_validations_script with multi-expression support.
 
 These tests require a database connection configured via .env file.
 """
@@ -73,7 +73,7 @@ def _db_kwargs():
 
 
 class TestGenerateEnrichedAstMultiExpression:
-    """Integration tests for multi-expression generate_enriched_ast."""
+    """Integration tests for multi-expression generate_validations_script."""
 
     @pytest.fixture
     def api(self):
@@ -91,7 +91,7 @@ class TestGenerateEnrichedAstMultiExpression:
             sum ({tF_32.01, r0010, (c0010, c0060)}) = {tF_01.01, r0380, c0010}
         """
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=[
                 (expression, "v2814_m", None),
             ],
@@ -135,7 +135,7 @@ class TestGenerateEnrichedAstMultiExpression:
             ("{tF_01.01, r0340, c0010} != 0", "op_3", None),
         ]
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=expressions,
             module_version_number="3.3.0",
             module_code="FINREP9",
@@ -163,7 +163,7 @@ class TestGenerateEnrichedAstMultiExpression:
             ("{tF_01.01, r0340, c0010} != 0", "op_without_precond", None),
         ]
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=expressions,
             release_code="4.2",
             module_code="FINREP9",
@@ -192,7 +192,7 @@ class TestGenerateEnrichedAstMultiExpression:
             sum ({tF_32.01, r0010, (c0010, c0060)}) = {tF_01.01, r0380, c0010}
         """
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=[
                 (expression, "cross_module_op", None),
             ],
@@ -222,7 +222,7 @@ class TestGenerateEnrichedAstMultiExpression:
             ("INVALID EXPRESSION !!!", "invalid_op", None),  # This should fail
         ]
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=expressions,
             release_code="4.2",
             module_code="FINREP9",
@@ -241,7 +241,7 @@ class TestGenerateEnrichedAstMultiExpression:
             ("{tF_01.01, r0380, c0010} < 100", "op_2", None),  # Same variable
         ]
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=expressions,
             release_code="4.2",
             module_code="FINREP9",
@@ -260,7 +260,7 @@ class TestGenerateEnrichedAstMultiExpression:
         """Test that output structure has all required fields."""
         expression = "{tF_01.01, r0380, c0010} > 0"
 
-        result = api.generate_enriched_ast(
+        result = api.generate_validations_script(
             expressions=[
                 (expression, "test_op", None),
             ],
