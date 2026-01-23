@@ -452,6 +452,21 @@ class ASTToJSONVisitor(NodeVisitor):
             'shift_number': node.shift_number
         }
 
+    def visit_RenameOp(self, node):
+        """Visit RenameOp nodes and serialize as RenameClauseOp."""
+        return {
+            'class_name': 'RenameClauseOp',
+            'operand': self.visit(node.operand),
+            'clauses': [self._serialize_rename_node(rn) for rn in node.rename_nodes]
+        }
+
+    def _serialize_rename_node(self, node):
+        """Serialize a RenameNode as a clause dictionary."""
+        return {
+            'from_component': node.old_name,
+            'to_component': node.new_name
+        }
+
     def visit_PreconditionItem(self, node):
         """Visit PreconditionItem nodes."""
         result = {
