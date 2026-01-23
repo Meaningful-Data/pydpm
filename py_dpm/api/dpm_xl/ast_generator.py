@@ -984,6 +984,7 @@ class ASTGeneratorAPI:
         """
         from py_dpm.dpm.utils import get_engine
         from py_dpm.api.dpm import DataDictionaryAPI
+        from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
 
         # Initialize database connection
         engine = get_engine(database_path=self.database_path, connection_url=self.connection_url)
@@ -1017,6 +1018,12 @@ class ASTGeneratorAPI:
             connection_url=self.connection_url
         )
 
+        # Initialize OperationScopesAPI once for all expressions (performance optimization)
+        scopes_api = OperationScopesAPI(
+            database_path=self.database_path,
+            connection_url=self.connection_url
+        )
+
         # Primary module info will be determined from the first expression or module_code
         primary_module_info = None
         namespace = None
@@ -1035,6 +1042,21 @@ class ASTGeneratorAPI:
                 complete_ast = complete_result["ast"]
                 context = complete_result.get("context") or table_context
 
+                # Get tables with modules for this expression FIRST (reuse scopes_api from outer scope)
+                # This is done before _get_primary_module_info to pass precomputed values
+                tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
+                    expression=expression,
+                    release_id=release_id
+                )
+
+                # Calculate scope_result once (avoid duplicate calls in other methods)
+                scope_result = scopes_api.calculate_scopes_from_expression(
+                    expression=expression,
+                    release_id=release_id,
+                    read_only=True
+                )
+                all_tables_with_modules.extend(tables_with_modules)
+
                 # Get primary module info from first expression (or use module_code)
                 if primary_module_info is None:
                     primary_module_info = self._get_primary_module_info(
@@ -1042,6 +1064,9 @@ class ASTGeneratorAPI:
                         primary_module_vid=primary_module_vid,
                         release_id=release_id,
                         module_code=module_code,
+                        # Performance optimization: pass precomputed values
+                        tables_with_modules=tables_with_modules,
+                        scopes_api=scopes_api,
                     )
                     namespace = primary_module_info.get("module_uri", "default_module")
 
@@ -1065,18 +1090,6 @@ class ASTGeneratorAPI:
 
                 # Clean extra fields from data entries
                 self._clean_ast_data_entries(ast_with_coords)
-
-                # Get tables with modules for this expression
-                from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI
-                scopes_api = OperationScopesAPI(
-                    database_path=self.database_path,
-                    connection_url=self.connection_url
-                )
-                tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
-                    expression=expression,
-                    release_id=release_id
-                )
-                all_tables_with_modules.extend(tables_with_modules)
 
                 # Build mapping of table_code -> module_vid
                 # Prefer the module VID that matches the detected primary module
@@ -1179,6 +1192,10 @@ class ASTGeneratorAPI:
                     operation_code=operation_code,
                     release_id=release_id,
                     preferred_module_dependencies=preferred_module_dependencies,
+                    # Performance optimization: pass precomputed values to avoid redundant work
+                    tables_with_modules=tables_with_modules,
+                    scopes_api=scopes_api,
+                    scope_result=scope_result,
                 )
 
                 # Merge dependency modules (avoid table duplicates)
@@ -1313,6 +1330,8 @@ class ASTGeneratorAPI:
         primary_module_vid: Optional[int],
         release_id: Optional[int],
         module_code: Optional[str] = None,
+        tables_with_modules: Optional[List[Dict[str, Any]]] = None,
+        scopes_api: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Detect and return metadata for the primary module from the expression.
@@ -1323,6 +1342,10 @@ class ASTGeneratorAPI:
             release_id: Optional release ID for filtering
             module_code: Optional module code (e.g., "FINREP9") - takes precedence over
                 primary_module_vid if provided
+            tables_with_modules: Optional precomputed tables with module metadata
+                (performance optimization to avoid redundant database queries)
+            scopes_api: Optional precomputed OperationScopesAPI instance
+                (performance optimization to reuse database connections)
 
         Returns:
             Dict with module_uri, module_code, module_version, framework_code,
@@ -1341,20 +1364,28 @@ class ASTGeneratorAPI:
             "module_vid": None,
         }
 
-        try:
-            scopes_api = OperationScopesAPI(
-                database_path=self.database_path,
-                connection_url=self.connection_url
-            )
+        # Track if we created the scopes_api locally (need to close it)
+        local_scopes_api = False
 
-            # Get tables with module metadata from expression
-            tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
-                expression=expression,
-                release_id=release_id
-            )
+        try:
+            # Reuse provided scopes_api or create a new one
+            if scopes_api is None:
+                scopes_api = OperationScopesAPI(
+                    database_path=self.database_path,
+                    connection_url=self.connection_url
+                )
+                local_scopes_api = True
+
+            # Reuse provided tables_with_modules or fetch if not available
+            if tables_with_modules is None:
+                tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
+                    expression=expression,
+                    release_id=release_id
+                )
 
             if not tables_with_modules:
-                scopes_api.close()
+                if local_scopes_api:
+                    scopes_api.close()
                 return default_info
 
             # Determine primary module
@@ -1408,7 +1439,8 @@ class ASTGeneratorAPI:
                         to_date = module.get("to_reference_date", to_date)
                         break
 
-            scopes_api.close()
+            if local_scopes_api:
+                scopes_api.close()
 
             return {
                 "module_uri": module_uri or "default_module",
@@ -1864,6 +1896,9 @@ class ASTGeneratorAPI:
         operation_code: str,
         release_id: Optional[int] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
+        tables_with_modules: Optional[List[Dict[str, Any]]] = None,
+        scopes_api: Optional[Any] = None,
+        scope_result: Optional[Any] = None,
     ) -> tuple:
         """
         Detect cross-module dependencies for a single expression.
@@ -1879,6 +1914,12 @@ class ASTGeneratorAPI:
             release_id: Optional release ID for filtering
             preferred_module_dependencies: Optional list of module codes to prefer when
                 a table belongs to multiple modules
+            tables_with_modules: Optional precomputed tables with module metadata
+                (performance optimization to avoid redundant database queries)
+            scopes_api: Optional precomputed OperationScopesAPI instance
+                (performance optimization to reuse database connections)
+            scope_result: Optional precomputed scope result from calculate_scopes_from_expression
+                (performance optimization to avoid redundant computation)
 
         Returns:
             Tuple of (dependency_modules, cross_instance_dependencies)
@@ -1889,24 +1930,28 @@ class ASTGeneratorAPI:
         from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
         import logging
 
-        scopes_api = OperationScopesAPI(
-            database_path=self.database_path,
-            connection_url=self.connection_url
-        )
+        # Reuse provided scopes_api or create a new one
+        if scopes_api is None:
+            scopes_api = OperationScopesAPI(
+                database_path=self.database_path,
+                connection_url=self.connection_url
+            )
 
         try:
-            # Get tables with module info (includes module_version)
-            tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
-                expression=expression,
-                release_id=release_id
-            )
+            # Reuse provided tables_with_modules or fetch if not available
+            if tables_with_modules is None:
+                tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
+                    expression=expression,
+                    release_id=release_id
+                )
 
-            # Check if cross-module
-            scope_result = scopes_api.calculate_scopes_from_expression(
-                expression=expression,
-                release_id=release_id,
-                read_only=True
-            )
+            # Reuse provided scope_result or compute if not available
+            if scope_result is None:
+                scope_result = scopes_api.calculate_scopes_from_expression(
+                    expression=expression,
+                    release_id=release_id,
+                    read_only=True
+                )
 
             if scope_result.has_error or not scope_result.is_cross_module:
                 return {}, []
