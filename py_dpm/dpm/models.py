@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import Dict, Hashable, List, Tuple
 from sqlalchemy import (
     Boolean,
     Column,
@@ -34,6 +34,11 @@ class SerializationMixin:
 
 
 Base = declarative_base(cls=SerializationMixin)
+
+
+def _get_engine_cache_key(session) -> Hashable:
+    bind = session.get_bind()
+    return getattr(bind, "url", repr(bind))
 
 
 def _read_sql_with_connection(sql, session):
@@ -2319,6 +2324,11 @@ class ViewDatapoints(Base):
     context_id = Column(Integer)
     variable_vid = Column(String)
 
+    _TABLE_DATA_CACHE: Dict[
+        Tuple[Hashable, str, Tuple[str, ...] | None, Tuple[str, ...] | None, Tuple[str, ...] | None, int | None],
+        pd.DataFrame,
+    ] = {}
+
     @classmethod
     def _create_base_query_with_aliases(cls, session):
         """
@@ -2552,7 +2562,16 @@ class ViewDatapoints(Base):
     def get_table_data(
         cls, session, table, rows=None, columns=None, sheets=None, release_id=None
     ):
-        # Build query using ORM for database-agnostic compatibility
+        engine_key = _get_engine_cache_key(session)
+        rows_key = tuple(rows) if rows is not None else None
+        columns_key = tuple(columns) if columns is not None else None
+        sheets_key = tuple(sheets) if sheets is not None else None
+        cache_key = (engine_key, table, rows_key, columns_key, sheets_key, release_id)
+
+        cached = cls._TABLE_DATA_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
         query, aliases = cls._create_base_query_with_aliases(session)
 
         # Add column selections
@@ -2669,6 +2688,7 @@ class ViewDatapoints(Base):
         data = _check_ranges_values_are_present(data, "column_code", columns)
         data = _check_ranges_values_are_present(data, "sheet_code", sheets)
 
+        cls._TABLE_DATA_CACHE[cache_key] = data
         return data
 
     @classmethod
