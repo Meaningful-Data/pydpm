@@ -2,6 +2,7 @@ from abc import ABC
 
 import pandas as pd
 import warnings
+from typing import Dict, Hashable, Tuple
 
 # Suppress pandas UserWarning about SQLAlchemy connection types
 warnings.filterwarnings("ignore", message=".*pandas only supports SQLAlchemy.*")
@@ -41,6 +42,9 @@ from py_dpm.dpm_xl.utils.operands_mapping import generate_new_label, set_operand
 from py_dpm.dpm_xl.utils.data_handlers import filter_all_data
 
 operand_elements = ["table", "rows", "cols", "sheets", "default", "interval"]
+
+
+_HEADERS_CACHE: Dict[Tuple[Hashable, int, Tuple[str, ...]], pd.DataFrame] = {}
 
 
 def _create_operand_label(node):
@@ -185,42 +189,47 @@ class OperandsChecking(ASTTemplate, ABC):
         if len(table_codes) == 0:
             return
 
-        # Build ORM query
-        query = (
-            self.session.query(
-                TableVersion.code.label("Code"),
-                TableVersion.startreleaseid.label("StartReleaseID"),
-                TableVersion.endreleaseid.label("EndReleaseID"),
-                Header.direction.label("Direction"),
-                Table.hasopenrows.label("HasOpenRows"),
-                Table.hasopencolumns.label("HasOpenColumns"),
-                Table.hasopensheets.label("HasOpenSheets"),
+        engine = self.session.get_bind()
+        engine_key: Hashable = getattr(engine, "url", repr(engine))
+        cache_key = (engine_key, self.release_id, tuple(sorted(table_codes)))
+
+        df_headers = _HEADERS_CACHE.get(cache_key)
+        if df_headers is None:
+            query = (
+                self.session.query(
+                    TableVersion.code.label("Code"),
+                    TableVersion.startreleaseid.label("StartReleaseID"),
+                    TableVersion.endreleaseid.label("EndReleaseID"),
+                    Header.direction.label("Direction"),
+                    Table.hasopenrows.label("HasOpenRows"),
+                    Table.hasopencolumns.label("HasOpenColumns"),
+                    Table.hasopensheets.label("HasOpenSheets"),
+                )
+                .join(Table, Table.tableid == TableVersion.tableid)
+                .join(
+                    TableVersionHeader,
+                    TableVersion.tablevid == TableVersionHeader.tablevid,
+                )
+                .join(Header, Header.headerid == TableVersionHeader.headerid)
+                .filter(TableVersion.code.in_(table_codes))
+                .distinct()
             )
-            .join(Table, Table.tableid == TableVersion.tableid)
-            .join(
-                TableVersionHeader, TableVersion.tablevid == TableVersionHeader.tablevid
+
+            query = filter_by_release(
+                query,
+                start_col=TableVersion.startreleaseid,
+                end_col=TableVersion.endreleaseid,
+                release_id=self.release_id,
             )
-            .join(Header, Header.headerid == TableVersionHeader.headerid)
-            .filter(TableVersion.code.in_(table_codes))
-            .distinct()
-        )
 
-        # Apply release filter
-        query = filter_by_release(
-            query,
-            start_col=TableVersion.startreleaseid,
-            end_col=TableVersion.endreleaseid,
-            release_id=self.release_id,
-        )
+            from py_dpm.dpm.models import (
+                _compile_query_for_pandas,
+                _read_sql_with_connection,
+            )
 
-        # Execute query and convert to DataFrame
-        from py_dpm.dpm.models import (
-            _compile_query_for_pandas,
-            _read_sql_with_connection,
-        )
-
-        compiled_query = _compile_query_for_pandas(query.statement, self.session)
-        df_headers = _read_sql_with_connection(compiled_query, self.session)
+            compiled_query = _compile_query_for_pandas(query.statement, self.session)
+            df_headers = _read_sql_with_connection(compiled_query, self.session)
+            _HEADERS_CACHE[cache_key] = df_headers
 
         for table in table_codes:
             table_headers = df_headers[df_headers["Code"] == table]
