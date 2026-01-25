@@ -103,14 +103,16 @@ def _extract_with_pyodbc(access_file):
         import pyodbc
     except ImportError:
         raise Exception("pyodbc not available")
-    
+
+    import decimal
+
     # Try different Access drivers
     drivers_to_try = [
         r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};',
         r'DRIVER={Microsoft Access Driver (*.mdb)};',
         r'DRIVER={MDBTools};'
     ]
-    
+
     conn = None
     for driver in drivers_to_try:
         try:
@@ -120,10 +122,10 @@ def _extract_with_pyodbc(access_file):
             break
         except pyodbc.Error:
             continue
-    
+
     if not conn:
         raise Exception("No suitable ODBC driver found for Access database")
-    
+
     try:
         # Get all table names
         cursor = conn.cursor()
@@ -132,63 +134,56 @@ def _extract_with_pyodbc(access_file):
             table_name = table_info.table_name
             if not table_name.startswith('MSys'):  # Skip system tables
                 tables.append(table_name)
-        
+
         data = {}
-        STRING_COLUMNS = ["row", "column", "sheet"]
-        
+
         # Extract each table
         for table_name in tables:
             print(table_name)
             try:
                 cursor.execute(f"SELECT * FROM [{table_name}]")
-                columns = [column[0] for column in cursor.description]
+
+                # Get column metadata from cursor.description
+                # Each entry is: (name, type_code, display_size, internal_size, precision, scale, null_ok)
+                # type_code is a Python type (str, int, float, decimal.Decimal, etc.)
+                column_info = []
+                for col_desc in cursor.description:
+                    col_name = col_desc[0]
+                    col_type = col_desc[1]  # Python type from ODBC metadata
+                    column_info.append((col_name, col_type))
+
+                columns = [info[0] for info in column_info]
                 rows = cursor.fetchall()
-                
+
                 if rows:
                     # Convert to DataFrame
                     df = pd.DataFrame([list(row) for row in rows], columns=columns)
 
-                    # Apply same dtype conversion logic as mdb-tools method
-                    # Start with all strings, but preserve None as actual None (not string 'None')
-                    for col in df.columns:
-                        df[col] = df[col].astype(object)
-                        mask = df[col].notna()
-                        df.loc[mask, col] = df.loc[mask, col].astype(str)
+                    # Use the actual column types from Access schema metadata
+                    # instead of inferring from data values (fixes Windows vs Linux inconsistency)
+                    numeric_types = (int, float, decimal.Decimal)
 
-                    numeric_columns = []
-                    for column in df.columns:
-                        if column in STRING_COLUMNS:
-                            continue
-                        try:
-                            # Convert to numeric and check if any values start with '0' (except '0' itself)
-                            # Only check string values for leading zeros
-                            string_mask = df[column].astype(str).str.match(r'^0\d+', na=False)
-                            has_leading_zeros = string_mask.any()
+                    for col_name, col_type in column_info:
+                        if col_type in numeric_types:
+                            # Column is defined as numeric in Access schema - convert to numeric
+                            try:
+                                df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+                            except (ValueError, TypeError):
+                                pass
+                        else:
+                            # Column is defined as text/other in Access schema - keep as string
+                            df[col_name] = df[col_name].astype(object)
+                            mask = df[col_name].notna()
+                            df.loc[mask, col_name] = df.loc[mask, col_name].astype(str)
 
-                            # Test numeric conversion
-                            numeric_series = pd.to_numeric(df[column], errors='coerce')
-
-                            if not has_leading_zeros and not numeric_series.isna().all():
-                                numeric_columns.append(column)
-                        except Exception:
-                            continue
-
-                    # Convert only the identified numeric columns
-                    for col in numeric_columns:
-                        try:
-                            df[col] = pd.to_numeric(df[col], errors='coerce')
-                        except (ValueError, TypeError):
-                            # Keep as string if conversion fails
-                            pass
-                    
                     data[table_name] = df
-                
+
             except Exception as e:
                 print(f"Error processing table {table_name}: {e}", file=sys.stderr)
                 continue
-        
+
         return data
-        
+
     finally:
         conn.close()
 
