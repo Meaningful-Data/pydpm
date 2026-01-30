@@ -2206,12 +2206,11 @@ class ASTGeneratorAPI:
                                 entry["x"] = x_index
 
                         # Calculate y coordinate (column position)
+                        # Only add y if there are multiple columns
                         if cols and col_code in cols:
                             y_index = cols.index(col_code) + 1
-                            entry["y"] = y_index
-                        elif not cols:
-                            # Default to 1 if no column info
-                            entry["y"] = 1
+                            if len(cols) > 1:
+                                entry["y"] = y_index
 
                         # Calculate z coordinate (sheet position)
                         if sheets and sheet_code in sheets:
@@ -2238,13 +2237,16 @@ class ASTGeneratorAPI:
         Remove extra fields from data entries in the AST.
 
         Keeps only the fields required by the engine:
-        - datapoint, operand_reference_id, y, column, x (if multiple rows), z (if multiple sheets)
+        - datapoint, operand_reference_id (always)
+        - x and row (only if multiple rows - rows are variable)
+        - y and column (only if multiple columns - columns are variable)
+        - z and sheet (only if multiple sheets - sheets are variable)
 
         Removes internal/debug fields:
-        - data_type, cell_code, table_code, table_vid, row
+        - data_type, cell_code, table_code, table_vid
         """
-        # Fields to keep in data entries
-        ALLOWED_FIELDS = {"datapoint", "operand_reference_id", "x", "y", "z", "column", "sheet"}
+        # Base fields to always keep in data entries
+        BASE_FIELDS = {"datapoint", "operand_reference_id"}
 
         def clean_node(node):
             if isinstance(node, dict):
@@ -2252,9 +2254,22 @@ class ASTGeneratorAPI:
                 if node.get("class_name") == "VarID" and "data" in node:
                     cleaned_data = []
                     for data_entry in node["data"]:
+                        # Build allowed fields based on which coordinates are present
+                        # Only keep row/column/sheet if the corresponding x/y/z coordinate exists
+                        allowed = set(BASE_FIELDS)
+                        if "x" in data_entry:
+                            allowed.add("x")
+                            allowed.add("row")
+                        if "y" in data_entry:
+                            allowed.add("y")
+                            allowed.add("column")
+                        if "z" in data_entry:
+                            allowed.add("z")
+                            allowed.add("sheet")
+
                         # Keep only allowed fields
                         cleaned_entry = {
-                            k: v for k, v in data_entry.items() if k in ALLOWED_FIELDS
+                            k: v for k, v in data_entry.items() if k in allowed
                         }
                         cleaned_data.append(cleaned_entry)
                     node["data"] = cleaned_data
