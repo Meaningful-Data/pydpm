@@ -406,9 +406,9 @@ class ASTToJSONVisitor(NodeVisitor):
         }
 
     def visit_GetOp(self, node):
-        """Visit GetOp nodes."""
+        """Visit GetOp nodes and serialize as GetClauseOp."""
         result = {
-            'class_name': 'GetOp',
+            'class_name': 'GetClauseOp',
             'operand': self.visit(node.operand),
             'component': node.component
         }
@@ -418,6 +418,15 @@ class ASTToJSONVisitor(NodeVisitor):
             result['property_id'] = node.property_id
 
         return result
+
+    def visit_SubOp(self, node):
+        """Visit SubOp nodes and serialize as SubClauseOp."""
+        return {
+            'class_name': 'SubClauseOp',
+            'operand': self.visit(node.operand),
+            'property_code': node.property_code,
+            'value': self.visit(node.value)
+        }
 
     def visit_WhereClauseOp(self, node):
         """Visit WhereClauseOp nodes."""
