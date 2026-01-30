@@ -304,3 +304,150 @@ class TestGenerateEnrichedAstMultiExpression:
         # Dependency information structure
         assert "intra_instance_validations" in module_data["dependency_information"]
         assert "cross_instance_dependencies" in module_data["dependency_information"]
+
+    def test_add_all_tables_true_includes_all_module_tables(self, api):
+        """Test that add_all_tables=True includes all tables from the module version."""
+        # Use a simple expression that references only one table
+        expression = "{tC_47.00, r0310, c0010} = 0"
+
+        result = api.generate_validations_script(
+            expressions=[
+                (expression, "test_op", None),
+            ],
+            module_code="COREP_LR",
+            module_version_number="4.1.0",
+            add_all_tables=True,  # Explicitly set to True (default)
+        )
+
+        assert result["success"] is True, f"Expected success, got error: {result['error']}"
+
+        enriched_ast = result["enriched_ast"]
+        namespace = list(enriched_ast.keys())[0]
+        module_data = enriched_ast[namespace]
+
+        # With add_all_tables=True, should have more than just the referenced table
+        # The COREP_LR module has multiple tables
+        tables = module_data["tables"]
+        assert len(tables) > 1, (
+            f"Expected multiple tables with add_all_tables=True, got {len(tables)}: {list(tables.keys())}"
+        )
+
+        # The referenced table should still be present
+        assert "C_47.00" in tables, "Referenced table C_47.00 should be present"
+
+        # Variables should include variables from all tables
+        variables = module_data["variables"]
+        assert len(variables) > 0, "Expected variables to be populated"
+
+    def test_add_all_tables_false_includes_only_referenced_tables(self, api):
+        """Test that add_all_tables=False includes only tables referenced in expressions."""
+        # Use a simple expression that references only one table
+        expression = "{tC_47.00, r0310, c0010} = 0"
+
+        result = api.generate_validations_script(
+            expressions=[
+                (expression, "test_op", None),
+            ],
+            module_code="COREP_LR",
+            module_version_number="4.1.0",
+            add_all_tables=False,
+        )
+
+        assert result["success"] is True, f"Expected success, got error: {result['error']}"
+
+        enriched_ast = result["enriched_ast"]
+        namespace = list(enriched_ast.keys())[0]
+        module_data = enriched_ast[namespace]
+
+        # With add_all_tables=False, should only have the referenced table
+        tables = module_data["tables"]
+        assert len(tables) == 1, (
+            f"Expected only 1 table with add_all_tables=False, got {len(tables)}: {list(tables.keys())}"
+        )
+
+        # The referenced table should be present
+        assert "C_47.00" in tables, "Referenced table C_47.00 should be present"
+
+    def test_add_all_tables_comparison(self, api):
+        """Test that add_all_tables=True returns more tables than add_all_tables=False."""
+        expression = "{tC_47.00, r0310, c0010} = 0"
+
+        # Generate with add_all_tables=True
+        result_all = api.generate_validations_script(
+            expressions=[(expression, "test_op", None)],
+            module_code="COREP_LR",
+            module_version_number="4.1.0",
+            add_all_tables=True,
+        )
+
+        # Generate with add_all_tables=False
+        result_partial = api.generate_validations_script(
+            expressions=[(expression, "test_op", None)],
+            module_code="COREP_LR",
+            module_version_number="4.1.0",
+            add_all_tables=False,
+        )
+
+        assert result_all["success"] is True
+        assert result_partial["success"] is True
+
+        ns_all = list(result_all["enriched_ast"].keys())[0]
+        ns_partial = list(result_partial["enriched_ast"].keys())[0]
+
+        tables_all = result_all["enriched_ast"][ns_all]["tables"]
+        tables_partial = result_partial["enriched_ast"][ns_partial]["tables"]
+
+        vars_all = result_all["enriched_ast"][ns_all]["variables"]
+        vars_partial = result_partial["enriched_ast"][ns_partial]["variables"]
+
+        # add_all_tables=True should have more tables
+        assert len(tables_all) > len(tables_partial), (
+            f"Expected more tables with add_all_tables=True "
+            f"({len(tables_all)} vs {len(tables_partial)})"
+        )
+
+        # add_all_tables=True should have more variables
+        assert len(vars_all) > len(vars_partial), (
+            f"Expected more variables with add_all_tables=True "
+            f"({len(vars_all)} vs {len(vars_partial)})"
+        )
+
+        # All tables from partial should be in all
+        for table_code in tables_partial:
+            assert table_code in tables_all, (
+                f"Table {table_code} from partial result should be in full result"
+            )
+
+    def test_add_all_tables_default_is_true(self, api):
+        """Test that the default value for add_all_tables is True."""
+        expression = "{tC_47.00, r0310, c0010} = 0"
+
+        # Generate without specifying add_all_tables (should default to True)
+        result_default = api.generate_validations_script(
+            expressions=[(expression, "test_op", None)],
+            module_code="COREP_LR",
+            module_version_number="4.1.0",
+        )
+
+        # Generate with explicit add_all_tables=True
+        result_explicit = api.generate_validations_script(
+            expressions=[(expression, "test_op", None)],
+            module_code="COREP_LR",
+            module_version_number="4.1.0",
+            add_all_tables=True,
+        )
+
+        assert result_default["success"] is True
+        assert result_explicit["success"] is True
+
+        ns_default = list(result_default["enriched_ast"].keys())[0]
+        ns_explicit = list(result_explicit["enriched_ast"].keys())[0]
+
+        tables_default = result_default["enriched_ast"][ns_default]["tables"]
+        tables_explicit = result_explicit["enriched_ast"][ns_explicit]["tables"]
+
+        # Both should have the same number of tables (default = True)
+        assert len(tables_default) == len(tables_explicit), (
+            f"Default should be same as explicit True: "
+            f"{len(tables_default)} vs {len(tables_explicit)}"
+        )
