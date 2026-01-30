@@ -358,6 +358,7 @@ class ASTGeneratorAPI:
         module_code: Optional[str] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
         module_version_number: Optional[str] = None,
+        add_all_tables: bool = True,
     ) -> Dict[str, Any]:
         """
         Generate validations script with engine-ready AST and framework structure.
@@ -413,6 +414,10 @@ class ASTGeneratorAPI:
                 Mutually exclusive with release_code and release_id.
                 If none of release_code, release_id, or module_version_number are provided,
                 the latest (active) module version is used.
+            add_all_tables: If True (default), include all tables and variables from the
+                module version in the output, regardless of whether they are referenced in
+                the validations. If False, only include tables and variables that are
+                actually referenced in the expressions.
 
         Returns:
             dict: {
@@ -483,6 +488,7 @@ class ASTGeneratorAPI:
                 primary_module_vid=primary_module_vid,
                 module_code=module_code,
                 preferred_module_dependencies=preferred_module_dependencies,
+                add_all_tables=add_all_tables,
             )
 
             # Save to file if output_path is provided
@@ -960,6 +966,7 @@ class ASTGeneratorAPI:
         primary_module_vid: Optional[int] = None,
         module_code: Optional[str] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
+        add_all_tables: bool = True,
     ) -> Dict[str, Any]:
         """
         Add framework structure for multiple expressions (operations, variables, tables, preconditions).
@@ -975,6 +982,8 @@ class ASTGeneratorAPI:
             primary_module_vid: Module VID being exported (to identify external dependencies)
             module_code: Optional module code to specify the main module
             preferred_module_dependencies: Optional list of module codes to prefer for dependencies
+            add_all_tables: If True, include all tables and variables from the module version.
+                If False, only include tables referenced in expressions.
 
         Returns:
             Dict with the enriched AST structure
@@ -1207,6 +1216,35 @@ class ASTGeneratorAPI:
                 # Track intra-instance operations
                 if not cross_deps:
                     all_intra_instance_ops.append(operation_code)
+
+            # After processing all expressions, add remaining tables from the module if requested
+            if add_all_tables and primary_module_info:
+                resolved_module_vid = primary_module_info.get("module_vid")
+                if resolved_module_vid:
+                    # Get all tables belonging to the primary module
+                    module_tables = data_dict_api.get_all_tables_for_module(resolved_module_vid)
+
+                    for table_info in module_tables:
+                        table_code = table_info.get("table_code")
+                        table_vid = table_info.get("table_vid")
+
+                        # Skip if already added from expressions
+                        if table_code in all_tables:
+                            continue
+
+                        # Get all variables for this table
+                        table_variables = data_dict_api.get_all_variables_for_table(table_vid)
+
+                        # Query open keys for this table
+                        open_keys_list = data_dict_api.get_open_keys_for_table(table_code, release_id)
+                        open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
+
+                        all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+                        all_variables.update(table_variables)
+
+                    # If we added any tables, mark that we have primary module operations
+                    if module_tables:
+                        has_primary_module_operation = True
 
         finally:
             data_dict_api.close()
