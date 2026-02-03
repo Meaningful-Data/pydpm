@@ -413,10 +413,6 @@ class ASTToJSONVisitor(NodeVisitor):
             'component': node.component
         }
 
-        # Include property_id if present (required by adam-engine)
-        if hasattr(node, 'property_id') and node.property_id is not None:
-            result['property_id'] = node.property_id
-
         return result
 
     def visit_SubOp(self, node):
