@@ -838,7 +838,7 @@ class ASTGeneratorAPI:
                 "root_operator_id": 24,  # Default for now
                 "ast": ast_with_coords,
                 "from_submission_date": submission_date,
-                "severity": "Error",
+                "severity": "error",
             }
         }
 
