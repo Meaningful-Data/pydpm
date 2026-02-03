@@ -704,6 +704,16 @@ def serialize_ast(ast_obj):
     if isinstance(expanded_obj, dict):
         return {key: serialize_ast(value) for key, value in expanded_obj.items()}
 
+    # Use visitor pattern for GetOp and SubOp to get correct structure
+    # This must be checked BEFORE toJSON() to ensure nested nodes are handled correctly
+    if hasattr(ASTObjects, 'GetOp') and isinstance(expanded_obj, ASTObjects.GetOp):
+        visitor = ASTToJSONVisitor()
+        return visitor.visit(expanded_obj)
+    
+    if hasattr(ASTObjects, 'SubOp') and isinstance(expanded_obj, ASTObjects.SubOp):
+        visitor = ASTToJSONVisitor()
+        return visitor.visit(expanded_obj)
+
     if hasattr(expanded_obj, 'toJSON'):
         serialized = expanded_obj.toJSON()
         # Recursively serialize nested AST objects
