@@ -199,11 +199,18 @@ class ASTToJSONVisitor(NodeVisitor):
                         return False
                     return any('-' in str(v) for v in values if v and v != '*')
 
+                # Helper function to detect wildcard syntax (e.g., ['*'])
+                def _has_wildcard_syntax(values):
+                    if not values or not isinstance(values, list):
+                        return False
+                    return any(v == '*' for v in values)
+
                 # Build column order from data if:
                 # - context_cols is empty OR
-                # - context_cols contains range syntax (e.g., ['0010-0080'])
-                # Range syntax means we need actual column codes from data for coordinate calculation
-                if not context_cols or _has_range_syntax(context_cols):
+                # - context_cols contains range syntax (e.g., ['0010-0080']) OR
+                # - context_cols contains wildcard syntax (e.g., ['*'])
+                # Range/wildcard syntax means we need actual column codes from data for coordinate calculation
+                if not context_cols or _has_range_syntax(context_cols) or _has_wildcard_syntax(context_cols):
                     # Extract unique columns from data in order
                     context_cols = []
                     seen_cols = set()
