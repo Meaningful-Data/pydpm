@@ -321,4 +321,6 @@ class ScalarFactory:
         scalar_type = self.database_types_mapping(code)
         if isinstance(scalar_type(), Number):
             return scalar_type(interval)
+        if interval:
+            raise SemanticError("3-4", operand_type=scalar_type.__name__)
         return scalar_type()
