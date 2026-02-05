@@ -43,6 +43,15 @@ from py_dpm.dpm_xl.utils.data_handlers import filter_all_data
 
 operand_elements = ["table", "rows", "cols", "sheets", "default", "interval"]
 
+# Implicit open keys that are always available without being declared in the database
+# These are special dimensions that arise from the reporting context itself
+# - refPeriod: The reference period of the report (date type "d")
+# - entityID: The identifier of the reporting entity (string type "s")
+IMPLICIT_OPEN_KEYS = {
+    "refPeriod": "d",  # date type
+    "entityID": "s",  # string type
+}
+
 
 _HEADERS_CACHE: Dict[Tuple[Hashable, int, Tuple[str, ...]], pd.DataFrame] = {}
 
@@ -258,14 +267,45 @@ class OperandsChecking(ASTTemplate, ABC):
     def check_dimensions(self):
         if len(self.dimension_codes) == 0:
             return
-        self.open_keys = ViewOpenKeys.get_keys(
-            self.session, self.dimension_codes, self.release_id
-        )
-        if len(self.open_keys) < len(self.dimension_codes):
-            not_found_dimensions = list(
-                set(self.dimension_codes).difference(self.open_keys["property_code"])
+
+        # Separate implicit keys from database-backed keys
+        implicit_codes = [
+            code for code in self.dimension_codes if code in IMPLICIT_OPEN_KEYS
+        ]
+        database_codes = [
+            code for code in self.dimension_codes if code not in IMPLICIT_OPEN_KEYS
+        ]
+
+        # Query database only for non-implicit keys
+        if database_codes:
+            self.open_keys = ViewOpenKeys.get_keys(
+                self.session, database_codes, self.release_id
             )
-            raise exceptions.SemanticError("1-5", open_keys=not_found_dimensions)
+            if len(self.open_keys) < len(database_codes):
+                not_found_dimensions = list(
+                    set(database_codes).difference(self.open_keys["property_code"])
+                )
+                raise exceptions.SemanticError("1-5", open_keys=not_found_dimensions)
+        else:
+            self.open_keys = pd.DataFrame(
+                columns=["property_id", "property_code", "data_type"]
+            )
+
+        # Add implicit open keys to the open_keys DataFrame
+        # Use property_id=-1 as a sentinel for implicit keys
+        if implicit_codes:
+            implicit_rows = [
+                {
+                    "property_id": -1,
+                    "property_code": code,
+                    "data_type": IMPLICIT_OPEN_KEYS[code],
+                }
+                for code in implicit_codes
+            ]
+            implicit_df = pd.DataFrame(implicit_rows)
+            self.open_keys = pd.concat(
+                [self.open_keys, implicit_df], ignore_index=True
+            )
 
         # Enrich Dimension nodes with property_id from open_keys
         # This is required by adam-engine for WHERE clause resolution
@@ -281,22 +321,51 @@ class OperandsChecking(ASTTemplate, ABC):
     def check_getop_components(self):
         """Check and enrich GetOp nodes with property_id for their component codes.
 
-        GetOp components (like qEGS, qLGS) are property codes that need to be
-        resolved to property_id for adam-engine to process them correctly.
+        GetOp components (like qEGS, qLGS, refPeriod, entityID) are property codes
+        that need to be resolved to property_id for adam-engine to process them
+        correctly. refPeriod and entityID are implicit open keys that don't need
+        to be declared in the database.
         """
         if len(self.getop_components) == 0:
             return
 
-        # Query property_ids for GetOp components (same query as dimensions)
-        getop_keys = ViewOpenKeys.get_keys(
-            self.session, self.getop_components, self.release_id
-        )
+        # Separate implicit keys from database-backed keys
+        implicit_codes = [
+            code for code in self.getop_components if code in IMPLICIT_OPEN_KEYS
+        ]
+        database_codes = [
+            code for code in self.getop_components if code not in IMPLICIT_OPEN_KEYS
+        ]
 
-        if len(getop_keys) < len(self.getop_components):
-            not_found_components = list(
-                set(self.getop_components).difference(getop_keys["property_code"])
+        # Query property_ids for GetOp components (same query as dimensions)
+        if database_codes:
+            getop_keys = ViewOpenKeys.get_keys(
+                self.session, database_codes, self.release_id
             )
-            raise exceptions.SemanticError("1-5", open_keys=not_found_components)
+
+            if len(getop_keys) < len(database_codes):
+                not_found_components = list(
+                    set(database_codes).difference(getop_keys["property_code"])
+                )
+                raise exceptions.SemanticError("1-5", open_keys=not_found_components)
+        else:
+            getop_keys = pd.DataFrame(
+                columns=["property_id", "property_code", "data_type"]
+            )
+
+        # Add implicit open keys to the getop_keys DataFrame
+        # Use property_id=-1 as a sentinel for implicit keys
+        if implicit_codes:
+            implicit_rows = [
+                {
+                    "property_id": -1,
+                    "property_code": code,
+                    "data_type": IMPLICIT_OPEN_KEYS[code],
+                }
+                for code in implicit_codes
+            ]
+            implicit_df = pd.DataFrame(implicit_rows)
+            getop_keys = pd.concat([getop_keys, implicit_df], ignore_index=True)
 
         # Enrich GetOp nodes with property_id
         # This is required by adam-engine for [get ...] operations
