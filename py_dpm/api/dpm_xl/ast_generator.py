@@ -2239,10 +2239,15 @@ class ASTGeneratorAPI:
                     data_cols.sort()
                     data_sheets.sort()
 
-                    # Use context lists if provided, otherwise use extracted lists
-                    rows = context_rows if context_rows else data_rows
-                    cols = context_cols if context_cols else data_cols
-                    sheets = context_sheets if context_sheets else data_sheets
+                    # Helper to check if a list contains only wildcards
+                    def _has_wildcard(values):
+                        return values and any(v == "*" for v in values)
+
+                    # Use context lists if provided and not wildcards, otherwise use extracted lists
+                    # Wildcard values like ['*'] indicate "all values" so we should use data
+                    rows = context_rows if context_rows and not _has_wildcard(context_rows) else data_rows
+                    cols = context_cols if context_cols and not _has_wildcard(context_cols) else data_cols
+                    sheets = context_sheets if context_sheets and not _has_wildcard(context_sheets) else data_sheets
 
                     # Assign coordinates to each data entry
                     for entry in data_entries:

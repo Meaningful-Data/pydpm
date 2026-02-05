@@ -229,6 +229,53 @@ class TestAddCoordinatesToAst:
         assert result["data"][0]["x"] == 2  # row 0020
         assert result["data"][1]["x"] == 1  # row 0010
 
+    def test_wildcard_cols_uses_data_values(self, api):
+        """Context with wildcard columns should use data-extracted column values.
+
+        This is a regression test for issue #75: when context contains c* (wildcard),
+        the y coordinates should be calculated from the actual column codes in data.
+        """
+        ast = {
+            "class_name": "VarID",
+            "data": [
+                {"datapoint": 1, "operand_reference_id": 100, "row": "0010", "column": "0010"},
+                {"datapoint": 2, "operand_reference_id": 101, "row": "0010", "column": "0020"},
+                {"datapoint": 3, "operand_reference_id": 102, "row": "0010", "column": "0030"},
+            ]
+        }
+        # Context with wildcard - should fall back to data-extracted values
+        context = {"cols": ["*"]}
+
+        result = api._add_coordinates_to_ast(ast, context=context)
+
+        # y should be calculated from data columns sorted: ["0010", "0020", "0030"]
+        assert result["data"][0]["y"] == 1  # column 0010
+        assert result["data"][1]["y"] == 2  # column 0020
+        assert result["data"][2]["y"] == 3  # column 0030
+
+    def test_wildcard_rows_uses_data_values(self, api):
+        """Context with wildcard rows should use data-extracted row values.
+
+        Similar to test_wildcard_cols_uses_data_values but for row wildcards.
+        """
+        ast = {
+            "class_name": "VarID",
+            "data": [
+                {"datapoint": 1, "operand_reference_id": 100, "row": "0010", "column": "0010"},
+                {"datapoint": 2, "operand_reference_id": 101, "row": "0020", "column": "0010"},
+                {"datapoint": 3, "operand_reference_id": 102, "row": "0030", "column": "0010"},
+            ]
+        }
+        # Context with wildcard - should fall back to data-extracted values
+        context = {"rows": ["*"]}
+
+        result = api._add_coordinates_to_ast(ast, context=context)
+
+        # x should be calculated from data rows sorted: ["0010", "0020", "0030"]
+        assert result["data"][0]["x"] == 1  # row 0010
+        assert result["data"][1]["x"] == 2  # row 0020
+        assert result["data"][2]["x"] == 3  # row 0030
+
     # ========== EDGE CASES ==========
 
     def test_empty_data_array(self, api):
