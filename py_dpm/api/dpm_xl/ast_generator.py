@@ -76,6 +76,20 @@ class ASTGeneratorAPI:
         # Internal version handling
         self._version_normalizers = self._setup_version_normalizers()
 
+    def close(self):
+        """Close underlying database connections."""
+        if hasattr(self, 'semantic_api') and self.semantic_api:
+            try:
+                self.semantic_api.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def parse_expression(self, expression: str) -> Dict[str, Any]:
         """
         Parse DPM-XL expression into clean AST format (Level 1 - Basic AST).
