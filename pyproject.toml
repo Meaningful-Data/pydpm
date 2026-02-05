@@ -79,3 +79,4 @@ pydpm = "py_dpm.cli.main:main"
 
 [tool.setuptools.package-data]
 "py_dpm.dpm_xl.grammar.generated" = ["*"]
+"py_dpm.dpm.data" = ["*.csv"]
