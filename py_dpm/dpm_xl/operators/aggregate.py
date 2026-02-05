@@ -1,5 +1,3 @@
-import warnings
-
 import pandas as pd
 
 from py_dpm.dpm_xl.types.scalar import Integer, Number, ScalarFactory
@@ -8,6 +6,7 @@ from py_dpm.exceptions import exceptions
 from py_dpm.dpm_xl.operators.base import Operator, Binary, Unary, Complex
 from py_dpm.dpm_xl.utils import tokens
 from py_dpm.dpm_xl.symbols import RecordSet
+from py_dpm.dpm_xl.warning_collector import add_semantic_warning
 
 
 class AggregateOperator(Unary):
@@ -94,7 +93,7 @@ class AggregateOperator(Unary):
         key_components = operand.get_key_components_names()
         cls.check_grouping(grouping_clause, key_components)
         if len(grouping_clause) == len(key_components):
-            warnings.warn(f"Grouping by all the key components of the Recordset: {','.join(key_components)}")
+            add_semantic_warning(f"Grouping by all the key components of the Recordset: {','.join(key_components)}")
 
         return cls.create_grouped_recordset(operand, grouping_clause, final_type)
 

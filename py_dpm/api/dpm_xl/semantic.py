@@ -11,6 +11,7 @@ from py_dpm.dpm_xl.ast.operands import OperandsChecking
 from py_dpm.dpm_xl import semantic_analyzer as SemanticAnalyzer
 from py_dpm.dpm.utils import get_session, get_engine
 from py_dpm.exceptions.exceptions import SemanticError
+from py_dpm.dpm_xl.warning_collector import collect_warnings
 
 
 @dataclass
@@ -25,6 +26,8 @@ class SemanticValidationResult:
         expression (str): The original expression that was validated
         validation_type (str): Type of validation performed
         results (Optional[Any]): Additional results from semantic analysis
+        warning (Optional[str]): Warning message if any warnings were raised during validation.
+            A validation with warnings is still valid (is_valid=True).
     """
 
     is_valid: bool
@@ -33,6 +36,7 @@ class SemanticValidationResult:
     expression: str
     validation_type: str
     results: Optional[Any] = None
+    warning: Optional[str] = None
 
 
 class SemanticAPI:
@@ -152,21 +156,25 @@ class SemanticAPI:
             # Expose AST on the instance for downstream consumers
             self.ast = ast
 
-            # Perform semantic analysis
-            oc = OperandsChecking(
-                session=self.session,
-                expression=expression,
-                ast=ast,
-                release_id=release_id,
-            )
-            semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
+            # Perform semantic analysis with warning collection
+            with collect_warnings() as warning_collector:
+                oc = OperandsChecking(
+                    session=self.session,
+                    expression=expression,
+                    ast=ast,
+                    release_id=release_id,
+                )
+                semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
-            semanticAnalysis.data = oc.data
-            semanticAnalysis.key_components = oc.key_components
-            semanticAnalysis.open_keys = oc.open_keys
-            semanticAnalysis.preconditions = oc.preconditions
+                semanticAnalysis.data = oc.data
+                semanticAnalysis.key_components = oc.key_components
+                semanticAnalysis.open_keys = oc.open_keys
+                semanticAnalysis.preconditions = oc.preconditions
 
-            results = semanticAnalysis.visit(ast)
+                results = semanticAnalysis.visit(ast)
+
+            # Get any collected warnings
+            warning_message = warning_collector.get_combined_warning()
 
             return SemanticValidationResult(
                 is_valid=True,
@@ -175,6 +183,7 @@ class SemanticAPI:
                 expression=expression,
                 validation_type="SEMANTIC",
                 results=results,
+                warning=warning_message,
             )
 
         except SemanticError as e:
@@ -234,6 +243,7 @@ class SemanticAPI:
             "components": (
                 getattr(result.results, "components", None) if result.results else None
             ),
+            "warning": result.warning,
         }
 
         return analysis

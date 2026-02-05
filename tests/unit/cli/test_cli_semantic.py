@@ -30,6 +30,7 @@ def test_semantic_no_release_id(runner):
             error_code=None,
             expression=expression,
             validation_type="SEMANTIC",
+            warning=None,
         )
 
         result = runner.invoke(main, ["semantic", expression])
@@ -58,6 +59,7 @@ def test_semantic_with_release_id(runner):
             error_code=None,
             expression=expression,
             validation_type="SEMANTIC",
+            warning=None,
         )
 
         result = runner.invoke(
@@ -88,6 +90,7 @@ def test_semantic_invalid_validation(runner):
             error_code="SEMANTIC_ERROR",
             expression=expression,
             validation_type="SEMANTIC",
+            warning=None,
         )
 
         result = runner.invoke(
@@ -147,6 +150,7 @@ def test_semantic_with_release_code(runner):
             error_code=None,
             expression=expression,
             validation_type="SEMANTIC",
+            warning=None,
         )
 
         result = runner.invoke(
@@ -192,6 +196,35 @@ def test_semantic_conflict_flags(runner):
 
     assert result.exit_code != 0
     assert "Cannot provide both --release-id and --release-code" in result.output
+
+
+def test_semantic_valid_with_warning(runner):
+    """Test semantic command returns valid with a warning message."""
+    expression = "{tC_01.00, r0100, c0010}"
+    warning_message = "Implicit promotion between Integer and Number."
+
+    with patch("py_dpm.cli.main.SemanticAPI") as MockAPI:
+        mock_api_instance = MockAPI.return_value
+        mock_api_instance.validate_expression.return_value = SemanticValidationResult(
+            is_valid=True,
+            error_message=None,
+            error_code=None,
+            expression=expression,
+            validation_type="SEMANTIC",
+            warning=warning_message,
+        )
+
+        result = runner.invoke(main, ["semantic", expression])
+
+        MockAPI.assert_called_once()
+        mock_api_instance.validate_expression.assert_called_once_with(
+            expression, release_id=None
+        )
+
+        # Validation should still pass even with a warning
+        assert result.exit_code == 0
+        assert "Semantic validation completed" in result.output
+        assert "Status: 200" in result.output
 
 
 def test_syntax_valid_expression(runner):
