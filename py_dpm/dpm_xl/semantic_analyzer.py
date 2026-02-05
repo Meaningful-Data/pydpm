@@ -160,9 +160,16 @@ class InputAnalyzer(ASTTemplate, ABC):
         if default_value is None:
             return
         default_type = ScalarFactory().scalar_factory(code=default_value.type)
-        try:
-            binary_implicit_type_promotion(default_type, type_)
-        except SemanticError:
+        # Import the implicit type promotion dictionary for unidirectional check
+        from py_dpm.dpm_xl.types.promotion import implicit_type_promotion_dict
+
+        # Check if default_type can be promoted TO type_ (unidirectional check)
+        # Get the set of types that default_type can be promoted to
+        default_implicities = implicit_type_promotion_dict[default_type.__class__]
+
+        # If expected type is not in the set of types default can be promoted to,
+        # raise a semantic error
+        if not type_.is_included(default_implicities):
             raise exceptions.SemanticError(
                 "3-6", expected_type=type_, default_type=default_type
             )
