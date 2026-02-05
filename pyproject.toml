@@ -80,3 +80,11 @@ pydpm = "py_dpm.cli.main:main"
 [tool.setuptools.package-data]
 "py_dpm.dpm_xl.grammar.generated" = ["*"]
 "py_dpm.dpm.data" = ["*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests (no DB, fast)",
+    "integration: integration tests (require DB)",
+]
+addopts = "-v --tb=short"
