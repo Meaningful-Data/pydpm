@@ -1,4 +1,3 @@
-import warnings
 from typing import Union
 
 import pandas as pd
@@ -11,6 +10,7 @@ from py_dpm.exceptions.exceptions import SemanticError
 from py_dpm.dpm_xl.operators.base import Binary, Operator
 from py_dpm.dpm_xl.utils import tokens
 from py_dpm.dpm_xl.symbols import ConstantOperand, RecordSet, Scalar, Structure
+from py_dpm.dpm_xl.warning_collector import add_semantic_warning
 
 
 class ConditionalOperator(Operator):
@@ -348,7 +348,7 @@ class Filter(ConditionalOperator):
         if isinstance(selection, RecordSet) and isinstance(condition, RecordSet):
 
             if selection.has_only_global_components:
-                warnings.warn(
+                add_semantic_warning(
                     f"Performing a filter operation on recordset: {selection.name} which has only global key components")
 
             check_condition_type = ScalarFactory().scalar_factory("Boolean")

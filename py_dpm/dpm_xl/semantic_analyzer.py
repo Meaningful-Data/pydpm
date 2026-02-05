@@ -1,4 +1,3 @@
-import warnings
 from abc import ABC
 
 import pandas as pd
@@ -66,6 +65,7 @@ from py_dpm.dpm_xl.symbols import (
     ScalarSet,
     Structure,
 )
+from py_dpm.dpm_xl.warning_collector import add_semantic_warning
 
 
 class InputAnalyzer(ASTTemplate, ABC):
@@ -306,7 +306,7 @@ class InputAnalyzer(ASTTemplate, ABC):
             raise exceptions.SemanticError("4-4-0-1", op=node.op)
 
         if operand.has_only_global_components:
-            warnings.warn(
+            add_semantic_warning(
                 f"Performing an aggregation on recordset: {operand.name} which has only global key components"
             )
 

@@ -1,8 +1,7 @@
-import warnings
-
 from py_dpm.dpm_xl.types.scalar import Boolean, Date, Duration, Integer, Item, Mixed, Null, Number, \
     ScalarType, String, Subcategory, TimeInterval, TimePeriod
 from py_dpm.exceptions.exceptions import SemanticError
+from py_dpm.dpm_xl.warning_collector import add_semantic_warning
 
 implicit_type_promotion_dict = {
     String: {String},
@@ -38,8 +37,15 @@ def binary_implicit_type_promotion(
                 left_implicities.intersection(right_implicities)):  # general case and date->str and boolean-> str in the str operator
 
             if warning_raising:
-                warnings.warn(
-                    f"Implicit promotion between {left} and {right} and op_type={op_type_to_check}.")
+                if error_info:
+                    add_semantic_warning(
+                        f"Implicit promotion between {left} and {right} in: "
+                        f"{error_info['left_name']} {error_info['op']} {error_info['right_name']}"
+                    )
+                else:
+                    add_semantic_warning(
+                        f"Implicit promotion between {left} and {right}."
+                    )
             if return_type:
                 binary_check_interval(result_operand=return_type, left_operand=left, right_operand=right, op_type_to_check=op_type_to_check,
                                       return_type=return_type, interval_allowed=interval_allowed, error_info=error_info)
@@ -67,7 +73,13 @@ def binary_implicit_type_promotion(
             raise SemanticError("3-2", type_1=left, type_2=right, type_op=op_type_to_check, origin=origin)
     else:
         if warning_raising:
-            warnings.warn(f"Implicit promotion between {left} and {right}.")
+            if error_info:
+                add_semantic_warning(
+                    f"Implicit promotion between {left} and {right} in: "
+                    f"{error_info['left_name']} {error_info['op']} {error_info['right_name']}"
+                )
+            else:
+                add_semantic_warning(f"Implicit promotion between {left} and {right}.")
         if return_type and (left.is_included(right_implicities) or right.is_included(left_implicities)):
             return return_type
         elif left.is_included(right_implicities):

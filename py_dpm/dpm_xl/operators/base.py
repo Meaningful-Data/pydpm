@@ -1,4 +1,3 @@
-import warnings
 from typing import Union
 
 import pandas as pd
@@ -10,6 +9,7 @@ from py_dpm.dpm_xl.types.promotion import binary_implicit_type_promotion, binary
 from py_dpm.exceptions.exceptions import SemanticError
 from py_dpm.dpm_xl.utils.operands_mapping import generate_new_label, set_operand_label
 from py_dpm.dpm_xl.symbols import ConstantOperand, FactComponent, RecordSet, Scalar, ScalarSet, Structure
+from py_dpm.dpm_xl.warning_collector import add_semantic_warning
 
 
 class Operator:
@@ -196,7 +196,7 @@ class Binary(Operator):
                 if len(result_dataframe) == 0:
                     raise SemanticError("2-2", op=cls.op, left=left.name, right=right.name)
                 if len(result_dataframe) < len(left.records):
-                    warnings.warn(
+                    add_semantic_warning(
                         f"There is no correspondence between recordset {left.name} and recordset {right.name}.")
 
             return result_structure, result_dataframe
