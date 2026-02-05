@@ -150,6 +150,13 @@ REPEATED_CROSS_MODULE = 'repeated-cross-module'
 # Operation scope constants
 WARNING_SEVERITY = 'warning'
 
+# Severity levels
+SEVERITY_ERROR = 'error'
+SEVERITY_WARNING = 'warning'
+SEVERITY_INFO = 'info'
+VALID_SEVERITIES = frozenset({SEVERITY_ERROR, SEVERITY_WARNING, SEVERITY_INFO})
+DEFAULT_SEVERITY = SEVERITY_ERROR
+
 FILING_INDICATOR = 'filingIndicator'
 OP_VERSION_ID = 'op_version_id'
 
