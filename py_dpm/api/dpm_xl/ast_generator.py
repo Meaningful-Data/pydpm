@@ -12,6 +12,7 @@ import json
 from datetime import datetime
 from py_dpm.api.dpm_xl.syntax import SyntaxAPI
 from py_dpm.api.dpm_xl.semantic import SemanticAPI
+from py_dpm.dpm_xl.utils.tokens import VALID_SEVERITIES, DEFAULT_SEVERITY
 
 
 
@@ -373,6 +374,7 @@ class ASTGeneratorAPI:
         preferred_module_dependencies: Optional[List[str]] = None,
         module_version_number: Optional[str] = None,
         add_all_tables: bool = True,
+        severity: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate validations script with engine-ready AST and framework structure.
@@ -432,6 +434,11 @@ class ASTGeneratorAPI:
                 module version in the output, regardless of whether they are referenced in
                 the validations. If False, only include tables and variables that are
                 actually referenced in the expressions.
+            severity: Severity level for the generated operations. Must be one of:
+                'error', 'warning', or 'info'. Defaults to 'error' if not specified.
+                - 'error': Critical validation failure - data submission should be blocked
+                - 'warning': Non-critical issue that should be reviewed
+                - 'info': Informational message for documentation purposes
 
         Returns:
             dict: {
@@ -442,8 +449,9 @@ class ASTGeneratorAPI:
 
         Raises:
             ValueError: If more than one of release_id, release_code, or module_version_number
-                are specified; if module_version_number is specified without module_code; or if
-                no operation scope belongs to the specified module.
+                are specified; if module_version_number is specified without module_code; if
+                no operation scope belongs to the specified module; or if severity is not
+                a valid value ('error', 'warning', or 'info').
 
         Example:
             >>> generator = ASTGeneratorAPI(database_path="data.db")
@@ -477,6 +485,14 @@ class ASTGeneratorAPI:
                 "module_version_number requires module_code to be specified."
             )
 
+        # Validate and normalize severity
+        effective_severity = severity if severity is not None else DEFAULT_SEVERITY
+        effective_severity_lower = effective_severity.lower()
+        if effective_severity_lower not in VALID_SEVERITIES:
+            raise ValueError(
+                f"Invalid severity '{severity}'. Must be one of: {', '.join(sorted(VALID_SEVERITIES))}"
+            )
+
         # Resolve version parameters to release_id
         effective_release_id = release_id
         effective_release_code = release_code
@@ -503,6 +519,7 @@ class ASTGeneratorAPI:
                 module_code=module_code,
                 preferred_module_dependencies=preferred_module_dependencies,
                 add_all_tables=add_all_tables,
+                severity=effective_severity_lower,
             )
 
             # Save to file if output_path is provided
@@ -783,6 +800,7 @@ class ASTGeneratorAPI:
         primary_module_vid: Optional[int] = None,
         module_code: Optional[str] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
+        severity: str = DEFAULT_SEVERITY,
     ) -> Dict[str, Any]:
         """
         Add framework structure (operations, variables, tables, preconditions) to complete AST.
@@ -798,6 +816,8 @@ class ASTGeneratorAPI:
             precondition: Precondition variable reference (e.g., {v_F_44_04})
             release_id: Optional release ID to filter database lookups
             primary_module_vid: Module VID being exported (to identify external dependencies)
+            severity: Severity level for the operation ('error', 'warning', or 'info').
+                Defaults to 'error'.
         """
         from py_dpm.dpm.utils import get_engine
         import copy
@@ -852,7 +872,7 @@ class ASTGeneratorAPI:
                 "root_operator_id": 24,  # Default for now
                 "ast": ast_with_coords,
                 "from_submission_date": submission_date,
-                "severity": "error",
+                "severity": severity,
             }
         }
 
@@ -981,6 +1001,7 @@ class ASTGeneratorAPI:
         module_code: Optional[str] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
         add_all_tables: bool = True,
+        severity: str = DEFAULT_SEVERITY,
     ) -> Dict[str, Any]:
         """
         Add framework structure for multiple expressions (operations, variables, tables, preconditions).
@@ -998,6 +1019,8 @@ class ASTGeneratorAPI:
             preferred_module_dependencies: Optional list of module codes to prefer for dependencies
             add_all_tables: If True, include all tables and variables from the module version.
                 If False, only include tables referenced in expressions.
+            severity: Severity level for the generated operations ('error', 'warning', or 'info').
+                Defaults to 'error'.
 
         Returns:
             Dict with the enriched AST structure
@@ -1105,7 +1128,7 @@ class ASTGeneratorAPI:
                     "root_operator_id": 24,
                     "ast": ast_with_coords,
                     "from_submission_date": submission_date,
-                    "severity": "Error",
+                    "severity": severity,
                 }
 
                 # Extract variables from this expression's AST

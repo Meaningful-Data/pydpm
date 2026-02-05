@@ -7,7 +7,11 @@ import pandas as pd
 
 from py_dpm.exceptions import exceptions
 from py_dpm.dpm.models import ModuleVersion, OperationScope, OperationScopeComposition
-from py_dpm.dpm_xl.utils.tokens import VARIABLE_VID, WARNING_SEVERITY
+from py_dpm.dpm_xl.utils.tokens import (
+    VARIABLE_VID,
+    WARNING_SEVERITY,
+    VALID_SEVERITIES,
+)
 from py_dpm.dpm.utils import get_session
 
 FROM_REFERENCE_DATE = "FromReferenceDate"
@@ -369,10 +373,32 @@ class OperationScopeService:
                     },
                 )
 
-    def create_operation_scope(self, submission_date):
+    def create_operation_scope(self, submission_date, severity: str = None):
         """
-        Method to populate OperationScope table
+        Method to populate OperationScope table.
+
+        Args:
+            submission_date: The submission date for the operation scope.
+            severity: Severity level for the operation. Must be one of: 'error', 'warning', 'info'.
+                     Defaults to 'warning' if not specified.
+
+        Returns:
+            OperationScope: The created operation scope object.
+
+        Raises:
+            ValueError: If severity is not a valid value.
         """
+        # Default to WARNING_SEVERITY for backward compatibility
+        if severity is None:
+            severity = WARNING_SEVERITY
+
+        # Validate severity
+        severity_lower = severity.lower()
+        if severity_lower not in VALID_SEVERITIES:
+            raise ValueError(
+                f"Invalid severity '{severity}'. Must be one of: {', '.join(sorted(VALID_SEVERITIES))}"
+            )
+
         if not pd.isnull(submission_date):
             if isinstance(submission_date, numpy.datetime64):
                 submission_date = str(submission_date).split("T")[0]
@@ -385,7 +411,7 @@ class OperationScopeService:
         operation_scope = OperationScope(
             operationvid=self.operation_version_id,
             isactive=1,  # Use 1 instead of True for PostgreSQL bigint compatibility
-            severity=WARNING_SEVERITY,
+            severity=severity_lower,
             fromsubmissiondate=submission_date,
             rowguid=str(uuid.uuid4()),
         )
