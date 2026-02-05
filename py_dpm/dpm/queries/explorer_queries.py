@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 
 from sqlalchemy.orm import Session, aliased
 
+from py_dpm.dpm.data import get_module_schema_ref
 from py_dpm.dpm.models import (
     VariableVersion,
     TableVersionCell,
@@ -140,7 +141,10 @@ class ExplorerQuery:
         """
         Resolve the EBA taxonomy URL for a given module code.
 
-        The URL format is:
+        First checks the static module schema mapping for older module versions
+        (pre-4.0). If not found, falls back to dynamic URL construction.
+
+        The dynamic URL format is:
             http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/{framework_code}/{release_code}/mod/{module_code}.json
 
         Exactly one of date, release_id or release_code may be provided.
@@ -152,6 +156,12 @@ class ExplorerQuery:
             raise ValueError(
                 "Specify a maximum of one of release_id, release_code or date."
             )
+
+        # For date-based lookups, first try the static mapping
+        if date:
+            static_url = get_module_schema_ref(module_code, date)
+            if static_url:
+                return static_url
 
         # Base query to resolve framework and module version metadata
         q = (
