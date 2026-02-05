@@ -81,8 +81,11 @@ class InputAnalyzer(ASTTemplate, ABC):
 
         self.calculations_outputs = {}
 
+        # Implicit open keys that are always available without being declared
+        # These are special dimensions that arise from the reporting context itself
         self.global_variables = {
-            "refPeriod": ScalarFactory().database_types_mapping("d")()
+            "refPeriod": ScalarFactory().database_types_mapping("d")(),  # date type
+            "entityID": ScalarFactory().database_types_mapping("s")(),  # string type
         }
 
     # Start of visiting nodes.
@@ -321,6 +324,12 @@ class InputAnalyzer(ASTTemplate, ABC):
         return result
 
     def visit_Dimension(self, node: Dimension):
+        # Check if this is an implicit open key (refPeriod, entityID)
+        if node.dimension_code in self.global_variables:
+            type_ = self.global_variables[node.dimension_code]
+            return Scalar(type_=type_, name=None, origin=node.dimension_code)
+
+        # Otherwise, look up from the database-backed open_keys
         dimension_data = self.open_keys[
             self.open_keys["property_code"] == node.dimension_code
         ].reset_index(drop=True)
