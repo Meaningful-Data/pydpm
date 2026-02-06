@@ -1259,7 +1259,9 @@ class ASTGeneratorAPI:
                 resolved_module_vid = primary_module_info.get("module_vid")
                 if resolved_module_vid:
                     # Get all tables belonging to the primary module
-                    module_tables = data_dict_api.get_all_tables_for_module(resolved_module_vid)
+                    module_tables = data_dict_api.get_all_tables_for_module(
+                        resolved_module_vid, include_abstract=False
+                    )
 
                     for table_info in module_tables:
                         table_code = table_info.get("table_code")

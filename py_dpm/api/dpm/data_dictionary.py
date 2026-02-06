@@ -24,6 +24,7 @@ from py_dpm.dpm.models import (
     PropertyCategory,
     ModuleVersion,
     ModuleVersionComposition,
+    Table,
     Release,
     Header,
     HeaderVersion,
@@ -858,7 +859,9 @@ class DataDictionaryAPI:
         # IMPORTANT: Convert to int first to avoid ".0" suffix from potential float values
         return {str(int(r.variableid)): r.code for r in results if r.code is not None}
 
-    def get_all_tables_for_module(self, module_vid: int) -> List[Dict[str, Any]]:
+    def get_all_tables_for_module(
+        self, module_vid: int, include_abstract: bool = True
+    ) -> List[Dict[str, Any]]:
         """
         Get ALL tables belonging to a module version.
 
@@ -867,6 +870,8 @@ class DataDictionaryAPI:
 
         Args:
             module_vid: Module version ID
+            include_abstract: If True (default), include abstract tables.
+                If False, exclude tables where Table.isabstract is True.
 
         Returns:
             List of dicts with table_vid, table_code, table_name
@@ -880,9 +885,14 @@ class DataDictionaryAPI:
                 TableVersion, ModuleVersionComposition.tablevid == TableVersion.tablevid
             )
             .filter(ModuleVersionComposition.modulevid == module_vid)
-            .distinct()
-            .order_by(TableVersion.code)
         )
+
+        if not include_abstract:
+            query = query.join(Table, TableVersion.tableid == Table.tableid).filter(
+                or_(Table.isabstract == 0, Table.isabstract.is_(None))
+            )
+
+        query = query.distinct().order_by(TableVersion.code)
 
         results = query.all()
         return [
