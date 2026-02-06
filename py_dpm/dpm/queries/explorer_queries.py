@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any
 
 from sqlalchemy.orm import Session, aliased
 
-from py_dpm.dpm.data import get_module_schema_ref
+from py_dpm.dpm.data import get_module_schema_ref, get_module_schema_ref_by_version
 from py_dpm.dpm.models import (
     VariableVersion,
     TableVersionCell,
@@ -168,6 +168,7 @@ class ExplorerQuery:
             session.query(
                 Framework.code.label("framework_code"),
                 ModuleVersion.code.label("module_code"),
+                ModuleVersion.versionnumber.label("module_versionnumber"),
                 ModuleVersion.startreleaseid.label("module_startreleaseid"),
                 ModuleVersion.endreleaseid.label("module_endreleaseid"),
                 ModuleVersion.fromreferencedate.label("module_fromreferencedate"),
@@ -209,6 +210,15 @@ class ExplorerQuery:
         row = rows[0]
         framework_code = row.framework_code
         resolved_module_code = row.module_code
+
+        # Try the static mapping by module code + version number
+        version_number = row.module_versionnumber
+        if version_number:
+            static_url = get_module_schema_ref_by_version(
+                resolved_module_code, version_number
+            )
+            if static_url:
+                return static_url
 
         # Determine which release_code to embed in the URL
         if release_code is not None:

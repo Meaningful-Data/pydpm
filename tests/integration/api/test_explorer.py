@@ -268,6 +268,40 @@ class TestExplorerQueryModuleUrlIntegration(unittest.TestCase):
         )
         self.assertEqual(url, expected_url)
 
+    def test_get_module_url_by_release_id_uses_static_mapping(self):
+        """Test that querying by release_id returns the static mapping URL
+        when the module version matches a known entry in the CSV."""
+        # Add a release and module version that matches a static mapping entry.
+        # AE version 1.2.0 is in the CSV with the correct ITS-based URL.
+        release_34 = Release(releaseid=34, code="3.4")
+        framework_ae = Framework(frameworkid=20, code="AE")
+        module_ae = Module(moduleid=200, frameworkid=framework_ae.frameworkid)
+        module_version_ae = ModuleVersion(
+            modulevid=2000,
+            moduleid=module_ae.moduleid,
+            code="AE",
+            versionnumber="1.2.0",
+            startreleaseid=1,
+            endreleaseid=None,
+        )
+
+        self.session.add_all(
+            [release_34, framework_ae, module_ae, module_version_ae]
+        )
+        self.session.commit()
+
+        url = ExplorerQuery.get_module_url(
+            self.session,
+            module_code="AE",
+            release_id=34,
+        )
+
+        expected_url = (
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/ae/"
+            "its-005-2020/2022-03-01/mod/ae.xsd"
+        )
+        self.assertEqual(url, expected_url)
+
 
 class TestGetVariableByCode(unittest.TestCase):
     """Tests for get_variable_by_code and get_variables_by_codes methods."""
