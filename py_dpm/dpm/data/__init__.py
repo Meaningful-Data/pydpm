@@ -37,6 +37,33 @@ def _load_module_schema_mapping() -> list[dict]:
     return mappings
 
 
+def get_module_schema_ref_by_version(
+    module_code: str,
+    version: str,
+) -> Optional[str]:
+    """
+    Look up the XBRL schema reference URL for a module by version number.
+
+    Args:
+        module_code: The module code (e.g., "COREP_Con", "AE")
+        version: The module version number (e.g., "1.2.0")
+
+    Returns:
+        The XbrlSchemaRef URL if found, None otherwise
+    """
+    mappings = _load_module_schema_mapping()
+
+    module_code_upper = module_code.upper()
+    for candidate in reversed(mappings):
+        if (
+            candidate["module_code"].upper() == module_code_upper
+            and candidate["version"] == version
+        ):
+            return candidate["xbrl_schema_ref"]
+
+    return None
+
+
 def get_module_schema_ref(
     module_code: str,
     date: Optional[str] = None,

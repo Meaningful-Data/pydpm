@@ -1,6 +1,6 @@
 import unittest
 
-from py_dpm.dpm.data import get_module_schema_ref
+from py_dpm.dpm.data import get_module_schema_ref, get_module_schema_ref_by_version
 
 
 class TestModuleSchemaMapping(unittest.TestCase):
@@ -62,6 +62,42 @@ class TestModuleSchemaMapping(unittest.TestCase):
         """Test that older module URLs end with .xsd extension."""
         url = get_module_schema_ref("COREP_Con", "2014-01-15")
         self.assertTrue(url.endswith(".xsd"))
+
+
+class TestModuleSchemaMappingByVersion(unittest.TestCase):
+    """Test cases for the version-based module schema mapping lookup."""
+
+    def test_lookup_by_version_returns_correct_url(self):
+        """Test that looking up by version returns the correct URL."""
+        url = get_module_schema_ref_by_version("AE", "1.2.0")
+        self.assertEqual(
+            url,
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/ae/its-005-2020/2022-03-01/mod/ae.xsd",
+        )
+
+    def test_lookup_by_version_case_insensitive(self):
+        """Test that module code lookup is case insensitive."""
+        url_upper = get_module_schema_ref_by_version("AE", "1.2.0")
+        url_lower = get_module_schema_ref_by_version("ae", "1.2.0")
+        self.assertEqual(url_upper, url_lower)
+
+    def test_lookup_by_version_nonexistent_module_returns_none(self):
+        """Test that a non-existent module returns None."""
+        url = get_module_schema_ref_by_version("NONEXISTENT", "1.0.0")
+        self.assertIsNone(url)
+
+    def test_lookup_by_version_nonexistent_version_returns_none(self):
+        """Test that a non-existent version returns None."""
+        url = get_module_schema_ref_by_version("AE", "99.99.99")
+        self.assertIsNone(url)
+
+    def test_lookup_by_version_corep(self):
+        """Test lookup for COREP module by version."""
+        url = get_module_schema_ref_by_version("COREP_Con", "2.0.1")
+        self.assertEqual(
+            url,
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2013-12-01/mod/corep_con.xsd",
+        )
 
 
 if __name__ == "__main__":
