@@ -215,24 +215,42 @@ class TestGenerateEnrichedAstMultiExpression:
         # Should have at least one cross-module dependency (FINREP9)
         assert len(cross_deps) >= 0  # May or may not have depending on module detection
 
-    def test_expression_failure_fails_entire_operation(self, api):
-        """Test that invalid expression fails the entire operation."""
+    def test_expression_failure_skips_with_warning(self, api):
+        """Test that invalid expression is skipped with a warning, not failing the entire operation."""
         expressions = [
             ("{tF_01.01, r0380, c0010} > 0", "valid_op", None),
-            ("INVALID EXPRESSION !!!", "invalid_op", None),  # This should fail
+            ("INVALID EXPRESSION !!!", "invalid_op", None),  # This should be skipped
         ]
 
-        result = api.generate_validations_script(
-            expressions=expressions,
-            release_code="4.2",
-            module_code="FINREP9",
-        )
+        import warnings
+        with warnings.catch_warnings(record=True) as caught_warnings:
+            warnings.simplefilter("always")
+            result = api.generate_validations_script(
+                expressions=expressions,
+                release_code="4.2",
+                module_code="FINREP9",
+            )
 
-        # Entire operation should fail
-        assert result["success"] is False
-        assert result["enriched_ast"] is None
-        assert result["error"] is not None
-        assert "invalid_op" in result["error"] or "expression 2" in result["error"].lower()
+        # Operation should succeed (valid expression still processed)
+        assert result["success"] is True
+        assert result["enriched_ast"] is not None
+
+        # Warnings should contain info about the skipped expression
+        assert len(result["warnings"]) == 1
+        assert "invalid_op" in result["warnings"][0]
+        assert "expression 2" in result["warnings"][0].lower()
+
+        # warnings.warn should have been called
+        assert len(caught_warnings) >= 1
+        warning_messages = [str(w.message) for w in caught_warnings]
+        assert any("invalid_op" in msg for msg in warning_messages)
+
+        # Only the valid operation should be in the output
+        enriched_ast = result["enriched_ast"]
+        namespace = list(enriched_ast.keys())[0]
+        module_data = enriched_ast[namespace]
+        assert "valid_op" in module_data["operations"]
+        assert "invalid_op" not in module_data["operations"]
 
     def test_variables_deduplicated_across_expressions(self, api):
         """Test that variables from same table are not duplicated."""

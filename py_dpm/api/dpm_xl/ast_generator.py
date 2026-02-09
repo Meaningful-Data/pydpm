@@ -9,6 +9,7 @@ without exposing internal complexity or version compatibility issues.
 from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
 import json
+import warnings
 from datetime import datetime
 from py_dpm.api.dpm_xl.syntax import SyntaxAPI
 from py_dpm.api.dpm_xl.semantic import SemanticAPI
@@ -444,7 +445,8 @@ class ASTGeneratorAPI:
             dict: {
                 'success': bool,
                 'enriched_ast': dict,  # Engine-ready AST with framework structure
-                'error': str           # Error message if failed
+                'error': str,          # Error message if failed
+                'warnings': list[str]  # Warnings for expressions that failed semantic validation
             }
 
         Raises:
@@ -510,7 +512,7 @@ class ASTGeneratorAPI:
 
         try:
             # Enrich with framework structure for multiple expressions
-            enriched_ast = self._enrich_ast_with_metadata_multi(
+            enriched_ast, generation_warnings = self._enrich_ast_with_metadata_multi(
                 expression_tuples=expression_tuples,
                 table_context=table_context,
                 release_code=effective_release_code,
@@ -531,13 +533,19 @@ class ASTGeneratorAPI:
                 with open(path, "w") as f:
                     json.dump(enriched_ast, f, indent=4)
 
-            return {"success": True, "enriched_ast": enriched_ast, "error": None}
+            return {
+                "success": True,
+                "enriched_ast": enriched_ast,
+                "error": None,
+                "warnings": generation_warnings,
+            }
 
         except Exception as e:
             return {
                 "success": False,
                 "enriched_ast": None,
                 "error": f"Enrichment error: {str(e)}",
+                "warnings": [],
             }
 
     # Internal helper methods
@@ -1023,7 +1031,8 @@ class ASTGeneratorAPI:
                 Defaults to 'error'.
 
         Returns:
-            Dict with the enriched AST structure
+            Tuple of (enriched_ast_dict, warnings_list) where warnings_list contains
+            messages for expressions that failed semantic validation and were skipped.
 
         Raises:
             ValueError: If no operation scope belongs to the specified module
@@ -1055,6 +1064,9 @@ class ASTGeneratorAPI:
         # Track all tables with their modules for validation
         all_tables_with_modules = []
 
+        # Track warnings for expressions that fail semantic validation
+        all_warnings: List[str] = []
+
         # Flag to track if at least one operation belongs to the primary module
         has_primary_module_operation = False
 
@@ -1080,10 +1092,13 @@ class ASTGeneratorAPI:
                 complete_result = self.generate_complete_ast(expression, release_id=release_id)
 
                 if not complete_result["success"]:
-                    raise ValueError(
-                        f"Failed to generate complete AST for expression {idx + 1} "
+                    warning_msg = (
+                        f"Skipping expression {idx + 1} "
                         f"(operation '{operation_code}'): {complete_result['error']}"
                     )
+                    warnings.warn(warning_msg, stacklevel=2)
+                    all_warnings.append(warning_msg)
+                    continue
 
                 complete_ast = complete_result["ast"]
                 context = complete_result.get("context") or table_context
@@ -1288,6 +1303,14 @@ class ASTGeneratorAPI:
         finally:
             data_dict_api.close()
 
+        # If no expressions succeeded, we can't build the script
+        if primary_module_info is None:
+            raise ValueError(
+                "All expressions failed semantic validation. "
+                "No valid operations to include in the script. "
+                f"Warnings: {'; '.join(all_warnings)}"
+            )
+
         # Validate: at least one operation must belong to the primary module
         if not has_primary_module_operation and module_code:
             raise ValueError(
@@ -1330,7 +1353,7 @@ class ASTGeneratorAPI:
                 "dependency_information": dependency_info,
                 "dependency_modules": all_dependency_modules,
             }
-        }
+        }, all_warnings
 
     def _merge_dependency_modules(
         self,
