@@ -77,10 +77,9 @@ centralised_messages = {
     "4-5-2-2": "For where operator, operand {operand} and condition {condition} must have the same structure or condition must be a subset of selection.",
     # - Conditional Operators
     "4-6-0-1": "For Conditional operators DPM components have to have the same records.",
-    "4-6-0-2": "For conditional operators, condition {condition} and operand/selection {operand} must have the same structure or condition must be a subset",
+    "4-6-0-2": "For conditional operators, condition {condition} and operand/selection {operand} must have the same structure or one must be a subset of the other",
     # -- if then else
     "4-6-1-1": "Error for the condition in if then else operator",
-    "4-6-1-2": "For if then else operator, if the condition is a scalar and else operand is not provided, then operand can't be a recordset.",
     "4-6-1-3": "For if then else operator, then and else have to be both recordset or both scalars, if the condition is a scalar.",
     # -- nvl
     "4-6-2-1": "Invalid input structures for Nvl operator, right op has to be scalar too.",

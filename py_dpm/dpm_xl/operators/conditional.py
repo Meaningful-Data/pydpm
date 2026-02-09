@@ -176,29 +176,72 @@ class IfOperator(ConditionalOperator):
                     raise SemanticError("4-6-1-3")
             else:
                 if isinstance(first, RecordSet):
-                    # A recordset with only global key components (no standard r/c/s keys) is semantically a scalar
-                    # Per DPM-XL spec 3.1.6: Key components only present if "more than one" row/col/sheet
-                    # So {tC_17.01.b, r0020, c0100} selects one cell = only global keys = scalar value
                     if first.has_only_global_components:
-                        # Treat as scalar: return the recordset but it's valid
                         return first, None
-                    raise SemanticError("4-6-1-2")
+                    return first.structure, first.records
                 return first, None
-        else:  # RecordSet
+        else:  # RecordSet condition
             if second:
-                if isinstance(first, RecordSet) and isinstance(second, RecordSet):
-                    cls._check_structures(condition, first, origin)
-                    cls._check_structures(condition, second, origin)
-                if isinstance(first, RecordSet) and isinstance(second, Scalar):
-                    cls._check_structures(condition, first, origin)
-                if isinstance(first, Scalar) and isinstance(second, RecordSet):
-                    cls._check_structures(condition, second, origin)
-                return condition.structure, condition.records
+                # Determine structure for each recordset operand
+                if isinstance(first, RecordSet):
+                    then_struct, then_records = cls._check_if_structures(condition, first, origin)
+                else:
+                    then_struct, then_records = None, None
+
+                if isinstance(second, RecordSet):
+                    else_struct, else_records = cls._check_if_structures(condition, second, origin)
+                else:
+                    else_struct, else_records = None, None
+
+                # Pick the largest result structure
+                if then_struct and else_struct:
+                    is_sub, largest = Binary.check_is_subset(then_struct, else_struct)
+                    if not is_sub:
+                        raise SemanticError("2-3", op=cls.op,
+                            structure_1=then_struct.get_key_components_names(),
+                            structure_2=else_struct.get_key_components_names(),
+                            origin=origin)
+                    if largest is then_struct:
+                        return then_struct, then_records
+                    return else_struct, else_records
+                elif then_struct:
+                    return then_struct, then_records
+                elif else_struct:
+                    return else_struct, else_records
+                else:
+                    return condition.structure, condition.records
             else:
                 if isinstance(first, RecordSet):
-                    cls._check_structures(condition, first, origin)
+                    return cls._check_if_structures(condition, first, origin)
                 return condition.structure, condition.records
 
+
+    @classmethod
+    def _check_if_structures(cls, condition: RecordSet, operand: RecordSet, origin: str):
+        """
+        Bidirectional structure check for IF operator.
+        Returns (result_structure, result_records) where result is the superset.
+        """
+        # Same structure: return condition's
+        if cls._check_same_recordset_structures(condition, operand, origin):
+            if condition.records is not None and operand.records is not None:
+                result_df = pd.merge(
+                    condition.records, operand.records,
+                    on=[c for c in condition.records.columns if c != 'data_type']
+                )
+                if len(result_df) != len(condition.records):
+                    raise SemanticError("4-6-0-1")
+            return condition.structure, condition.records
+
+        # Bidirectional subset check
+        is_subset, superset = Binary.check_is_subset(condition.structure, operand.structure)
+        if is_subset:
+            if superset is condition.structure:
+                return condition.structure, condition.records
+            else:
+                return operand.structure, operand.records
+
+        raise SemanticError("4-6-0-2", condition=condition.name, operand=operand.name)
 
     @classmethod
     def check_types(cls, first: Union[RecordSet, Scalar], result_dataframe: pd.DataFrame, second: Union[RecordSet, Scalar] = None):
