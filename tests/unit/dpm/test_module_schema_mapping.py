@@ -12,7 +12,7 @@ class TestModuleSchemaMapping(unittest.TestCase):
         url = get_module_schema_ref("COREP_Con", "2014-01-15")
         self.assertEqual(
             url,
-            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2013-12-01/mod/corep_con.xsd",
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2013-12-01/mod/corep_con.json",
         )
 
     def test_lookup_different_date_returns_different_url(self):
@@ -21,7 +21,7 @@ class TestModuleSchemaMapping(unittest.TestCase):
         url = get_module_schema_ref("COREP_Con", "2014-10-15")
         self.assertEqual(
             url,
-            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2014-03-31/mod/corep_con.xsd",
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2014-03-31/mod/corep_con.json",
         )
 
     def test_lookup_case_insensitive(self):
@@ -55,13 +55,13 @@ class TestModuleSchemaMapping(unittest.TestCase):
         url = get_module_schema_ref("FINREP_Con_IFRS", "2014-01-15")
         self.assertEqual(
             url,
-            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/finrep/its-2013-02/2013-12-01/mod/finrep_con_ifrs.xsd",
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/finrep/its-2013-02/2013-12-01/mod/finrep_con_ifrs.json",
         )
 
     def test_url_ends_with_xsd(self):
-        """Test that older module URLs end with .xsd extension."""
+        """Test that older module URLs end with .json extension."""
         url = get_module_schema_ref("COREP_Con", "2014-01-15")
-        self.assertTrue(url.endswith(".xsd"))
+        self.assertTrue(url.endswith(".json"))
 
 
 class TestModuleSchemaMappingByVersion(unittest.TestCase):
@@ -72,7 +72,7 @@ class TestModuleSchemaMappingByVersion(unittest.TestCase):
         url = get_module_schema_ref_by_version("AE", "1.2.0")
         self.assertEqual(
             url,
-            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/ae/its-005-2020/2022-03-01/mod/ae.xsd",
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/ae/its-005-2020/2022-03-01/mod/ae.json",
         )
 
     def test_lookup_by_version_case_insensitive(self):
@@ -96,7 +96,7 @@ class TestModuleSchemaMappingByVersion(unittest.TestCase):
         url = get_module_schema_ref_by_version("COREP_Con", "2.0.1")
         self.assertEqual(
             url,
-            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2013-12-01/mod/corep_con.xsd",
+            "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/corep/its-2013-02/2013-12-01/mod/corep_con.json",
         )
 
 

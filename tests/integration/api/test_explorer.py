@@ -285,9 +285,7 @@ class TestExplorerQueryModuleUrlIntegration(unittest.TestCase):
             endreleaseid=None,
         )
 
-        self.session.add_all(
-            [release_34, framework_ae, module_ae, module_version_ae]
-        )
+        self.session.add_all([release_34, framework_ae, module_ae, module_version_ae])
         self.session.commit()
 
         url = ExplorerQuery.get_module_url(
@@ -298,7 +296,7 @@ class TestExplorerQueryModuleUrlIntegration(unittest.TestCase):
 
         expected_url = (
             "http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/ae/"
-            "its-005-2020/2022-03-01/mod/ae.xsd"
+            "its-005-2020/2022-03-01/mod/ae.json"
         )
         self.assertEqual(url, expected_url)
 
@@ -373,7 +371,9 @@ class TestGetVariableByCode(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch("py_dpm.dpm.queries.explorer_queries.ExplorerQuery.get_variables_by_codes")
-    def test_get_variables_by_codes_delegates_to_query(self, mock_get_variables_by_codes):
+    def test_get_variables_by_codes_delegates_to_query(
+        self, mock_get_variables_by_codes
+    ):
         """Test that batch API method delegates to query layer correctly."""
         # Arrange
         expected_result = {
