@@ -68,6 +68,9 @@ class SemanticAPI:
         self.pool_config = pool_config
         # Store last parsed AST for consumers that need it (e.g. complete AST generation)
         self.ast = None
+        # Store last OperandsChecking data for reuse (avoids re-parsing in downstream consumers)
+        self.oc_data = None
+        self.oc_tables = None
 
         if connection_url:
             # Create isolated engine and session for the provided connection URL
@@ -164,6 +167,11 @@ class SemanticAPI:
                     ast=ast,
                     release_id=release_id,
                 )
+                # Expose OC data on the instance for downstream consumers
+                # (avoids re-parsing in generate_complete_ast / operation scopes)
+                self.oc_data = oc.data
+                self.oc_tables = oc.tables
+
                 semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
 
                 semanticAnalysis.data = oc.data
@@ -187,6 +195,8 @@ class SemanticAPI:
             )
 
         except SemanticError as e:
+            self.oc_data = None
+            self.oc_tables = None
             return SemanticValidationResult(
                 is_valid=False,
                 error_message=str(e),
@@ -195,6 +205,8 @@ class SemanticAPI:
                 validation_type="SEMANTIC",
             )
         except Exception as e:
+            self.oc_data = None
+            self.oc_tables = None
             return SemanticValidationResult(
                 is_valid=False,
                 error_message=str(e),

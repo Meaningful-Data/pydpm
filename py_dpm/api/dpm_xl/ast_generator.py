@@ -307,6 +307,21 @@ class ASTGeneratorAPI:
                     "semantic_result": semantic_result,
                 }
 
+            # Extract table_vids and table_codes from OC data (avoids re-parsing later)
+            table_vids = []
+            table_codes = []
+            oc_data = getattr(self.semantic_api, "oc_data", None)
+            if oc_data is not None and hasattr(oc_data, "columns") and "table_vid" in oc_data.columns:
+                table_vids = oc_data["table_vid"].dropna().unique().astype(int).tolist()
+                if table_vids:
+                    from py_dpm.dpm.models import TableVersion as _TV
+                    _codes_query = (
+                        self.semantic_api.session.query(_TV.code)
+                        .filter(_TV.tablevid.in_(table_vids))
+                        .distinct()
+                    )
+                    table_codes = [row[0] for row in _codes_query.all()]
+
             # Extract components
             actual_ast, context = self._extract_complete_components(ast_root)
 
@@ -327,6 +342,8 @@ class ASTGeneratorAPI:
                 "error": None,
                 "data_populated": data_populated,
                 "semantic_result": semantic_result,
+                "table_vids": table_vids,
+                "table_codes": table_codes,
             }
 
         except Exception as e:
@@ -1103,18 +1120,20 @@ class ASTGeneratorAPI:
                 complete_ast = complete_result["ast"]
                 context = complete_result.get("context") or table_context
 
-                # Get tables with modules for this expression FIRST (reuse scopes_api from outer scope)
-                # This is done before _get_primary_module_info to pass precomputed values
-                tables_with_modules = scopes_api.get_tables_with_metadata_from_expression(
-                    expression=expression,
-                    release_id=release_id
-                )
+                # Reuse pre-extracted table data from generate_complete_ast — no re-parsing needed
+                table_vids = complete_result.get("table_vids", [])
+                table_codes = complete_result.get("table_codes", [])
 
-                # Calculate scope_result once (avoid duplicate calls in other methods)
-                scope_result = scopes_api.calculate_scopes_from_expression(
-                    expression=expression,
+                # Get tables with modules using pre-extracted VIDs (skip parsing + OC)
+                tables_with_modules = scopes_api.get_tables_with_metadata_by_vids(table_vids)
+
+                # Calculate scopes using pre-extracted data (skip parsing + OC)
+                scope_result = scopes_api.calculate_scopes(
+                    tables_vids=table_vids,
+                    table_codes=table_codes,
                     release_id=release_id,
-                    read_only=True
+                    expression=expression,
+                    read_only=True,
                 )
                 all_tables_with_modules.extend(tables_with_modules)
 
@@ -1131,8 +1150,8 @@ class ASTGeneratorAPI:
                     )
                     namespace = primary_module_info.get("module_uri", "default_module")
 
-                # Add coordinates to AST data entries
-                ast_with_coords = self._add_coordinates_to_ast(complete_ast, context)
+                # Add coordinates to AST data entries (in-place since AST is freshly generated)
+                ast_with_coords = self._add_coordinates_to_ast(complete_ast, context, in_place=True)
 
                 # Build operation entry
                 submission_date = primary_module_info.get("from_date", current_date)
@@ -1179,7 +1198,8 @@ class ASTGeneratorAPI:
 
                 resolved_primary_module_vid = primary_module_info.get("module_vid") or primary_module_vid
 
-                # Process tables from this expression
+                # Collect tables that need batch data lookup
+                tables_needing_data = []
                 for table_code in variables_by_table.keys():
                     # Check if this table belongs to the primary module
                     table_module_vid = table_to_module.get(table_code)
@@ -1190,29 +1210,51 @@ class ASTGeneratorAPI:
 
                     # Skip if we already have this table
                     if table_code in all_tables:
-                        # Table already added, it passed the module filter before
                         has_primary_module_operation = True
                         continue
 
-                    # Get table version info
-                    table_info = data_dict_api.get_table_version(table_code, release_id)
-
-                    if table_info and table_info.get("table_vid"):
-                        table_vid = table_info["table_vid"]
-                        table_variables = data_dict_api.get_all_variables_for_table(table_vid)
-                    else:
-                        table_variables = variables_by_table[table_code]
-
-                    # Query open keys for this table
-                    open_keys_list = data_dict_api.get_open_keys_for_table(table_code, release_id)
-                    open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
-
-                    all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
-                    all_variables.update(table_variables)
-
-                    # We successfully added a table that passed the module filter
-                    # This means at least one operation references the primary module
+                    # Mark as needing data; store fallback variables from expression
+                    tables_needing_data.append(table_code)
+                    # Reserve slot to prevent re-adding in later iterations
+                    all_tables[table_code] = None
                     has_primary_module_operation = True
+
+                # Batch-query table versions, variables, and open keys
+                if tables_needing_data:
+                    batch_table_versions = data_dict_api.get_table_versions_batch(
+                        tables_needing_data, release_id
+                    )
+                    # Collect table_vids for variables batch query
+                    table_vid_map = {}  # table_code -> table_vid
+                    for tc in tables_needing_data:
+                        tv_info = batch_table_versions.get(tc)
+                        if tv_info and tv_info.get("table_vid"):
+                            table_vid_map[tc] = tv_info["table_vid"]
+
+                    batch_variables = data_dict_api.get_all_variables_for_tables_batch(
+                        list(table_vid_map.values())
+                    ) if table_vid_map else {}
+
+                    batch_open_keys = data_dict_api.get_open_keys_for_tables_batch(
+                        tables_needing_data, release_id
+                    )
+
+                    # Populate all_tables with batch results
+                    for tc in tables_needing_data:
+                        tvid = table_vid_map.get(tc)
+                        if tvid and tvid in batch_variables:
+                            table_variables = batch_variables[tvid]
+                        else:
+                            table_variables = variables_by_table.get(tc, {})
+
+                        open_keys_list = batch_open_keys.get(tc, [])
+                        open_keys = {
+                            item["property_code"]: item["data_type_code"]
+                            for item in open_keys_list
+                        }
+
+                        all_tables[tc] = {"variables": table_variables, "open_keys": open_keys}
+                        all_variables.update(table_variables)
 
                 # Handle precondition (deduplicate by precondition string)
                 if precondition and precondition not in processed_preconditions:
@@ -1278,23 +1320,30 @@ class ASTGeneratorAPI:
                         resolved_module_vid, include_abstract=False
                     )
 
-                    for table_info in module_tables:
-                        table_code = table_info.get("table_code")
-                        table_vid = table_info.get("table_vid")
+                    # Filter to tables not already added
+                    new_module_tables = [
+                        t for t in module_tables
+                        if t.get("table_code") not in all_tables
+                    ]
 
-                        # Skip if already added from expressions
-                        if table_code in all_tables:
-                            continue
+                    if new_module_tables:
+                        # Batch query variables and open keys for all new tables
+                        new_table_vids = [t["table_vid"] for t in new_module_tables if t.get("table_vid")]
+                        new_table_codes = [t["table_code"] for t in new_module_tables if t.get("table_code")]
 
-                        # Get all variables for this table
-                        table_variables = data_dict_api.get_all_variables_for_table(table_vid)
+                        batch_vars = data_dict_api.get_all_variables_for_tables_batch(new_table_vids) if new_table_vids else {}
+                        batch_okeys = data_dict_api.get_open_keys_for_tables_batch(new_table_codes, release_id) if new_table_codes else {}
 
-                        # Query open keys for this table
-                        open_keys_list = data_dict_api.get_open_keys_for_table(table_code, release_id)
-                        open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
+                        for table_info in new_module_tables:
+                            table_code = table_info.get("table_code")
+                            table_vid = table_info.get("table_vid")
 
-                        all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
-                        all_variables.update(table_variables)
+                            table_variables = batch_vars.get(table_vid, {})
+                            open_keys_list = batch_okeys.get(table_code, [])
+                            open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
+
+                            all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+                            all_variables.update(table_variables)
 
                     # If we added any tables, mark that we have primary module operations
                     if module_tables:
@@ -2227,7 +2276,8 @@ class ASTGeneratorAPI:
             scopes_api.close()
 
     def _add_coordinates_to_ast(
-        self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]]
+        self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]],
+        in_place: bool = False,
     ) -> Dict[str, Any]:
         """
         Add x/y/z coordinates to data entries in AST.
@@ -2239,6 +2289,12 @@ class ASTGeneratorAPI:
 
         If context provides column/row/sheet lists, those are used for ordering.
         Otherwise, the order is extracted from the data entries themselves.
+
+        Args:
+            ast_dict: AST dictionary to add coordinates to
+            context: Optional context with rows/columns/sheets
+            in_place: If True, modify ast_dict in place (skip deep copy).
+                Use when the AST is freshly generated and not shared.
         """
         import copy
 
@@ -2297,6 +2353,11 @@ class ASTGeneratorAPI:
                     cols = context_cols if context_cols and not _has_wildcard(context_cols) else data_cols
                     sheets = context_sheets if context_sheets and not _has_wildcard(context_sheets) else data_sheets
 
+                    # Pre-build index dicts for O(1) lookups instead of O(n) list.index()
+                    row_idx = {code: i + 1 for i, code in enumerate(rows)} if len(rows) > 1 else {}
+                    col_idx = {code: i + 1 for i, code in enumerate(cols)} if len(cols) > 1 else {}
+                    sheet_idx = {code: i + 1 for i, code in enumerate(sheets)} if len(sheets) > 1 else {}
+
                     # Assign coordinates to each data entry
                     for entry in data_entries:
                         row_code = entry.get("row", "")
@@ -2304,25 +2365,19 @@ class ASTGeneratorAPI:
                         sheet_code = entry.get("sheet", "")
 
                         # Calculate x coordinate (row position)
-                        if rows and row_code in rows:
-                            x_index = rows.index(row_code) + 1
-                            # Only add x if there are multiple rows
-                            if len(rows) > 1:
-                                entry["x"] = x_index
+                        x = row_idx.get(row_code)
+                        if x is not None:
+                            entry["x"] = x
 
                         # Calculate y coordinate (column position)
-                        # Only add y if there are multiple columns
-                        if cols and col_code in cols:
-                            y_index = cols.index(col_code) + 1
-                            if len(cols) > 1:
-                                entry["y"] = y_index
+                        y = col_idx.get(col_code)
+                        if y is not None:
+                            entry["y"] = y
 
                         # Calculate z coordinate (sheet position)
-                        if sheets and sheet_code in sheets:
-                            z_index = sheets.index(sheet_code) + 1
-                            # Only add z if there are multiple sheets
-                            if len(sheets) > 1:
-                                entry["z"] = z_index
+                        z = sheet_idx.get(sheet_code)
+                        if z is not None:
+                            entry["z"] = z
 
                 # Recursively process child nodes
                 for key, value in node.items():
@@ -2332,8 +2387,8 @@ class ASTGeneratorAPI:
                 for item in node:
                     add_coords_to_node(item)
 
-        # Create a deep copy to avoid modifying the original
-        result = copy.deepcopy(ast_dict)
+        # Skip deep copy when AST is freshly generated and not shared
+        result = ast_dict if in_place else copy.deepcopy(ast_dict)
         add_coords_to_node(result)
         return result
 

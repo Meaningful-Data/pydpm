@@ -497,39 +497,43 @@ class OperationScopesAPI:
         except Exception:
             return False
 
-    def get_scopes_with_metadata(
-        self, operation_version_id: int
+    def _enrich_scopes_with_module_metadata(
+        self, scopes: List
     ) -> List[OperationScopeDetailedInfo]:
         """
-        Get operation scopes with detailed module metadata.
+        Enrich scopes with module metadata using a single batch query.
+
+        Collects all unique modulevid values across all scope compositions,
+        batch-queries ModuleVersion, and builds OperationScopeDetailedInfo objects.
 
         Args:
-            operation_version_id (int): Operation version ID
+            scopes: List of OperationScope objects
 
         Returns:
-            List[OperationScopeDetailedInfo]: List of scopes with enriched module information
-
-        Example:
-            >>> from py_dpm.api import OperationScopesAPI
-            >>> api = OperationScopesAPI()
-            >>> scopes = api.get_scopes_with_metadata(operation_version_id=1)
-            >>> for scope in scopes:
-            ...     print(f"Scope {scope.operation_scope_id}:")
-            ...     for module in scope.module_versions:
-            ...         print(f"  - {module.code}: {module.name}")
+            List[OperationScopeDetailedInfo]: Scopes with enriched module information
         """
-        scopes = self.get_existing_scopes(operation_version_id)
-        result = []
-
+        # Collect all unique module VIDs across all scopes
+        all_module_vids = set()
         for scope in scopes:
-            # Get module metadata for each scope
+            for comp in scope.operation_scope_compositions:
+                all_module_vids.add(comp.modulevid)
+
+        # Batch query all modules in one go
+        module_lookup = {}
+        if all_module_vids:
+            modules = (
+                self.session.query(ModuleVersion)
+                .filter(ModuleVersion.modulevid.in_(all_module_vids))
+                .all()
+            )
+            module_lookup = {m.modulevid: m for m in modules}
+
+        # Build result using the lookup
+        result = []
+        for scope in scopes:
             module_infos = []
             for comp in scope.operation_scope_compositions:
-                module = (
-                    self.session.query(ModuleVersion)
-                    .filter(ModuleVersion.modulevid == comp.modulevid)
-                    .first()
-                )
+                module = module_lookup.get(comp.modulevid)
                 if module:
                     module_infos.append(
                         {
@@ -555,6 +559,30 @@ class OperationScopesAPI:
             )
 
         return result
+
+    def get_scopes_with_metadata(
+        self, operation_version_id: int
+    ) -> List[OperationScopeDetailedInfo]:
+        """
+        Get operation scopes with detailed module metadata.
+
+        Args:
+            operation_version_id (int): Operation version ID
+
+        Returns:
+            List[OperationScopeDetailedInfo]: List of scopes with enriched module information
+
+        Example:
+            >>> from py_dpm.api import OperationScopesAPI
+            >>> api = OperationScopesAPI()
+            >>> scopes = api.get_scopes_with_metadata(operation_version_id=1)
+            >>> for scope in scopes:
+            ...     print(f"Scope {scope.operation_scope_id}:")
+            ...     for module in scope.module_versions:
+            ...         print(f"  - {module.code}: {module.name}")
+        """
+        scopes = self.get_existing_scopes(operation_version_id)
+        return self._enrich_scopes_with_module_metadata(scopes)
 
     def get_scopes_with_metadata_from_expression(
         self, expression: str, release_id: Optional[int] = None
@@ -588,43 +616,8 @@ class OperationScopesAPI:
         if scope_result.has_error:
             return []
 
-        # Convert to detailed info
-        result = []
         all_scopes = scope_result.existing_scopes + scope_result.new_scopes
-
-        for scope in all_scopes:
-            module_infos = []
-            for comp in scope.operation_scope_compositions:
-                module = (
-                    self.session.query(ModuleVersion)
-                    .filter(ModuleVersion.modulevid == comp.modulevid)
-                    .first()
-                )
-                if module:
-                    module_infos.append(
-                        {
-                            "module_vid": module.modulevid,
-                            "code": module.code or "",
-                            "name": module.name or "",
-                            "description": module.description or "",
-                            "version_number": module.versionnumber or "",
-                            "from_reference_date": module.fromreferencedate,
-                            "to_reference_date": module.toreferencedate,
-                        }
-                    )
-
-            result.append(
-                OperationScopeDetailedInfo(
-                    operation_scope_id=scope.operationscopeid,
-                    operation_vid=scope.operationvid,
-                    is_active=scope.isactive,
-                    severity=scope.severity or "",
-                    from_submission_date=scope.fromsubmissiondate,
-                    module_versions=module_infos,
-                )
-            )
-
-        return result
+        return self._enrich_scopes_with_module_metadata(all_scopes)
 
     def get_tables_with_metadata(
         self, operation_version_id: int
@@ -811,6 +804,70 @@ class OperationScopesAPI:
             return []
         except Exception:
             return []
+
+    def get_tables_with_metadata_by_vids(
+        self, table_vids: List[int]
+    ) -> List[Dict[str, Any]]:
+        """
+        Get tables with metadata from pre-extracted table VIDs.
+
+        This skips all parsing and OperandsChecking — use when table_vids
+        have already been extracted (e.g., from generate_complete_ast).
+
+        Args:
+            table_vids: List of table version IDs
+
+        Returns:
+            List[Dict[str, Any]]: List of tables with metadata
+        """
+        if not table_vids:
+            return []
+
+        from py_dpm.dpm.models import ModuleVersionComposition
+
+        tables_query = (
+            self.session.query(
+                TableVersion,
+                ModuleVersionComposition.modulevid,
+                ModuleVersion.code,
+                ModuleVersion.name,
+                ModuleVersion.versionnumber,
+            )
+            .join(
+                ModuleVersionComposition,
+                ModuleVersionComposition.tablevid == TableVersion.tablevid,
+            )
+            .join(
+                ModuleVersion,
+                ModuleVersion.modulevid == ModuleVersionComposition.modulevid,
+            )
+            .filter(TableVersion.tablevid.in_(table_vids))
+            .distinct()
+            .order_by(TableVersion.code)
+        )
+
+        result = []
+        for (
+            table,
+            module_vid,
+            module_code,
+            module_name,
+            module_version,
+        ) in tables_query.all():
+            result.append(
+                {
+                    "table_vid": table.tablevid,
+                    "code": table.code or "",
+                    "name": table.name or "",
+                    "description": table.description or "",
+                    "module_vid": module_vid,
+                    "module_code": module_code or "",
+                    "module_name": module_name or "",
+                    "module_version": module_version or "",
+                }
+            )
+
+        return result
 
     def get_headers_with_metadata(
         self, operation_version_id: int, table_vid: Optional[int] = None
