@@ -307,21 +307,6 @@ class ASTGeneratorAPI:
                     "semantic_result": semantic_result,
                 }
 
-            # Extract table_vids and table_codes from OC data (avoids re-parsing later)
-            table_vids = []
-            table_codes = []
-            oc_data = getattr(self.semantic_api, "oc_data", None)
-            if oc_data is not None and hasattr(oc_data, "columns") and "table_vid" in oc_data.columns:
-                table_vids = oc_data["table_vid"].dropna().unique().astype(int).tolist()
-                if table_vids:
-                    from py_dpm.dpm.models import TableVersion as _TV
-                    _codes_query = (
-                        self.semantic_api.session.query(_TV.code)
-                        .filter(_TV.tablevid.in_(table_vids))
-                        .distinct()
-                    )
-                    table_codes = [row[0] for row in _codes_query.all()]
-
             # Extract components
             actual_ast, context = self._extract_complete_components(ast_root)
 
@@ -342,8 +327,72 @@ class ASTGeneratorAPI:
                 "error": None,
                 "data_populated": data_populated,
                 "semantic_result": semantic_result,
-                "table_vids": table_vids,
-                "table_codes": table_codes,
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "ast": None,
+                "context": None,
+                "error": f"API error: {str(e)}",
+                "data_populated": False,
+            }
+
+    def _generate_complete_ast_from_oc(
+        self,
+        expression: str,
+        ast_obj,
+        oc,
+        release_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate complete AST from pre-parsed AST and OperandsChecking result.
+
+        Runs semantic analysis (lightweight, no DB) on pre-parsed AST and serializes
+        via ASTToJSONVisitor. This avoids re-parsing the expression.
+
+        Args:
+            expression: Original DPM-XL expression string
+            ast_obj: Pre-parsed AST object
+            oc: Pre-computed OperandsChecking instance
+            release_id: Optional release ID (for metadata)
+
+        Returns:
+            dict with same keys as generate_complete_ast()
+        """
+        try:
+            from py_dpm.dpm_xl.utils.serialization import ASTToJSONVisitor
+            from py_dpm.dpm_xl import semantic_analyzer as SemanticAnalyzer
+            from py_dpm.dpm_xl.warning_collector import collect_warnings
+
+            # Run semantic analysis using pre-computed OperandsChecking data
+            with collect_warnings():
+                semanticAnalysis = SemanticAnalyzer.InputAnalyzer(expression)
+                semanticAnalysis.data = oc.data
+                semanticAnalysis.key_components = oc.key_components
+                semanticAnalysis.open_keys = oc.open_keys
+                semanticAnalysis.preconditions = oc.preconditions
+                semanticAnalysis.visit(ast_obj)
+
+            # Extract components
+            actual_ast, context = self._extract_complete_components(ast_obj)
+
+            # Convert to JSON using the ASTToJSONVisitor
+            visitor = ASTToJSONVisitor(context)
+            ast_dict = visitor.visit(actual_ast)
+
+            # Check if data fields were populated
+            data_populated = self._check_data_fields_populated(ast_dict)
+
+            # Serialize context
+            context_dict = self._serialize_context(context)
+
+            return {
+                "success": True,
+                "ast": ast_dict,
+                "context": context_dict,
+                "error": None,
+                "data_populated": data_populated,
             }
 
         except Exception as e:
@@ -1099,14 +1148,43 @@ class ASTGeneratorAPI:
             connection_url=self.connection_url
         )
 
+        # Initialize ExplorerQueryAPI once for all preconditions (performance optimization)
+        from py_dpm.api.dpm.explorer import ExplorerQueryAPI
+        explorer_api = ExplorerQueryAPI(data_dict_api=data_dict_api)
+
+        # Caches for batch DB queries (avoid per-table individual queries)
+        _table_version_cache: Dict[str, Dict[str, Any]] = {}  # table_code -> table version info
+        _table_variables_cache: Dict[int, Dict[str, str]] = {}  # table_vid -> variables dict
+        _table_open_keys_cache: Dict[str, Dict[str, str]] = {}  # table_code -> open_keys dict
+
         # Primary module info will be determined from the first expression or module_code
         primary_module_info = None
         namespace = None
 
         try:
             for idx, (expression, operation_code, precondition) in enumerate(expression_tuples):
-                # Generate complete AST for this expression
-                complete_result = self.generate_complete_ast(expression, release_id=release_id)
+                # Parse expression ONCE and reuse results for all downstream operations
+                try:
+                    parsed = scopes_api._parse_expression_with_operands(
+                        expression=expression,
+                        release_id=release_id,
+                    )
+                except Exception as e:
+                    warning_msg = (
+                        f"Skipping expression {idx + 1} "
+                        f"(operation '{operation_code}'): {e}"
+                    )
+                    warnings.warn(warning_msg, stacklevel=2)
+                    all_warnings.append(warning_msg)
+                    continue
+
+                # Generate complete AST from pre-parsed data (no re-parsing)
+                complete_result = self._generate_complete_ast_from_oc(
+                    expression=expression,
+                    ast_obj=parsed["ast"],
+                    oc=parsed["oc"],
+                    release_id=release_id,
+                )
 
                 if not complete_result["success"]:
                     warning_msg = (
@@ -1120,20 +1198,18 @@ class ASTGeneratorAPI:
                 complete_ast = complete_result["ast"]
                 context = complete_result.get("context") or table_context
 
-                # Reuse pre-extracted table data from generate_complete_ast — no re-parsing needed
-                table_vids = complete_result.get("table_vids", [])
-                table_codes = complete_result.get("table_codes", [])
+                # Get tables with modules from pre-extracted table VIDs (no re-parsing)
+                tables_with_modules = scopes_api.get_tables_with_metadata_from_parsed(
+                    table_vids=parsed["table_vids"],
+                )
 
-                # Get tables with modules using pre-extracted VIDs (skip parsing + OC)
-                tables_with_modules = scopes_api.get_tables_with_metadata_by_vids(table_vids)
-
-                # Calculate scopes using pre-extracted data (skip parsing + OC)
-                scope_result = scopes_api.calculate_scopes(
-                    tables_vids=table_vids,
-                    table_codes=table_codes,
+                # Calculate scopes from pre-extracted data (no re-parsing)
+                scope_result = scopes_api.calculate_scopes_from_parsed(
+                    table_vids=parsed["table_vids"],
+                    precondition_items=parsed["precondition_items"],
+                    table_codes=parsed["table_codes"],
                     release_id=release_id,
                     expression=expression,
-                    read_only=True,
                 )
                 all_tables_with_modules.extend(tables_with_modules)
 
@@ -1147,6 +1223,7 @@ class ASTGeneratorAPI:
                         # Performance optimization: pass precomputed values
                         tables_with_modules=tables_with_modules,
                         scopes_api=scopes_api,
+                        scope_result=scope_result,
                     )
                     namespace = primary_module_info.get("module_uri", "default_module")
 
@@ -1171,90 +1248,87 @@ class ASTGeneratorAPI:
                 # Clean extra fields from data entries
                 self._clean_ast_data_entries(ast_with_coords)
 
-                # Build mapping of table_code -> module_vid
+                # Build mapping of table_code -> module_vid (single pass)
                 # Prefer the module VID that matches the detected primary module
                 table_to_module = {}
                 primary_module_code = primary_module_info.get("module_code")
 
-                # First pass: record mappings for tables belonging to the primary module (by code)
-                if primary_module_code:
-                    for table_info in tables_with_modules:
-                        table_code = table_info.get("code", "")
-                        table_module_vid = table_info.get("module_vid")
-                        table_module_code = table_info.get("module_code")
-                        if (
-                            table_code
-                            and table_module_vid
-                            and table_module_code == primary_module_code
-                        ):
-                            table_to_module[table_code] = table_module_vid
-
-                # Second pass: fill in any remaining tables with the first available module VID
                 for table_info in tables_with_modules:
-                    table_code = table_info.get("code", "")
-                    table_module_vid = table_info.get("module_vid")
-                    if table_code and table_module_vid and table_code not in table_to_module:
-                        table_to_module[table_code] = table_module_vid
+                    tc = table_info.get("code", "")
+                    mv = table_info.get("module_vid")
+                    mc = table_info.get("module_code")
+                    if tc and mv and (tc not in table_to_module or mc == primary_module_code):
+                        table_to_module[tc] = mv
 
                 resolved_primary_module_vid = primary_module_info.get("module_vid") or primary_module_vid
 
-                # Collect tables that need batch data lookup
-                tables_needing_data = []
+                # Process tables from this expression
+                # Collect uncached table codes for batch fetching
+                uncached_table_codes = []
+                tables_to_process = []
                 for table_code in variables_by_table.keys():
-                    # Check if this table belongs to the primary module
                     table_module_vid = table_to_module.get(table_code)
-
                     if table_module_vid and table_module_vid != resolved_primary_module_vid:
-                        # This table belongs to a different module, skip for main tables
                         continue
-
-                    # Skip if we already have this table
                     if table_code in all_tables:
                         has_primary_module_operation = True
                         continue
+                    tables_to_process.append(table_code)
+                    if table_code not in _table_version_cache:
+                        uncached_table_codes.append(table_code)
 
-                    # Mark as needing data; store fallback variables from expression
-                    tables_needing_data.append(table_code)
-                    # Reserve slot to prevent re-adding in later iterations
-                    all_tables[table_code] = None
+                # Batch-fetch table versions for uncached codes
+                if uncached_table_codes:
+                    batch_versions = data_dict_api.get_table_versions_batch(
+                        uncached_table_codes, release_id
+                    )
+                    _table_version_cache.update(batch_versions)
+
+                    # Batch-fetch variables for newly discovered table VIDs
+                    new_table_vids = [
+                        info["table_vid"]
+                        for info in batch_versions.values()
+                        if info["table_vid"] not in _table_variables_cache
+                    ]
+                    if new_table_vids:
+                        batch_vars = data_dict_api.get_all_variables_for_tables_batch(
+                            new_table_vids
+                        )
+                        _table_variables_cache.update(batch_vars)
+
+                    # Batch-fetch open keys for uncached table codes
+                    uncached_open_keys = [
+                        tc for tc in uncached_table_codes
+                        if tc not in _table_open_keys_cache
+                    ]
+                    if uncached_open_keys:
+                        batch_keys = data_dict_api.get_open_keys_for_tables_batch(
+                            uncached_open_keys, release_id
+                        )
+                        for tc in uncached_open_keys:
+                            keys_list = batch_keys.get(tc, [])
+                            _table_open_keys_cache[tc] = {
+                                item["property_code"]: item["data_type_code"]
+                                for item in keys_list
+                            }
+
+                # Now process each table using cached data
+                for table_code in tables_to_process:
+                    table_info = _table_version_cache.get(table_code)
+
+                    if table_info and table_info.get("table_vid"):
+                        table_vid = table_info["table_vid"]
+                        table_variables = _table_variables_cache.get(table_vid, {})
+                        if not table_variables:
+                            table_variables = variables_by_table[table_code]
+                    else:
+                        table_variables = variables_by_table[table_code]
+
+                    open_keys = _table_open_keys_cache.get(table_code, {})
+
+                    all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+                    all_variables.update(table_variables)
                     has_primary_module_operation = True
-
-                # Batch-query table versions, variables, and open keys
-                if tables_needing_data:
-                    batch_table_versions = data_dict_api.get_table_versions_batch(
-                        tables_needing_data, release_id
-                    )
-                    # Collect table_vids for variables batch query
-                    table_vid_map = {}  # table_code -> table_vid
-                    for tc in tables_needing_data:
-                        tv_info = batch_table_versions.get(tc)
-                        if tv_info and tv_info.get("table_vid"):
-                            table_vid_map[tc] = tv_info["table_vid"]
-
-                    batch_variables = data_dict_api.get_all_variables_for_tables_batch(
-                        list(table_vid_map.values())
-                    ) if table_vid_map else {}
-
-                    batch_open_keys = data_dict_api.get_open_keys_for_tables_batch(
-                        tables_needing_data, release_id
-                    )
-
-                    # Populate all_tables with batch results
-                    for tc in tables_needing_data:
-                        tvid = table_vid_map.get(tc)
-                        if tvid and tvid in batch_variables:
-                            table_variables = batch_variables[tvid]
-                        else:
-                            table_variables = variables_by_table.get(tc, {})
-
-                        open_keys_list = batch_open_keys.get(tc, [])
-                        open_keys = {
-                            item["property_code"]: item["data_type_code"]
-                            for item in open_keys_list
-                        }
-
-                        all_tables[tc] = {"variables": table_variables, "open_keys": open_keys}
-                        all_variables.update(table_variables)
 
                 # Handle precondition (deduplicate by precondition string)
                 if precondition and precondition not in processed_preconditions:
@@ -1263,6 +1337,7 @@ class ASTGeneratorAPI:
                         context=context,
                         operation_code=operation_code,
                         release_id=release_id,
+                        explorer_api=explorer_api,
                     )
                     # Track which keys were generated for this precondition string
                     processed_preconditions[precondition] = list(preconds.keys())
@@ -1299,6 +1374,7 @@ class ASTGeneratorAPI:
                     tables_with_modules=tables_with_modules,
                     scopes_api=scopes_api,
                     scope_result=scope_result,
+                    data_dict_api=data_dict_api,
                 )
 
                 # Merge dependency modules (avoid table duplicates)
@@ -1320,30 +1396,49 @@ class ASTGeneratorAPI:
                         resolved_module_vid, include_abstract=False
                     )
 
-                    # Filter to tables not already added
-                    new_module_tables = [
-                        t for t in module_tables
-                        if t.get("table_code") not in all_tables
-                    ]
+                    # Collect new table VIDs and codes for batch fetching
+                    new_table_vids = []
+                    new_table_codes = []
+                    new_tables_info = []
+                    for table_info in module_tables:
+                        table_code = table_info.get("table_code")
+                        table_vid = table_info.get("table_vid")
+                        if table_code in all_tables:
+                            continue
+                        new_tables_info.append(table_info)
+                        if table_vid not in _table_variables_cache:
+                            new_table_vids.append(table_vid)
+                        if table_code not in _table_open_keys_cache:
+                            new_table_codes.append(table_code)
 
-                    if new_module_tables:
-                        # Batch query variables and open keys for all new tables
-                        new_table_vids = [t["table_vid"] for t in new_module_tables if t.get("table_vid")]
-                        new_table_codes = [t["table_code"] for t in new_module_tables if t.get("table_code")]
+                    # Batch-fetch variables and open keys for all new tables
+                    if new_table_vids:
+                        batch_vars = data_dict_api.get_all_variables_for_tables_batch(
+                            new_table_vids
+                        )
+                        _table_variables_cache.update(batch_vars)
 
-                        batch_vars = data_dict_api.get_all_variables_for_tables_batch(new_table_vids) if new_table_vids else {}
-                        batch_okeys = data_dict_api.get_open_keys_for_tables_batch(new_table_codes, release_id) if new_table_codes else {}
+                    if new_table_codes:
+                        batch_keys = data_dict_api.get_open_keys_for_tables_batch(
+                            new_table_codes, release_id
+                        )
+                        for tc in new_table_codes:
+                            keys_list = batch_keys.get(tc, [])
+                            _table_open_keys_cache[tc] = {
+                                item["property_code"]: item["data_type_code"]
+                                for item in keys_list
+                            }
 
-                        for table_info in new_module_tables:
-                            table_code = table_info.get("table_code")
-                            table_vid = table_info.get("table_vid")
+                    # Now process each new table using cached data
+                    for table_info in new_tables_info:
+                        table_code = table_info.get("table_code")
+                        table_vid = table_info.get("table_vid")
 
-                            table_variables = batch_vars.get(table_vid, {})
-                            open_keys_list = batch_okeys.get(table_code, [])
-                            open_keys = {item["property_code"]: item["data_type_code"] for item in open_keys_list}
+                        table_variables = _table_variables_cache.get(table_vid, {})
+                        open_keys = _table_open_keys_cache.get(table_code, {})
 
-                            all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
-                            all_variables.update(table_variables)
+                        all_tables[table_code] = {"variables": table_variables, "open_keys": open_keys}
+                        all_variables.update(table_variables)
 
                     # If we added any tables, mark that we have primary module operations
                     if module_tables:
@@ -1351,6 +1446,8 @@ class ASTGeneratorAPI:
 
         finally:
             data_dict_api.close()
+            explorer_api.close()
+            scopes_api.close()
 
         # If no expressions succeeded, we can't build the script
         if primary_module_info is None:
@@ -1481,6 +1578,7 @@ class ASTGeneratorAPI:
         module_code: Optional[str] = None,
         tables_with_modules: Optional[List[Dict[str, Any]]] = None,
         scopes_api: Optional[Any] = None,
+        scope_result: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Detect and return metadata for the primary module from the expression.
@@ -1495,6 +1593,8 @@ class ASTGeneratorAPI:
                 (performance optimization to avoid redundant database queries)
             scopes_api: Optional precomputed OperationScopesAPI instance
                 (performance optimization to reuse database connections)
+            scope_result: Optional precomputed scope result from calculate_scopes_from_expression
+                (performance optimization to avoid redundant computation)
 
         Returns:
             Dict with module_uri, module_code, module_version, framework_code,
@@ -1577,10 +1677,14 @@ class ASTGeneratorAPI:
             # Get module version dates from scopes metadata
             from_date = "2001-01-01"
             to_date = None
-            scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
-                expression=expression,
-                release_id=release_id
-            )
+            # Reuse pre-computed scope_result if available, otherwise compute
+            if scope_result is not None:
+                scopes_metadata = scopes_api._get_scopes_metadata_from_result(scope_result)
+            else:
+                scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
+                    expression=expression,
+                    release_id=release_id
+                )
             for scope_info in scopes_metadata:
                 for module in scope_info.module_versions:
                     if module.get("module_vid") == module_vid:
@@ -1798,6 +1902,7 @@ class ASTGeneratorAPI:
         context: Optional[Dict[str, Any]],
         operation_code: str,
         release_id: Optional[int] = None,
+        explorer_api: Optional[Any] = None,
     ) -> tuple:
         """Build preconditions and precondition_variables sections.
 
@@ -1816,6 +1921,8 @@ class ASTGeneratorAPI:
             context: Optional context dict
             operation_code: Operation code to associate with this precondition
             release_id: Optional release ID for filtering variable versions
+            explorer_api: Optional pre-created ExplorerQueryAPI instance
+                (performance optimization to reuse database connections)
         """
         import re
         from py_dpm.api.dpm.explorer import ExplorerQueryAPI
@@ -1837,14 +1944,18 @@ class ASTGeneratorAPI:
         variable_codes = [self._normalize_table_code(v) for v in var_matches]
 
         # Batch lookup variable IDs from database (single query for efficiency)
-        explorer_api = ExplorerQueryAPI()
+        local_explorer_api = False
+        if explorer_api is None:
+            explorer_api = ExplorerQueryAPI()
+            local_explorer_api = True
         try:
             variables_info = explorer_api.get_variables_by_codes(
                 variable_codes=variable_codes,
                 release_id=release_id,
             )
         finally:
-            explorer_api.close()
+            if local_explorer_api:
+                explorer_api.close()
 
         # Build variable infos list preserving order from precondition
         var_infos = []
@@ -2048,6 +2159,7 @@ class ASTGeneratorAPI:
         tables_with_modules: Optional[List[Dict[str, Any]]] = None,
         scopes_api: Optional[Any] = None,
         scope_result: Optional[Any] = None,
+        data_dict_api: Optional[Any] = None,
     ) -> tuple:
         """
         Detect cross-module dependencies for a single expression.
@@ -2069,6 +2181,8 @@ class ASTGeneratorAPI:
                 (performance optimization to reuse database connections)
             scope_result: Optional precomputed scope result from calculate_scopes_from_expression
                 (performance optimization to avoid redundant computation)
+            data_dict_api: Optional precomputed DataDictionaryAPI instance
+                (performance optimization to reuse database connections)
 
         Returns:
             Tuple of (dependency_modules, cross_instance_dependencies)
@@ -2079,12 +2193,17 @@ class ASTGeneratorAPI:
         from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
         import logging
 
+        # Track if we created resources locally (need to close them)
+        local_scopes_api = False
+        local_data_dict_api = False
+
         # Reuse provided scopes_api or create a new one
         if scopes_api is None:
             scopes_api = OperationScopesAPI(
                 database_path=self.database_path,
                 connection_url=self.connection_url
             )
+            local_scopes_api = True
 
         try:
             # Reuse provided tables_with_modules or fetch if not available
@@ -2127,11 +2246,13 @@ class ASTGeneratorAPI:
 
             # Helper to lookup variables for a table
             # For external module tables, fetch from database if not in variables_by_table
-            from py_dpm.api.dpm import DataDictionaryAPI
-            data_dict_api = DataDictionaryAPI(
-                database_path=self.database_path,
-                connection_url=self.connection_url
-            )
+            if data_dict_api is None:
+                from py_dpm.api.dpm import DataDictionaryAPI
+                data_dict_api = DataDictionaryAPI(
+                    database_path=self.database_path,
+                    connection_url=self.connection_url
+                )
+                local_data_dict_api = True
 
             def get_table_variables(table_code: str, table_vid: int = None) -> dict:
                 if not table_code:
@@ -2223,11 +2344,8 @@ class ASTGeneratorAPI:
                         }
                         external_modules[uri]["variables"].update(table_variables)
 
-            # Get date info from scopes metadata
-            scopes_metadata = scopes_api.get_scopes_with_metadata_from_expression(
-                expression=expression,
-                release_id=release_id
-            )
+            # Get date info from scopes metadata (reuse pre-computed scope_result)
+            scopes_metadata = scopes_api._get_scopes_metadata_from_result(scope_result)
             for scope_info in scopes_metadata:
                 for module in scope_info.module_versions:
                     mvid = module.get("module_vid")
@@ -2265,15 +2383,18 @@ class ASTGeneratorAPI:
                     "to_reference_date": str(to_date) if to_date else ""
                 })
 
-            # Close data_dict_api before returning
-            data_dict_api.close()
+            # Close locally-created resources before returning
+            if local_data_dict_api:
+                data_dict_api.close()
             return dependency_modules, cross_instance_dependencies
 
         except Exception as e:
             logging.warning(f"Failed to detect cross-module dependencies: {e}")
             return {}, []
         finally:
-            scopes_api.close()
+            # Only close scopes_api if we created it locally
+            if local_scopes_api:
+                scopes_api.close()
 
     def _add_coordinates_to_ast(
         self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]],

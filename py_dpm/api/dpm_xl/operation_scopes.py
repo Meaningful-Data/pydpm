@@ -154,6 +154,170 @@ class OperationScopesAPI:
         self.error_listener = DPMErrorListener()
         self.visitor = ASTVisitor()
 
+    def _parse_expression_with_operands(
+        self,
+        expression: str,
+        release_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Parse expression and perform OperandsChecking once.
+
+        Returns all intermediate data needed by downstream methods, avoiding
+        redundant parsing and OperandsChecking calls.
+
+        Args:
+            expression: The DPM-XL expression to parse
+            release_id: Optional release ID for filtering
+
+        Returns:
+            Dict with keys:
+                - ast: The parsed AST object
+                - oc: The OperandsChecking instance
+                - oc_data: The OperandsChecking data DataFrame
+                - table_vids: List of table version IDs
+                - table_codes: List of table codes
+                - precondition_items: List of precondition item codes
+
+        Raises:
+            SemanticError: If parsing or operands checking fails
+            SyntaxError: If expression has syntax errors
+        """
+        # Parse expression to AST
+        input_stream = InputStream(expression)
+        lexer = dpm_xlLexer(input_stream)
+        lexer._listeners = [self.error_listener]
+        token_stream = CommonTokenStream(lexer)
+
+        parser = dpm_xlParser(token_stream)
+        parser._listeners = [self.error_listener]
+        parse_tree = parser.start()
+
+        if parser._syntaxErrors > 0:
+            raise SyntaxError("Syntax errors detected in expression")
+
+        # Generate AST
+        ast = self.visitor.visit(parse_tree)
+
+        # Perform operands checking to get data (single time)
+        oc = OperandsChecking(
+            session=self.session,
+            expression=expression,
+            ast=ast,
+            release_id=release_id,
+        )
+
+        # Extract table VIDs, precondition items, and table codes
+        table_vids, precondition_items, table_codes = self._extract_vids_from_ast(
+            ast, oc.data, extract_codes=True
+        )
+
+        return {
+            "ast": ast,
+            "oc": oc,
+            "oc_data": oc.data,
+            "table_vids": table_vids,
+            "table_codes": table_codes,
+            "precondition_items": precondition_items,
+        }
+
+    def get_tables_with_metadata_from_parsed(
+        self,
+        table_vids: List[int],
+    ) -> List[Dict[str, Any]]:
+        """
+        Get tables with metadata from pre-extracted table VIDs.
+
+        Same as get_tables_with_metadata_from_expression but accepts pre-extracted
+        table_vids to avoid re-parsing the expression.
+
+        Args:
+            table_vids: List of table version IDs (from _parse_expression_with_operands)
+
+        Returns:
+            List[Dict[str, Any]]: List of tables with metadata
+        """
+        if not table_vids:
+            return []
+
+        from py_dpm.dpm.models import ModuleVersionComposition
+
+        tables_query = (
+            self.session.query(
+                TableVersion,
+                ModuleVersionComposition.modulevid,
+                ModuleVersion.code,
+                ModuleVersion.name,
+                ModuleVersion.versionnumber,
+            )
+            .join(
+                ModuleVersionComposition,
+                ModuleVersionComposition.tablevid == TableVersion.tablevid,
+            )
+            .join(
+                ModuleVersion,
+                ModuleVersion.modulevid == ModuleVersionComposition.modulevid,
+            )
+            .filter(TableVersion.tablevid.in_(table_vids))
+            .distinct()
+            .order_by(TableVersion.code)
+        )
+
+        result = []
+        for (
+            table,
+            module_vid,
+            module_code,
+            module_name,
+            module_version,
+        ) in tables_query.all():
+            result.append(
+                {
+                    "table_vid": table.tablevid,
+                    "code": table.code or "",
+                    "name": table.name or "",
+                    "description": table.description or "",
+                    "module_vid": module_vid,
+                    "module_code": module_code or "",
+                    "module_name": module_name or "",
+                    "module_version": module_version or "",
+                }
+            )
+
+        return result
+
+    def calculate_scopes_from_parsed(
+        self,
+        table_vids: List[int],
+        precondition_items: List[str],
+        table_codes: List[str],
+        release_id: Optional[int] = None,
+        expression: Optional[str] = None,
+    ) -> OperationScopeResult:
+        """
+        Calculate operation scopes from pre-extracted data.
+
+        Same as calculate_scopes_from_expression but accepts pre-extracted data
+        to avoid re-parsing the expression.
+
+        Args:
+            table_vids: List of table version IDs
+            precondition_items: List of precondition item codes
+            table_codes: List of table codes
+            release_id: Optional release ID for filtering
+            expression: Original expression (for result metadata)
+
+        Returns:
+            OperationScopeResult: Result containing existing and new scopes
+        """
+        return self.calculate_scopes(
+            tables_vids=table_vids,
+            precondition_items=precondition_items,
+            release_id=release_id,
+            expression=expression,
+            table_codes=table_codes,
+            read_only=True,
+        )
+
     def calculate_scopes_from_expression(
         self,
         expression: str,
@@ -618,6 +782,61 @@ class OperationScopesAPI:
 
         all_scopes = scope_result.existing_scopes + scope_result.new_scopes
         return self._enrich_scopes_with_module_metadata(all_scopes)
+
+    def _get_scopes_metadata_from_result(
+        self, scope_result: OperationScopeResult
+    ) -> List[OperationScopeDetailedInfo]:
+        """
+        Derive scopes metadata from an already-computed OperationScopeResult.
+
+        This avoids re-parsing the expression by reusing the scope result
+        that was already calculated.
+
+        Args:
+            scope_result: Pre-computed OperationScopeResult
+
+        Returns:
+            List[OperationScopeDetailedInfo]: List of scopes with enriched module information
+        """
+        if scope_result.has_error:
+            return []
+
+        result = []
+        all_scopes = scope_result.existing_scopes + scope_result.new_scopes
+
+        for scope in all_scopes:
+            module_infos = []
+            for comp in scope.operation_scope_compositions:
+                module = (
+                    self.session.query(ModuleVersion)
+                    .filter(ModuleVersion.modulevid == comp.modulevid)
+                    .first()
+                )
+                if module:
+                    module_infos.append(
+                        {
+                            "module_vid": module.modulevid,
+                            "code": module.code or "",
+                            "name": module.name or "",
+                            "description": module.description or "",
+                            "version_number": module.versionnumber or "",
+                            "from_reference_date": module.fromreferencedate,
+                            "to_reference_date": module.toreferencedate,
+                        }
+                    )
+
+            result.append(
+                OperationScopeDetailedInfo(
+                    operation_scope_id=scope.operationscopeid,
+                    operation_vid=scope.operationvid,
+                    is_active=scope.isactive,
+                    severity=scope.severity or "",
+                    from_submission_date=scope.fromsubmissiondate,
+                    module_versions=module_infos,
+                )
+            )
+
+        return result
 
     def get_tables_with_metadata(
         self, operation_version_id: int

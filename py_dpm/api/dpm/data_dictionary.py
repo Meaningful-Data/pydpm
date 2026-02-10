@@ -1038,6 +1038,154 @@ class DataDictionaryAPI:
             for r in results
         ]
 
+    def get_table_versions_batch(
+        self, table_codes: List[str], release_id: Optional[int] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get table version information for multiple table codes in a single query.
+
+        Args:
+            table_codes: List of table codes to look up
+            release_id: Optional release ID to filter by
+
+        Returns:
+            Dictionary mapping table_code to table version info dict
+        """
+        if not table_codes:
+            return {}
+
+        query = self.session.query(
+            TableVersion.tablevid, TableVersion.code
+        ).filter(TableVersion.code.in_(table_codes))
+
+        if release_id is not None:
+            query = query.filter(
+                or_(
+                    TableVersion.endreleaseid.is_(None),
+                    TableVersion.endreleaseid > release_id,
+                ),
+                TableVersion.startreleaseid <= release_id,
+            )
+
+        results = query.all()
+        return {
+            r.code: {
+                "table_vid": r.tablevid,
+                "code": r.code,
+                "name": "",
+                "description": "",
+            }
+            for r in results
+        }
+
+    def get_all_variables_for_tables_batch(
+        self, table_vids: List[int]
+    ) -> Dict[int, Dict[str, str]]:
+        """
+        Get all variables for multiple table versions in a single query.
+
+        Args:
+            table_vids: List of table version IDs
+
+        Returns:
+            Dictionary mapping table_vid to {variable_id: type_code} dict
+        """
+        if not table_vids:
+            return {}
+
+        query = (
+            self.session.query(
+                TableVersionCell.tablevid, Variable.variableid, DataType.code
+            )
+            .select_from(TableVersionCell)
+            .join(
+                VariableVersion,
+                TableVersionCell.variablevid == VariableVersion.variablevid,
+            )
+            .join(Variable, VariableVersion.variableid == Variable.variableid)
+            .join(Property, VariableVersion.propertyid == Property.propertyid)
+            .join(DataType, Property.datatypeid == DataType.datatypeid)
+            .filter(TableVersionCell.tablevid.in_(table_vids))
+            .distinct()
+        )
+
+        results = query.all()
+        variables_by_table: Dict[int, Dict[str, str]] = {}
+        for r in results:
+            if r.code is not None:
+                if r.tablevid not in variables_by_table:
+                    variables_by_table[r.tablevid] = {}
+                variables_by_table[r.tablevid][str(int(r.variableid))] = r.code
+        return variables_by_table
+
+    def get_open_keys_for_tables_batch(
+        self, table_codes: List[str], release_id: Optional[int] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get open key information for multiple tables in a single query.
+
+        Args:
+            table_codes: List of table codes to query
+            release_id: Optional release ID to filter by
+
+        Returns:
+            Dictionary mapping table_code to list of open key info dicts
+        """
+        if not table_codes:
+            return {}
+
+        query = (
+            self.session.query(
+                TableVersion.code.label("table_version_code"),
+                ItemCategory.code.label("property_code"),
+                DataType.name.label("data_type_name"),
+                DataType.code.label("data_type_code"),
+            )
+            .select_from(DataType)
+            .join(Property, DataType.datatypeid == Property.datatypeid)
+            .join(ItemCategory, Property.propertyid == ItemCategory.itemid)
+            .join(VariableVersion, ItemCategory.itemid == VariableVersion.propertyid)
+            .join(
+                KeyComposition,
+                VariableVersion.variablevid == KeyComposition.variablevid,
+            )
+            .join(TableVersion, KeyComposition.keyid == TableVersion.keyid)
+            .join(
+                ModuleVersionComposition,
+                TableVersion.tablevid == ModuleVersionComposition.tablevid,
+            )
+            .join(
+                ModuleVersion,
+                ModuleVersionComposition.modulevid == ModuleVersion.modulevid,
+            )
+            .filter(TableVersion.code.in_(table_codes))
+        )
+
+        if release_id is not None:
+            query = query.filter(
+                or_(
+                    TableVersion.endreleaseid.is_(None),
+                    TableVersion.endreleaseid > release_id,
+                ),
+                TableVersion.startreleaseid <= release_id,
+            )
+
+        results = query.distinct().order_by(TableVersion.code, ItemCategory.code).all()
+
+        keys_by_table: Dict[str, List[Dict[str, Any]]] = {}
+        for r in results:
+            if r.table_version_code not in keys_by_table:
+                keys_by_table[r.table_version_code] = []
+            keys_by_table[r.table_version_code].append(
+                {
+                    "table_version_code": r.table_version_code,
+                    "property_code": r.property_code,
+                    "data_type_name": r.data_type_name,
+                    "data_type_code": r.data_type_code,
+                }
+            )
+        return keys_by_table
+
     def __del__(self):
         """Clean up resources."""
         if hasattr(self, "session") and self.session:
