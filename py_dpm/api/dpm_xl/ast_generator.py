@@ -1227,8 +1227,8 @@ class ASTGeneratorAPI:
                     )
                     namespace = primary_module_info.get("module_uri", "default_module")
 
-                # Add coordinates to AST data entries
-                ast_with_coords = self._add_coordinates_to_ast(complete_ast, context)
+                # Add coordinates to AST data entries (in-place since AST is freshly generated)
+                ast_with_coords = self._add_coordinates_to_ast(complete_ast, context, in_place=True)
 
                 # Build operation entry
                 submission_date = primary_module_info.get("from_date", current_date)
@@ -2397,7 +2397,8 @@ class ASTGeneratorAPI:
                 scopes_api.close()
 
     def _add_coordinates_to_ast(
-        self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]]
+        self, ast_dict: Dict[str, Any], context: Optional[Dict[str, Any]],
+        in_place: bool = False,
     ) -> Dict[str, Any]:
         """
         Add x/y/z coordinates to data entries in AST.
@@ -2409,6 +2410,12 @@ class ASTGeneratorAPI:
 
         If context provides column/row/sheet lists, those are used for ordering.
         Otherwise, the order is extracted from the data entries themselves.
+
+        Args:
+            ast_dict: AST dictionary to add coordinates to
+            context: Optional context with rows/columns/sheets
+            in_place: If True, modify ast_dict in place (skip deep copy).
+                Use when the AST is freshly generated and not shared.
         """
         import copy
 
@@ -2467,6 +2474,11 @@ class ASTGeneratorAPI:
                     cols = context_cols if context_cols and not _has_wildcard(context_cols) else data_cols
                     sheets = context_sheets if context_sheets and not _has_wildcard(context_sheets) else data_sheets
 
+                    # Pre-build index dicts for O(1) lookups instead of O(n) list.index()
+                    row_idx = {code: i + 1 for i, code in enumerate(rows)} if len(rows) > 1 else {}
+                    col_idx = {code: i + 1 for i, code in enumerate(cols)} if len(cols) > 1 else {}
+                    sheet_idx = {code: i + 1 for i, code in enumerate(sheets)} if len(sheets) > 1 else {}
+
                     # Assign coordinates to each data entry
                     for entry in data_entries:
                         row_code = entry.get("row", "")
@@ -2474,25 +2486,19 @@ class ASTGeneratorAPI:
                         sheet_code = entry.get("sheet", "")
 
                         # Calculate x coordinate (row position)
-                        if rows and row_code in rows:
-                            x_index = rows.index(row_code) + 1
-                            # Only add x if there are multiple rows
-                            if len(rows) > 1:
-                                entry["x"] = x_index
+                        x = row_idx.get(row_code)
+                        if x is not None:
+                            entry["x"] = x
 
                         # Calculate y coordinate (column position)
-                        # Only add y if there are multiple columns
-                        if cols and col_code in cols:
-                            y_index = cols.index(col_code) + 1
-                            if len(cols) > 1:
-                                entry["y"] = y_index
+                        y = col_idx.get(col_code)
+                        if y is not None:
+                            entry["y"] = y
 
                         # Calculate z coordinate (sheet position)
-                        if sheets and sheet_code in sheets:
-                            z_index = sheets.index(sheet_code) + 1
-                            # Only add z if there are multiple sheets
-                            if len(sheets) > 1:
-                                entry["z"] = z_index
+                        z = sheet_idx.get(sheet_code)
+                        if z is not None:
+                            entry["z"] = z
 
                 # Recursively process child nodes
                 for key, value in node.items():
@@ -2502,8 +2508,8 @@ class ASTGeneratorAPI:
                 for item in node:
                     add_coords_to_node(item)
 
-        # Create a deep copy to avoid modifying the original
-        result = copy.deepcopy(ast_dict)
+        # Skip deep copy when AST is freshly generated and not shared
+        result = ast_dict if in_place else copy.deepcopy(ast_dict)
         add_coords_to_node(result)
         return result
 

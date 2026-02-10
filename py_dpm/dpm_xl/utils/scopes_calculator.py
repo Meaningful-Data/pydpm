@@ -304,8 +304,15 @@ class OperationScopeService:
         Method to calculate OperationScope and OperationScopeComposition tables for repeated operations
         :param modules_vids: list with module version ids
         """
+        # Pre-build dict lookup for O(1) access instead of DataFrame boolean filtering per module
+        module_lookup = {}
+        for _, row in modules_info.iterrows():
+            vid = row[MODULE_VID]
+            if vid not in module_lookup:
+                module_lookup[vid] = row
+
         for module_vid in modules_vids:
-            module_row = modules_info[modules_info["ModuleVID"] == module_vid].iloc[0]
+            module_row = module_lookup[module_vid]
             from_date = module_row["FromReferenceDate"]
             to_date = module_row["ToReferenceDate"]
             module_code = module_row["ModuleCode"]
@@ -335,6 +342,13 @@ class OperationScopeService:
             modules_dataframe[TO_REFERENCE_DATE], format="mixed", dayfirst=True
         )
 
+        # Pre-build dict lookup for O(1) access instead of DataFrame boolean filtering per module
+        module_lookup = {}
+        for _, row in modules_dataframe.iterrows():
+            vid = row[MODULE_VID]
+            if vid not in module_lookup:
+                module_lookup[vid] = row
+
         values = cross_modules.values()
         for combination in product(*values):
             combination_info = modules_dataframe[
@@ -351,6 +365,7 @@ class OperationScopeService:
                     (not pd.isna(ref_to_date)) and from_date > ref_to_date
                 ):
                     is_valid_combination = False
+                    break  # No need to check remaining dates
 
             if is_valid_combination:
                 from_submission_date = ref_from_date
@@ -359,9 +374,7 @@ class OperationScopeService:
             operation_scope = self.create_operation_scope(from_submission_date)
             combination = set(combination)
             for module in combination:
-                module_row = modules_dataframe[
-                    modules_dataframe[MODULE_VID] == module
-                ].iloc[0]
+                module_row = module_lookup[module]
                 self.create_operation_scope_composition(
                     operation_scope=operation_scope,
                     module_vid=module,
