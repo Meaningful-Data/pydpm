@@ -3,6 +3,7 @@ import tempfile
 import zipfile
 import json
 from datetime import datetime
+from typing import Optional
 
 from py_dpm.api import ExplorerQueryAPI
 
@@ -133,14 +134,14 @@ class Instance:
             raise TypeError("facts must be a list")
 
     @classmethod
-    def from_json_file(cls, json_file: Path):
+    def from_json_file(cls, json_file: Path, release_id: Optional[int] = None):
         with open(json_file, "r") as f:
             json_data = json.load(f)
-        instance = cls.from_dict(json_data)
+        instance = cls.from_dict(json_data, release_id=release_id)
         return instance
 
     @classmethod
-    def from_dict(cls, instance_json: dict):
+    def from_dict(cls, instance_json: dict, release_id: Optional[int] = None):
         cls._validate_dict_structure(instance_json)
 
         parameters = cls.PARAMETERS_DEFAULT.copy()
@@ -148,10 +149,13 @@ class Instance:
 
         ref_period = parameters["refPeriod"]
 
+        # When release_id is provided, use it for lookups; otherwise fall back to date
+        lookup_kwargs = {"release_id": release_id} if release_id else {"date": ref_period}
+
         with ExplorerQueryAPI() as explorer:
             url = explorer.get_module_url(
                 module_code=instance_json["module_code"],
-                date=ref_period,
+                **lookup_kwargs,
             )
 
             # Build Fact objects grouped by table without triggering DB lookups
@@ -170,7 +174,7 @@ class Instance:
                     column_code=None,
                     sheet_code=None,
                     module_code=instance_json["module_code"],
-                    date=ref_period,
+                    **lookup_kwargs,
                 )
 
                 # Build mapping from (row, column, sheet) -> list of variable rows

@@ -5,7 +5,7 @@ Public API for building XBRL-CSV report packages from instance data.
 """
 
 from pathlib import Path
-from typing import Union, Dict, Any, TYPE_CHECKING
+from typing import Optional, Union, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from py_dpm.instance.instance import Instance
@@ -24,6 +24,7 @@ class InstanceAPI:
         instance_data: Dict[str, Any],
         output_folder: Union[Path, str],
         file_prefix: str = None,
+        release_id: Optional[int] = None,
     ) -> Path:
         """
         Build an XBRL-CSV package from a dictionary containing instance data.
@@ -34,6 +35,8 @@ class InstanceAPI:
                           and facts (list of facts)
             output_folder: Directory where the output ZIP file will be created
             file_prefix: Optional prefix for the output filename
+            release_id: Optional release ID for resolving DPM mappings.
+                       When provided, used instead of refPeriod date for lookups.
 
         Returns:
             Path to the created ZIP file
@@ -63,7 +66,7 @@ class InstanceAPI:
         # Import here to avoid circular import
         from py_dpm.instance.instance import Instance
 
-        instance = Instance.from_dict(instance_data)
+        instance = Instance.from_dict(instance_data, release_id=release_id)
         return instance.build_package(output_folder=output_folder, file_prefix=file_prefix)
 
     @staticmethod
@@ -71,6 +74,7 @@ class InstanceAPI:
         json_file: Union[Path, str],
         output_folder: Union[Path, str],
         file_prefix: str = None,
+        release_id: Optional[int] = None,
     ) -> Path:
         """
         Build an XBRL-CSV package from a JSON file containing instance data.
@@ -81,6 +85,8 @@ class InstanceAPI:
                       and facts (list of facts)
             output_folder: Directory where the output ZIP file will be created
             file_prefix: Optional prefix for the output filename
+            release_id: Optional release ID for resolving DPM mappings.
+                       When provided, used instead of refPeriod date for lookups.
 
         Returns:
             Path to the created ZIP file
@@ -107,5 +113,5 @@ class InstanceAPI:
         if not json_file.exists():
             raise FileNotFoundError(f"JSON file not found: {json_file}")
 
-        instance = Instance.from_json_file(json_file)
+        instance = Instance.from_json_file(json_file, release_id=release_id)
         return instance.build_package(output_folder=output_folder, file_prefix=file_prefix)
