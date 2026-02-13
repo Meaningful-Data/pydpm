@@ -141,8 +141,8 @@ class ExplorerQuery:
         """
         Resolve the EBA taxonomy URL for a given module code.
 
-        First checks the static module schema mapping for older module versions
-        (pre-4.0). If not found, falls back to dynamic URL construction.
+        Queries the DB first, then falls back to static CSV mapping for legacy
+        modules (pre-4.0). If neither works, constructs the URL dynamically.
 
         The dynamic URL format is:
             http://www.eba.europa.eu/eu/fr/xbrl/crr/fws/{framework_code}/{release_code}/mod/{module_code}.json
@@ -156,12 +156,6 @@ class ExplorerQuery:
             raise ValueError(
                 "Specify a maximum of one of release_id, release_code or date."
             )
-
-        # For date-based lookups, first try the static mapping
-        if date:
-            static_url = get_module_schema_ref(module_code, date)
-            if static_url:
-                return static_url
 
         # Base query to resolve framework and module version metadata
         q = (
@@ -203,6 +197,11 @@ class ExplorerQuery:
         rows = q.all()
 
         if len(rows) != 1:
+            # Fallback to static mapping by date for legacy modules not in DB
+            if date:
+                static_url = get_module_schema_ref(module_code, date)
+                if static_url:
+                    return static_url
             raise ValueError(
                 f"Should return 1 record, but returned {len(rows)}"
             )
