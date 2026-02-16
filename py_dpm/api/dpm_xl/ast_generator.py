@@ -410,28 +410,57 @@ class ASTGeneratorAPI:
 
     def _normalize_expressions_input(
         self,
-        expressions: Union[str, List[Tuple[str, str, Optional[str]]]]
-    ) -> List[Tuple[str, str, Optional[str]]]:
+        expressions: Union[str, List[Union[Tuple[str, str, Optional[str]], Tuple[str, str, Optional[str], str]]]],
+        default_severity: str = DEFAULT_SEVERITY,
+    ) -> List[Tuple[str, str, Optional[str], str]]:
         """
-        Normalize input to list of (expression, operation_code, precondition) tuples.
+        Normalize input to list of (expression, operation_code, precondition, severity) tuples.
 
         Supports:
-        - Single expression string: "expr" -> [("expr", "default_code", None)]
-        - List of tuples: [("expr1", "op1", "precond1"), ("expr2", "op2", None)]
+        - Single expression string: "expr" -> [("expr", "default_code", None, default_severity)]
+        - List of 3-element tuples: severity filled from default_severity
+        - List of 4-element tuples: per-tuple severity preserved (validated)
+        - Mixed 3- and 4-element tuples
 
         Args:
             expressions: Either a single expression string or a list of tuples
+            default_severity: Severity to use for string input and 3-element tuples
 
         Returns:
-            List of (expression, operation_code, precondition) tuples
+            List of (expression, operation_code, precondition, severity) 4-element tuples
+
+        Raises:
+            ValueError: If a tuple has invalid length or an invalid per-tuple severity value
         """
         if isinstance(expressions, str):
-            return [(expressions, "default_code", None)]
-        return expressions
+            return [(expressions, "default_code", None, default_severity)]
+
+        result = []
+        for i, tup in enumerate(expressions):
+            if len(tup) == 3:
+                expr, op_code, precond = tup
+                result.append((expr, op_code, precond, default_severity))
+            elif len(tup) == 4:
+                expr, op_code, precond, sev = tup
+                if sev is None:
+                    sev = default_severity
+                else:
+                    sev = sev.lower()
+                    if sev not in VALID_SEVERITIES:
+                        raise ValueError(
+                            f"Invalid severity '{tup[3]}' in expression tuple at index {i}. "
+                            f"Must be one of: {', '.join(sorted(VALID_SEVERITIES))}"
+                        )
+                result.append((expr, op_code, precond, sev))
+            else:
+                raise ValueError(
+                    f"Expression tuple at index {i} has {len(tup)} elements; expected 3 or 4."
+                )
+        return result
 
     def generate_validations_script(
         self,
-        expressions: Union[str, List[Tuple[str, str, Optional[str]]]],
+        expressions: Union[str, List[Union[Tuple[str, str, Optional[str]], Tuple[str, str, Optional[str], str]]]],
         release_code: Optional[str] = None,
         table_context: Optional[Dict[str, Any]] = None,
         release_id: Optional[int] = None,
@@ -468,11 +497,13 @@ class ASTGeneratorAPI:
 
         Args:
             expressions: Either a single DPM-XL expression string (backward compatible),
-                or a list of tuples: [(expression, operation_code, precondition), ...].
+                or a list of tuples: [(expression, operation_code, precondition[, severity]), ...].
                 Each tuple contains:
                 - expression (str): The DPM-XL expression (required)
                 - operation_code (str): The operation code (required)
                 - precondition (Optional[str]): Optional precondition reference (e.g., {v_F_44_04})
+                - severity (str, optional): Per-operation severity override ('error', 'warning', 'info').
+                    If omitted (3-element tuple) or None, uses the global severity parameter.
             release_code: Optional release code (e.g., "4.0", "4.1", "4.2").
                 Mutually exclusive with release_id and module_version_number.
             table_context: Optional table context dict with keys: 'table', 'columns', 'rows', 'sheets', 'default', 'interval'
@@ -501,8 +532,10 @@ class ASTGeneratorAPI:
                 module version in the output, regardless of whether they are referenced in
                 the validations. If False, only include tables and variables that are
                 actually referenced in the expressions.
-            severity: Severity level for the generated operations. Must be one of:
+            severity: Default severity level for operations. Must be one of:
                 'error', 'warning', or 'info'. Defaults to 'error' if not specified.
+                Used as fallback for 3-element tuples or 4-element tuples with None severity.
+                Per-operation severity in 4-element tuples takes precedence.
                 - 'error': Critical validation failure - data submission should be blocked
                 - 'warning': Non-critical issue that should be reviewed
                 - 'info': Informational message for documentation purposes
@@ -573,8 +606,10 @@ class ASTGeneratorAPI:
                 module_code, module_version_number
             )
 
-        # Normalize input to list of tuples
-        expression_tuples = self._normalize_expressions_input(expressions)
+        # Normalize input to list of 4-element tuples (with severity)
+        expression_tuples = self._normalize_expressions_input(
+            expressions, default_severity=effective_severity_lower
+        )
 
         try:
             # Enrich with framework structure for multiple expressions
@@ -587,7 +622,6 @@ class ASTGeneratorAPI:
                 module_code=module_code,
                 preferred_module_dependencies=preferred_module_dependencies,
                 add_all_tables=add_all_tables,
-                severity=effective_severity_lower,
             )
 
             # Save to file if output_path is provided
@@ -1067,7 +1101,7 @@ class ASTGeneratorAPI:
 
     def _enrich_ast_with_metadata_multi(
         self,
-        expression_tuples: List[Tuple[str, str, Optional[str]]],
+        expression_tuples: List[Tuple[str, str, Optional[str], str]],
         table_context: Optional[Dict[str, Any]],
         release_code: Optional[str] = None,
         release_id: Optional[int] = None,
@@ -1075,7 +1109,6 @@ class ASTGeneratorAPI:
         module_code: Optional[str] = None,
         preferred_module_dependencies: Optional[List[str]] = None,
         add_all_tables: bool = True,
-        severity: str = DEFAULT_SEVERITY,
     ) -> Dict[str, Any]:
         """
         Add framework structure for multiple expressions (operations, variables, tables, preconditions).
@@ -1084,7 +1117,8 @@ class ASTGeneratorAPI:
         multiple expressions into a single script structure.
 
         Args:
-            expression_tuples: List of (expression, operation_code, precondition) tuples
+            expression_tuples: List of (expression, operation_code, precondition, severity) tuples.
+                Each tuple includes the per-operation severity already resolved.
             table_context: Context dict with table, rows, columns, sheets, default, interval
             release_code: Release code (e.g., "4.2")
             release_id: Optional release ID to filter database lookups
@@ -1093,8 +1127,6 @@ class ASTGeneratorAPI:
             preferred_module_dependencies: Optional list of module codes to prefer for dependencies
             add_all_tables: If True, include all tables and variables from the module version.
                 If False, only include tables referenced in expressions.
-            severity: Severity level for the generated operations ('error', 'warning', or 'info').
-                Defaults to 'error'.
 
         Returns:
             Tuple of (enriched_ast_dict, warnings_list) where warnings_list contains
@@ -1162,7 +1194,7 @@ class ASTGeneratorAPI:
         namespace = None
 
         try:
-            for idx, (expression, operation_code, precondition) in enumerate(expression_tuples):
+            for idx, (expression, operation_code, precondition, op_severity) in enumerate(expression_tuples):
                 # Parse expression ONCE and reuse results for all downstream operations
                 try:
                     parsed = scopes_api._parse_expression_with_operands(
@@ -1239,7 +1271,7 @@ class ASTGeneratorAPI:
                     "root_operator_id": 24,
                     "ast": ast_with_coords,
                     "from_submission_date": submission_date,
-                    "severity": severity,
+                    "severity": op_severity,
                 }
 
                 # Extract variables from this expression's AST

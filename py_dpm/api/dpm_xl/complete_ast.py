@@ -16,7 +16,7 @@ from py_dpm.api.dpm_xl.ast_generator import ASTGeneratorAPI
 
 
 def generate_validations_script(
-    expressions: Union[str, List[Tuple[str, str, Optional[str]]]],
+    expressions: Union[str, List[Union[Tuple[str, str, Optional[str]], Tuple[str, str, Optional[str], str]]]],
     database_path: Optional[str] = None,
     connection_url: Optional[str] = None,
     release_code: Optional[str] = None,
@@ -25,6 +25,7 @@ def generate_validations_script(
     primary_module_vid: Optional[int] = None,
     module_code: Optional[str] = None,
     preferred_module_dependencies: Optional[List[str]] = None,
+    severity: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generate validations script with engine-ready AST from DPM-XL expression(s).
@@ -36,11 +37,13 @@ def generate_validations_script(
 
     Args:
         expressions: Either a single DPM-XL expression string,
-            or a list of tuples: [(expression, operation_code, precondition), ...].
+            or a list of tuples: [(expression, operation_code, precondition[, severity]), ...].
             Each tuple contains:
             - expression (str): The DPM-XL expression (required)
             - operation_code (str): The operation code (required)
             - precondition (Optional[str]): Optional precondition reference (e.g., {v_F_44_04})
+            - severity (str, optional): Per-operation severity override ('error', 'warning', 'info').
+                If omitted (3-element tuple) or None, uses the global severity parameter.
         database_path: Path to SQLite database (or None for PostgreSQL)
         connection_url: PostgreSQL connection URL (takes precedence over database_path)
         release_code: DPM release code (e.g., "4.0", "4.1", "4.2")
@@ -52,6 +55,9 @@ def generate_validations_script(
         module_code: Optional module code (e.g., "FINREP9") to specify the main module.
         preferred_module_dependencies: Optional list of module codes to prefer when
             multiple dependency scopes are possible.
+        severity: Default severity level for operations. Must be one of:
+            'error', 'warning', or 'info'. Defaults to 'error' if not specified.
+            Per-operation severity in 4-element tuples takes precedence.
 
     Returns:
         dict: {
@@ -68,15 +74,17 @@ def generate_validations_script(
         ...     release_code="4.2",
         ... )
         >>>
-        >>> # Multiple expressions
+        >>> # Multiple expressions with per-operation severity
         >>> result = generate_validations_script(
         ...     [
-        ...         ("{tF_01.00, r0010, c0010} = 0", "v1234_m", None),
-        ...         ("{tF_01.00, r0020, c0010} > 0", "v1235_m", "{v_F_44_04}"),
+        ...         ("{tF_01.00, r0010, c0010} = 0", "v1234_m", None, "error"),
+        ...         ("{tF_01.00, r0020, c0010} > 0", "v1235_m", "{v_F_44_04}", "warning"),
+        ...         ("{tF_01.00, r0030, c0010} >= 0", "v1236_m", None),  # uses global severity
         ...     ],
         ...     database_path="data.db",
         ...     release_code="4.2",
         ...     module_code="FINREP9",
+        ...     severity="error",
         ... )
     """
     generator = ASTGeneratorAPI(
@@ -92,4 +100,5 @@ def generate_validations_script(
         primary_module_vid=primary_module_vid,
         module_code=module_code,
         preferred_module_dependencies=preferred_module_dependencies,
+        severity=severity,
     )
