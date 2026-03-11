@@ -1233,6 +1233,7 @@ class ASTGeneratorAPI:
                 # Get tables with modules from pre-extracted table VIDs (no re-parsing)
                 tables_with_modules = scopes_api.get_tables_with_metadata_from_parsed(
                     table_vids=parsed["table_vids"],
+                    release_id=release_id,
                 )
 
                 # Calculate scopes from pre-extracted data (no re-parsing)

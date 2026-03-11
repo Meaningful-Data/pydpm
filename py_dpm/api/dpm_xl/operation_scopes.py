@@ -223,6 +223,7 @@ class OperationScopesAPI:
     def get_tables_with_metadata_from_parsed(
         self,
         table_vids: List[int],
+        release_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get tables with metadata from pre-extracted table VIDs.
@@ -232,6 +233,7 @@ class OperationScopesAPI:
 
         Args:
             table_vids: List of table version IDs (from _parse_expression_with_operands)
+            release_id: Optional release ID to filter module versions by validity
 
         Returns:
             List[Dict[str, Any]]: List of tables with metadata
@@ -258,9 +260,20 @@ class OperationScopesAPI:
                 ModuleVersion.modulevid == ModuleVersionComposition.modulevid,
             )
             .filter(TableVersion.tablevid.in_(table_vids))
-            .distinct()
-            .order_by(TableVersion.code)
         )
+
+        if release_id is not None:
+            from sqlalchemy import or_
+
+            tables_query = tables_query.filter(
+                ModuleVersion.startreleaseid <= release_id,
+                or_(
+                    ModuleVersion.endreleaseid.is_(None),
+                    ModuleVersion.endreleaseid > release_id,
+                ),
+            )
+
+        tables_query = tables_query.distinct().order_by(TableVersion.code)
 
         result = []
         for (
