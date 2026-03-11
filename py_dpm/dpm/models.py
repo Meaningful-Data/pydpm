@@ -17,7 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import aliased, declarative_base, relationship
+from sqlalchemy.orm import aliased, declarative_base, deferred, relationship
 from sqlalchemy import func
 import pandas as pd
 import warnings
@@ -1665,7 +1665,7 @@ class Release(Base):
     status = Column("Status", String(50))
     iscurrent = Column("IsCurrent", Boolean)
     rowguid = Column("RowGUID", String(36), ForeignKey("Concept.ConceptGUID"))
-    latestvariablegentime = Column("LatestVariableGenTime", DateTime)
+    latestvariablegentime = deferred(Column("LatestVariableGenTime", DateTime))
     # Relationships
     concept = relationship("Concept", foreign_keys=[rowguid])
     changelogs = relationship("Changelog", back_populates="release")
