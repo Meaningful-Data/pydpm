@@ -992,7 +992,21 @@ class OperationScopesAPI:
                     ModuleVersion.modulevid == ModuleVersionComposition.modulevid,
                 )
                 .filter(TableVersion.tablevid.in_(table_vids))
-                .distinct()
+            )
+
+            if release_id is not None:
+                from sqlalchemy import or_
+
+                tables_query = tables_query.filter(
+                    ModuleVersion.startreleaseid <= release_id,
+                    or_(
+                        ModuleVersion.endreleaseid.is_(None),
+                        ModuleVersion.endreleaseid > release_id,
+                    ),
+                )
+
+            tables_query = (
+                tables_query.distinct()
                 .order_by(TableVersion.code)
             )
 
