@@ -1078,7 +1078,7 @@ class ASTGeneratorAPI:
         # (operations that have cross_instance_dependencies)
         is_cross_module = bool(cross_instance_dependencies)
         dependency_info = {
-            "intra_instance_validations": [] if is_cross_module else [operation_code],
+            "intra_instance_validations": [] if is_cross_module or not operation_code else [operation_code],
             "cross_instance_dependencies": cross_instance_dependencies,
         }
 
@@ -1417,7 +1417,7 @@ class ASTGeneratorAPI:
                 self._merge_cross_instance_dependencies(all_cross_instance_deps, cross_deps)
 
                 # Track intra-instance operations
-                if not cross_deps:
+                if not cross_deps and operation_code:
                     all_intra_instance_ops.append(operation_code)
 
             # After processing all expressions, add remaining tables from the module if requested
@@ -2257,6 +2257,34 @@ class ASTGeneratorAPI:
             if scope_result.has_error or not scope_result.is_cross_module:
                 return {}, []
 
+            # Extract valid dependency module_vids from scopes that include the
+            # primary module.  This filters out modules that share tables with the
+            # primary module but are NOT actual cross-module partners
+            # (e.g., FINREP9DP when main module is COREP_FRTB).
+            valid_dep_module_vids = set()
+            if primary_module_vid:
+                all_scopes = (scope_result.existing_scopes or []) + (
+                    scope_result.new_scopes or []
+                )
+                for scope in all_scopes:
+                    scope_module_vids = {
+                        comp.modulevid
+                        for comp in scope.operation_scope_compositions
+                    }
+                    if (
+                        primary_module_vid in scope_module_vids
+                        and len(scope_module_vids) > 1
+                    ):
+                        valid_dep_module_vids.update(
+                            scope_module_vids - {primary_module_vid}
+                        )
+
+                # Primary module is not in any cross-module scope → no dependencies
+                # (e.g., FINREP9DP as main module when the cross-module scope is
+                # COREP_FRTB+FINREP9 — FINREP9DP's scope is intra-module only).
+                if not valid_dep_module_vids:
+                    return {}, []
+
             # Extract time shifts for each table from expression
             time_shifts_by_table = self._extract_time_shifts_by_table(expression)
 
@@ -2314,6 +2342,10 @@ class ASTGeneratorAPI:
                     # Collect primary module tables for later inclusion in dependency_modules
                     primary_module_tables.append(table_info)
                     continue  # Skip for now, will add later
+
+                # Skip modules not in any cross-module scope with the primary module
+                if valid_dep_module_vids and module_vid not in valid_dep_module_vids:
+                    continue
 
                 ext_module_code = table_info.get("module_code")
                 if not ext_module_code:

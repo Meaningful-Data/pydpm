@@ -135,7 +135,7 @@ def create_engine_from_url(connection_url, pool_config=None):
 
     if is_sqlite:
         # SQLite doesn't support connection pooling
-        engine = create_engine(connection_url, pool_pre_ping=True)
+        engine = create_engine(connection_url, pool_pre_ping=True, connect_args={"check_same_thread": False})
     else:
         # Server-based databases (PostgreSQL, MySQL, etc.) with connection pooling
         # Default pool configuration
@@ -188,7 +188,7 @@ def create_engine_object(url):
         return engine
 
     if is_sqlite:
-        engine = create_engine(url, pool_pre_ping=True)
+        engine = create_engine(url, pool_pre_ping=True, connect_args={"check_same_thread": False})
     else:
         # Server-based databases (PostgreSQL, MySQL, SQL Server, etc.) with connection pooling
         engine = create_engine(
