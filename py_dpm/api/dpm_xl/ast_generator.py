@@ -1064,7 +1064,7 @@ class ASTGeneratorAPI:
         }
         # Use module_vid from primary_module_info (may have been resolved from module_code)
         resolved_primary_module_vid = primary_module_info.get("module_vid") or primary_module_vid
-        dependency_modules, cross_instance_dependencies = self._detect_cross_module_dependencies(
+        dependency_modules, cross_instance_dependencies, single_scope_result = self._detect_cross_module_dependencies(
             expression=expression,
             variables_by_table=full_variables_by_table,
             primary_module_vid=resolved_primary_module_vid,
@@ -1077,9 +1077,30 @@ class ASTGeneratorAPI:
         # intra_instance_validations should be empty for cross-module operations
         # (operations that have cross_instance_dependencies)
         is_cross_module = bool(cross_instance_dependencies)
+
+        # Detect alternative dependencies
+        alternative_deps = []
+        if resolved_primary_module_vid and single_scope_result and not single_scope_result.has_error:
+            from py_dpm.api.dpm_xl.operation_scopes import OperationScopesAPI as _ScopesAPI
+            _tmp_scopes_api = _ScopesAPI(
+                database_path=self.database_path,
+                connection_url=self.connection_url,
+            )
+            try:
+                alternative_deps = self._detect_alternative_dependencies(
+                    scope_results=[single_scope_result],
+                    primary_module_vid=resolved_primary_module_vid,
+                    cross_instance_dependencies=cross_instance_dependencies,
+                    scopes_api=_tmp_scopes_api,
+                    release_id=release_id,
+                )
+            finally:
+                _tmp_scopes_api.close()
+
         dependency_info = {
             "intra_instance_validations": [] if is_cross_module or not operation_code else [operation_code],
             "cross_instance_dependencies": cross_instance_dependencies,
+            "alternative_dependencies": alternative_deps,
         }
 
         # Build complete structure
@@ -1154,6 +1175,7 @@ class ASTGeneratorAPI:
         all_dependency_modules = {}
         all_cross_instance_deps = []
         all_intra_instance_ops = []
+        all_scope_results = []
 
         # Track processed preconditions to avoid duplicates
         # Maps precondition string -> list of precondition keys generated from it
@@ -1245,6 +1267,8 @@ class ASTGeneratorAPI:
                     expression=expression,
                 )
                 all_tables_with_modules.extend(tables_with_modules)
+                if scope_result and not scope_result.has_error:
+                    all_scope_results.append(scope_result)
 
                 # Get primary module info from first expression (or use module_code)
                 if primary_module_info is None:
@@ -1396,7 +1420,7 @@ class ASTGeneratorAPI:
                     table_code: table_data["variables"]
                     for table_code, table_data in all_tables.items()
                 }
-                dep_modules, cross_deps = self._detect_cross_module_dependencies(
+                dep_modules, cross_deps, _ = self._detect_cross_module_dependencies(
                     expression=expression,
                     variables_by_table=full_variables_by_table,
                     primary_module_vid=resolved_primary_module_vid,
@@ -1477,6 +1501,20 @@ class ASTGeneratorAPI:
                     if module_tables:
                         has_primary_module_operation = True
 
+            # Detect alternative dependencies (needs scopes_api.session still open)
+            resolved_primary_module_vid = (
+                primary_module_info.get("module_vid") if primary_module_info else None
+            ) or primary_module_vid
+            alternative_deps = []
+            if resolved_primary_module_vid and all_scope_results:
+                alternative_deps = self._detect_alternative_dependencies(
+                    scope_results=all_scope_results,
+                    primary_module_vid=resolved_primary_module_vid,
+                    cross_instance_dependencies=all_cross_instance_deps,
+                    scopes_api=scopes_api,
+                    release_id=release_id,
+                )
+
         finally:
             data_dict_api.close()
             explorer_api.close()
@@ -1519,6 +1557,7 @@ class ASTGeneratorAPI:
         dependency_info = {
             "intra_instance_validations": all_intra_instance_ops,
             "cross_instance_dependencies": all_cross_instance_deps,
+            "alternative_dependencies": alternative_deps,
         }
 
         return {
@@ -1602,6 +1641,114 @@ class ASTGeneratorAPI:
                             if op not in existing_dep.get("affected_operations", []):
                                 existing_dep.setdefault("affected_operations", []).append(op)
                         break
+
+    def _detect_alternative_dependencies(
+        self,
+        scope_results: List,
+        primary_module_vid: int,
+        cross_instance_dependencies: List[Dict[str, Any]],
+        scopes_api: Any,
+        release_id: Optional[int] = None,
+    ) -> List[List[str]]:
+        """
+        Detect pairs of external dependency modules that are alternatives.
+
+        Two external modules are alternatives if they each appear as the sole
+        external module alongside the primary module in separate scopes, but
+        never co-exist in the same scope.
+
+        Args:
+            scope_results: List of OperationScopeResult from scope calculations
+            primary_module_vid: The primary module's version ID
+            cross_instance_dependencies: Already-built cross-instance deps (for URI extraction)
+            scopes_api: OperationScopesAPI with open session (for VID-to-URI mapping)
+            release_id: Optional release ID for URI resolution
+
+        Returns:
+            List of [uri_a, uri_b] pairs representing alternative modules
+        """
+        from py_dpm.dpm.queries.explorer_queries import ExplorerQuery
+        from py_dpm.dpm.models import ModuleVersion as MV
+        import logging
+
+        # 1. Collect all cross-module scopes containing the primary module
+        single_ext_vids = set()  # VIDs that appear as sole external module
+        all_ext_vid_sets = []    # All external VID sets (for co-occurrence check)
+
+        for sr in scope_results:
+            all_scopes = (sr.existing_scopes or []) + (sr.new_scopes or [])
+            for scope in all_scopes:
+                scope_vids = {
+                    comp.modulevid
+                    for comp in scope.operation_scope_compositions
+                }
+                if primary_module_vid not in scope_vids or len(scope_vids) < 2:
+                    continue
+                ext_vids = frozenset(scope_vids - {primary_module_vid})
+                all_ext_vid_sets.append(ext_vids)
+                if len(ext_vids) == 1:
+                    single_ext_vids.update(ext_vids)
+
+        if len(single_ext_vids) < 2:
+            return []
+
+        # 2. Build co-occurrence set: pairs of VIDs that appear together in any scope
+        co_occurring = set()
+        for ext_set in all_ext_vid_sets:
+            if len(ext_set) > 1:
+                sorted_vids = sorted(ext_set)
+                for i, v1 in enumerate(sorted_vids):
+                    for v2 in sorted_vids[i + 1:]:
+                        co_occurring.add((v1, v2))
+
+        # 3. Find alternative pairs: both sole-external, never co-occurring
+        alternative_vid_pairs = []
+        sorted_singles = sorted(single_ext_vids)
+        for i, v1 in enumerate(sorted_singles):
+            for v2 in sorted_singles[i + 1:]:
+                pair = (v1, v2) if v1 < v2 else (v2, v1)
+                if pair not in co_occurring:
+                    alternative_vid_pairs.append(pair)
+
+        if not alternative_vid_pairs:
+            return []
+
+        # 4. Map VIDs to URIs
+        vid_to_uri: Dict[int, str] = {}
+        needed_vids = set()
+        for v1, v2 in alternative_vid_pairs:
+            needed_vids.add(v1)
+            needed_vids.add(v2)
+
+        for vid in needed_vids:
+            try:
+                mv = scopes_api.session.query(MV).filter(
+                    MV.modulevid == vid
+                ).first()
+                if mv:
+                    uri = ExplorerQuery.get_module_url(
+                        scopes_api.session,
+                        module_code=mv.code,
+                        release_id=release_id,
+                    )
+                    if uri and uri.endswith(".json"):
+                        uri = uri[:-5]
+                    if uri:
+                        vid_to_uri[vid] = uri
+            except Exception as e:
+                logging.warning(
+                    f"Failed to resolve URI for module VID {vid}: {e}"
+                )
+
+        # 5. Build URI pairs
+        result = []
+        for v1, v2 in alternative_vid_pairs:
+            uri1 = vid_to_uri.get(v1)
+            uri2 = vid_to_uri.get(v2)
+            if uri1 and uri2:
+                result.append(sorted([uri1, uri2]))
+
+        return result
 
     def _get_primary_module_info(
         self,
@@ -2255,7 +2402,7 @@ class ASTGeneratorAPI:
                 )
 
             if scope_result.has_error or not scope_result.is_cross_module:
-                return {}, []
+                return {}, [], scope_result
 
             # Extract valid dependency module_vids from scopes that include the
             # primary module.  This filters out modules that share tables with the
@@ -2283,7 +2430,7 @@ class ASTGeneratorAPI:
                 # (e.g., FINREP9DP as main module when the cross-module scope is
                 # COREP_FRTB+FINREP9 — FINREP9DP's scope is intra-module only).
                 if not valid_dep_module_vids:
-                    return {}, []
+                    return {}, [], scope_result
 
             # Extract time shifts for each table from expression
             time_shifts_by_table = self._extract_time_shifts_by_table(expression)
@@ -2462,11 +2609,11 @@ class ASTGeneratorAPI:
             # Close locally-created resources before returning
             if local_data_dict_api:
                 data_dict_api.close()
-            return dependency_modules, cross_instance_dependencies
+            return dependency_modules, cross_instance_dependencies, scope_result
 
         except Exception as e:
             logging.warning(f"Failed to detect cross-module dependencies: {e}")
-            return {}, []
+            return {}, [], None
         finally:
             # Only close scopes_api if we created it locally
             if local_scopes_api:
